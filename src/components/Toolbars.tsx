@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { NumberField } from "./NumberField";
 import type { EditorView } from "@codemirror/view";
 import { BlockKind, currentBlock, insertBlock, insertLink, insertNote, setBlock, tableMarkdown, toggleInline } from "../editor/commands";
 import { Icon } from "./Icons";
@@ -76,13 +78,18 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
   const big = (icon: string, label: string, title: string, f: () => void) => (
     <button type="button" className="rb tall" title={title} aria-label={title} onMouseDown={keep} onClick={f}><Icon name={icon} size={18} /><span>{label}</span></button>
   );
-  const num = (k: string, label: string, ph: string, attrs: React.InputHTMLAttributes<HTMLInputElement>, unit?: string) => (
+  const num = (k: string, label: string, ph: string, attrs: { min: number; max: number; step?: number }, unit?: string) => (
     <label className="rfield">{label}
-      <input key={k + (layout[k] || "")} className="n" type="number" defaultValue={layout[k] || ""} placeholder={ph} {...attrs}
-        onBlur={(e) => { const val = e.target.value.trim(); if ((layout[k] || "") !== val) onLayout({ ...layout, [k]: val }); }}
-        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />{unit}
+      <NumberField value={layout[k] || ""} placeholder={ph} {...attrs} unit={unit} ariaLabel={label} onCommit={(val) => onLayout({ ...layout, [k]: val })} />
     </label>
   );
+  const gridBtn = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!gridOpen) return;
+    const close = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest(".gridpop, .grid-anchor")) setGridOpen(false); };
+    addEventListener("mousedown", close);
+    return () => removeEventListener("mousedown", close);
+  }, [gridOpen]);
   return (
     <div className={"ribbon" + (collapsed ? " collapsed" : "")}>
       <div className="rtabs" role="tablist">
@@ -117,19 +124,18 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
           </>}
           {tab === "insert" && <>
             <div className="rgrp"><div className="row">
-              <div className="rb-wrap">
+              <div className="rb-wrap grid-anchor" ref={gridBtn}>
                 {big("table", "表格", "插入表格", () => setGridOpen(!gridOpen))}
-                {gridOpen && (
-                  <div className="pop gridpop" onMouseLeave={() => setGrid(null)}>
+                {gridOpen && gridBtn.current && createPortal(
+                  <div className="pop gridpop" style={{ left: gridBtn.current.getBoundingClientRect().left, top: gridBtn.current.getBoundingClientRect().bottom + 6 }} onMouseLeave={() => setGrid(null)}>
                     <div className="gridlbl">{grid ? `${grid.r} 行 × ${grid.c} 列` : "选择行列"}</div>
                     <div className="gridpick">{Array.from({ length: 48 }, (_, i) => { const r = Math.floor(i / 8) + 1, c = (i % 8) + 1; return (
                       <i key={i} className={grid && r <= grid.r && c <= grid.c ? "on" : ""} onMouseEnter={() => setGrid({ r, c })} onMouseDown={keep}
                         onClick={() => { setGridOpen(false); if (v) insertBlock(v, tableMarkdown(r, c), 2); }} />); })}</div>
-                  </div>
-                )}
+                  </div>, document.body)}
               </div>
               {big("img", "图片", "插入图片 ⌘⇧I", onPickImage)}
-              {big("codeb", "代码", "代码块 ⌘⌥C", run((x) => insertBlock(x, "```python\n\n```", 10)))}
+              {big("codeb", "代码", "代码块 ⌘⌥C", run((x) => insertBlock(x, "```\n\n```", 4)))}
               {big("mathb", "公式", "公式块 ⌘⌥B", run((x) => insertBlock(x, "$$\n\n$$", 3)))}
               {big("mermaid", "图表", "Mermaid 图表", run((x) => insertBlock(x, "```mermaid\nflowchart LR\n  A[开始] --> B[结束]\n```", 11)))}
               {big("hr", "分隔线", "分隔线", run((x) => insertBlock(x, "---")))}

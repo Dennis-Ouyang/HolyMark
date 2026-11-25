@@ -9,6 +9,7 @@ import { searchKeymap, openSearchPanel } from "@codemirror/search";
 import { tags as t } from "@lezer/highlight";
 import { flash, livePreview, PreviewOptions } from "./livePreview";
 import { continueList, toggleInline } from "./commands";
+import { autoPair } from "./autoPair";
 
 export interface EditorHandle {
   view: () => EditorView | null;
@@ -28,6 +29,8 @@ interface Props {
   previewKey: string;
   onChange: (text: string) => void;
   onSelection: (view: EditorView) => void;
+  /** 粘贴或拖进来的图片文件，pos 是要插入的位置 */
+  onImages: (files: File[], pos: number) => void;
 }
 
 /** 代码块里的语法高亮颜色走主题变量 */
@@ -39,12 +42,12 @@ const codeHighlight = HighlightStyle.define([
   { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "var(--hl-fn)" },
 ]);
 
-export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial, preview, previewKey, onChange, onSelection }, ref) {
+export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial, preview, previewKey, onChange, onSelection, onImages }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const previewCompartment = useRef(new Compartment());
-  const cb = useRef({ onChange, onSelection });
-  cb.current = { onChange, onSelection };
+  const cb = useRef({ onChange, onSelection, onImages });
+  cb.current = { onChange, onSelection, onImages };
   const silent = useRef(false);
   const exts = useRef<Extension[]>([]);
   const previewRef = useRef(preview);
@@ -59,6 +62,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial,
           markdown({ base: markdownLanguage, codeLanguages: languages }),
           syntaxHighlighting(codeHighlight),
           previewCompartment.current.of(livePreview(preview)),
+          autoPair(),
           keymap.of([
             { key: "Enter", run: continueList },
             { key: "Mod-b", run: (v) => (toggleInline(v, "bold"), true) },
@@ -72,6 +76,23 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial,
           EditorView.updateListener.of((u) => {
             if (u.docChanged && !silent.current) cb.current.onChange(u.state.doc.toString());
             if (u.selectionSet || u.docChanged || u.focusChanged) cb.current.onSelection(u.view);
+          }),
+          EditorView.domEventHandlers({
+            paste(e, v) {
+              const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith("image/"));
+              if (!files.length) return false;
+              e.preventDefault();
+              cb.current.onImages(files, v.state.selection.main.head);
+              return true;
+            },
+            drop(e, v) {
+              const files = [...(e.dataTransfer?.files || [])].filter((f) => f.type.startsWith("image/"));
+              if (!files.length) return false;
+              e.preventDefault();
+              const pos = v.posAtCoords({ x: e.clientX, y: e.clientY }) ?? v.state.selection.main.head;
+              cb.current.onImages(files, pos);
+              return true;
+            },
           }),
           EditorView.contentAttributes.of({ spellcheck: "false", "aria-label": "正文" }),
         ];

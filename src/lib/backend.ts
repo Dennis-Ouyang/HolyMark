@@ -31,6 +31,8 @@ export interface Backend {
   readVersion(path: string, id: string): Promise<string>;
   onExternalChange(cb: (path: string) => void): () => void;
   listFonts(): Promise<FontFamily[]>;
+  /** 保存粘贴或拖进来的图片，data 是 base64，返回保存后的路径 */
+  saveImage(dir: string, name: string, data: string): Promise<string>;
   createFile(dir: string, base: string): Promise<string>;
   takePendingOpen(): Promise<string[]>;
   onOpenFile(cb: () => void): () => void;
@@ -62,6 +64,7 @@ async function tauriBackend(): Promise<Backend> {
       return () => un?.();
     },
     listFonts: () => invoke("list_fonts"),
+    saveImage: (dir, name, data) => invoke("save_image", { dir, name, data }),
     createFile: (dir, base) => invoke("create_file", { dir, base }),
     takePendingOpen: () => invoke("take_pending_open"),
     onOpenFile(cb) {
@@ -130,6 +133,14 @@ function demoBackend(): Backend {
     async readVersion(path, id) { const r = load(path).find((x) => x.id === id); return r ? content(r) : ""; },
     onExternalChange(cb) { listeners.add(cb); return () => listeners.delete(cb); },
     async listFonts() { return FALLBACK_FONTS; },
+    async saveImage(dir, name, data) {
+      let p = `${dir}/${name}`, n = 1;
+      const [stem, ext] = name.includes(".") ? [name.replace(/\.[^.]+$/, ""), name.slice(name.lastIndexOf("."))] : [name, ".png"];
+      while (demoImages.has(p)) p = `${dir}/${stem}-${n++}${ext}`;
+      demoImages.set(p, `data:image/${ext.slice(1) === "jpg" ? "jpeg" : ext.slice(1)};base64,${data}`);
+      files.set(p, "");
+      return p;
+    },
     async createFile(dir, base) {
       let p = `${dir}/${base}.md`, n = 2;
       while (files.has(p)) p = `${dir}/${base} ${n++}.md`;
@@ -150,6 +161,9 @@ function demoBackend(): Backend {
   };
   return b;
 }
+
+/** 浏览器预览里粘贴的图片只存在内存里 */
+export const demoImages = new Map<string, string>();
 
 let cached: Promise<Backend> | null = null;
 export function getBackend(): Promise<Backend> {

@@ -23,7 +23,8 @@
           "x": 16,
           "y": 20
         },
-        "label": "main"
+        "label": "main",
+        "dragDropEnabled": false
       }
     ],
     "security": {

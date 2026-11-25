@@ -14,6 +14,8 @@ export interface Settings {
   mergeSeconds: number;
   lastFolder: string;
   ribbonCollapsed: boolean;
+  /** 文件树里是否显示 Markdown 以外的文件 */
+  showAllFiles: boolean;
   /** 设置格式版本，用来迁移旧的默认值 */
   v: number;
 }
@@ -33,6 +35,7 @@ export const DEFAULTS: Settings = {
   mergeSeconds: 5,
   lastFolder: "",
   ribbonCollapsed: false,
+  showAllFiles: false,
   v: 2,
 };
 

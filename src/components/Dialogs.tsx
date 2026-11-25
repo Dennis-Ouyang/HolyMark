@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { fontStack, Settings } from "../lib/settings";
 import type { FontFamily } from "../lib/backend";
 import { FontSelect } from "./Select";
+import { NumberField } from "./NumberField";
 import { Icon } from "./Icons";
 
 function Scrim({ onClose, center, children }: { onClose: () => void; center?: boolean; children: React.ReactNode }) {
@@ -41,8 +42,8 @@ export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; f
   const seg = <K extends keyof Settings>(k: K, opts: [Settings[K], string][]) => (
     <div className="seg">{opts.map(([v, l]) => <button key={String(v)} className={s[k] === v ? "on" : ""} onClick={() => onChange({ [k]: v } as Partial<Settings>)}>{l}</button>)}</div>
   );
-  const num = (k: keyof Settings, attrs: React.InputHTMLAttributes<HTMLInputElement>) => (
-    <input type="number" defaultValue={String(s[k])} {...attrs} onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isNaN(v)) onChange({ [k]: v } as Partial<Settings>); }} />
+  const num = (k: keyof Settings, attrs: { min: number; max?: number; step?: number; disabled?: boolean }, unit?: string) => (
+    <NumberField value={String(s[k])} {...attrs} unit={unit} ariaLabel={String(k)} onCommit={(v) => { const n = parseFloat(v); if (!Number.isNaN(n)) onChange({ [k]: n } as Partial<Settings>); }} />
   );
   const font = (k: "headingFont" | "bodyFont", sample: string, bold?: boolean) => (
     <div><FontSelect value={s[k]} fonts={fonts} ariaLabel={k === "headingFont" ? "标题字体" : "正文字体"} onChange={(v) => onChange({ [k]: v } as Partial<Settings>)} />
@@ -59,22 +60,24 @@ export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; f
         <div className="pb">
           <button className="ib close-x" onClick={onClose} aria-label="关闭"><Icon name="close" /></button>
           {pane === "general" && <><h4>通用</h4>
-            <div className="prow"><span>界面</span>{seg("theme", [["system", "跟随系统"], ["light", "浅色"], ["dark", "深色"]])}</div></>}
+            <div className="prow"><span>界面</span>{seg("theme", [["system", "跟随系统"], ["light", "浅色"], ["dark", "深色"]])}</div>
+            <div className="prow"><span>文件树<small>关闭时只显示 Markdown 文件</small></span>
+              <div className="inline"><button className={"switch" + (s.showAllFiles ? " on" : "")} role="switch" aria-checked={s.showAllFiles} aria-label="显示所有文件" onClick={() => onChange({ showAllFiles: !s.showAllFiles })} /><span className="dnote">显示所有文件</span></div></div></>}
           {pane === "editor" && <><h4>编辑器默认值</h4>
             <p className="dnote">所有文件默认使用这里的设置；单个文件可以在功能区「本文版式」里覆盖。</p>
             <div className="prow"><span>标题字体<small>列出的是这台 Mac 上装的字体</small></span>{font("headingFont", "3.3　分析框架", true)}</div>
             <div className="prow"><span>正文字体</span>{font("bodyFont", "本研究借鉴认知负荷理论，将写作过程中的负荷分为三类。")}</div>
-            <div className="prow"><span>字号</span>{num("fontSize", { min: 12, max: 28 })}</div>
+            <div className="prow"><span>字号</span>{num("fontSize", { min: 12, max: 28 }, "px")}</div>
             <div className="prow"><span>行距</span>{num("lineHeight", { min: 1.2, max: 2.6, step: 0.05 })}</div>
-            <div className="prow"><span>版心宽度<small>每行大约多少个字</small></span>{num("measure", { min: 24, max: 60 })}</div>
+            <div className="prow"><span>版心宽度<small>每行大约多少个字</small></span>{num("measure", { min: 24, max: 60 }, "字")}</div>
             <div className="prow"><span>Markdown 语法</span>{seg("syntax", [["active", "光标所在块显示"], ["always", "始终显示"]])}</div></>}
           {pane === "count" && <><h4>字数统计</h4>
             <div className="prow"><span>状态栏口径</span>{seg("countPunct", [[false, "不含标点"], [true, "含标点"]])}</div>
             <div className="prow"><span>写作目标<small>开启后状态栏显示进度</small></span>
-              <div className="inline"><button className={"switch" + (s.goalOn ? " on" : "")} role="switch" aria-checked={s.goalOn} aria-label="写作目标" onClick={() => onChange({ goalOn: !s.goalOn })} />{num("goal", { min: 100, step: 500, disabled: !s.goalOn })}<span className="dnote">字</span></div></div></>}
+              <div className="inline"><button className={"switch" + (s.goalOn ? " on" : "")} role="switch" aria-checked={s.goalOn} aria-label="写作目标" onClick={() => onChange({ goalOn: !s.goalOn })} />{num("goal", { min: 100, step: 500, disabled: !s.goalOn }, "字")}</div></div></>}
           {pane === "versions" && <><h4>版本</h4>
-            <div className="prow"><span>自动版本间隔</span><div className="inline">{num("autoMinutes", { min: 1 })}<span className="dnote">分钟</span></div></div>
-            <div className="prow"><span>外部修改合并<small>这段时间内的连续写入记为一条</small></span><div className="inline">{num("mergeSeconds", { min: 1 })}<span className="dnote">秒</span></div></div></>}
+            <div className="prow"><span>自动版本间隔</span><div className="inline">{num("autoMinutes", { min: 1, max: 240 }, "分钟")}</div></div>
+            <div className="prow"><span>外部修改合并<small>这段时间内的连续写入记为一条</small></span><div className="inline">{num("mergeSeconds", { min: 1, max: 600 }, "秒")}</div></div></>}
           {pane === "keys" && <><h4>快捷键</h4><KeyTable /></>}
         </div>
       </div>

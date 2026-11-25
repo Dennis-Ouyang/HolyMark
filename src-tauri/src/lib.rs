@@ -154,7 +154,18 @@ fn read_version(state: State<AppState>, path: String, id: String) -> Result<Stri
     store.content(r).map_err(err)
 }
 
-/// 把图片等文件复制进文件夹（默认放在文档旁的 assets/），重名时自动加序号，返回新路径
+/// 目录里不重名的文件路径：重名时加 -1、-2…
+fn unique_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
+    let mut dest = dir.join(format!("{}{}", stem, ext));
+    let mut n = 1;
+    while dest.exists() {
+        dest = dir.join(format!("{}-{}{}", stem, n, ext));
+        n += 1;
+    }
+    dest
+}
+
+/// 把图片等文件复制进文件夹（默认放在文档旁的 assets/），返回新路径
 #[tauri::command]
 fn copy_into_folder(src: String, dir: String) -> Result<String, String> {
     let srcp = PathBuf::from(&src);
@@ -162,13 +173,23 @@ fn copy_into_folder(src: String, dir: String) -> Result<String, String> {
     std::fs::create_dir_all(&dirp).map_err(err)?;
     let stem = srcp.file_stem().and_then(|s| s.to_str()).unwrap_or("image").to_string();
     let ext = srcp.extension().and_then(|s| s.to_str()).map(|e| format!(".{}", e)).unwrap_or_default();
-    let mut dest = dirp.join(format!("{}{}", stem, ext));
-    let mut n = 1;
-    while dest.exists() {
-        dest = dirp.join(format!("{}-{}{}", stem, n, ext));
-        n += 1;
-    }
+    let dest = unique_path(&dirp, &stem, &ext);
     std::fs::copy(&srcp, &dest).map_err(err)?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+/// 保存粘贴或拖进来的图片（base64），返回新路径
+#[tauri::command]
+fn save_image(dir: String, name: String, data: String) -> Result<String, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.as_bytes()).map_err(err)?;
+    let dirp = PathBuf::from(&dir);
+    std::fs::create_dir_all(&dirp).map_err(err)?;
+    let np = Path::new(&name);
+    let stem = np.file_stem().and_then(|s| s.to_str()).unwrap_or("image");
+    let ext = np.extension().and_then(|s| s.to_str()).map(|e| format!(".{}", e)).unwrap_or_else(|| ".png".into());
+    let dest = unique_path(&dirp, stem, &ext);
+    std::fs::write(&dest, bytes).map_err(err)?;
     Ok(dest.to_string_lossy().to_string())
 }
 
@@ -255,6 +276,7 @@ pub fn run() {
             read_version,
             set_merge_window,
             copy_into_folder,
+            save_image,
             list_fonts,
             create_file,
             take_pending_open

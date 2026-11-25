@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { EditorView } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
 import { Editor, EditorHandle } from "./editor/Editor";
 import { esc } from "./editor/livePreview";
-import { Backend, FontFamily, getBackend, isTauri, TreeNode, VersionMeta } from "./lib/backend";
+import { Backend, demoImages, FontFamily, getBackend, isTauri, TreeNode, VersionMeta } from "./lib/backend";
 import { alignBlocks, changedLines, countWords, docLayout, headings, Note, parseNotes, plainText, setDocLayout } from "./lib/markdown";
 import { loadSettings, saveSettings, Settings, fontStack } from "./lib/settings";
 import { BibEntry, parseBib, shortAuthor } from "./lib/bib";
@@ -64,6 +64,8 @@ export default function App() {
   const saveTimer = useRef<number>();
 
   const view = (): EditorView | null => ed.current?.view() ?? null;
+  // 方便自动化测试读取编辑器状态
+  (window as unknown as { __hm: unknown }).__hm = { view };
   const say = useCallback((m: string) => { setToast(m); window.clearTimeout((say as unknown as { t: number }).t); (say as unknown as { t: number }).t = window.setTimeout(() => setToast(null), 2600); }, []);
 
   /* ---------- settings & theme ---------- */
@@ -202,9 +204,10 @@ export default function App() {
   const notes = useMemo<Note[]>(() => parseNotes(text), [text]);
   const hs = useMemo(() => headings(text), [text]);
   // 大纲高亮跟随正文滚动位置
+  const lockHeading = useRef(0);
   const syncScrollHeading = useCallback(() => {
     const v = view(), sc = scroller.current;
-    if (!v || !sc) return;
+    if (!v || !sc || Date.now() < lockHeading.current) return;
     const top = sc.getBoundingClientRect().top + 80;
     let c = 0;
     hs.forEach((h, i) => {
@@ -234,6 +237,7 @@ export default function App() {
     resolveImage: (src: string) => {
       if (/^(https?:|data:)/.test(src)) return src;
       const abs = normalize(dirOf(live.current.path) + "/" + decodeURI(src));
+      if (!isTauri && demoImages.has(abs)) return demoImages.get(abs)!;
       if (isTauri) return (window as unknown as { __TAURI_INTERNALS__: { convertFileSrc: (p: string) => string } }).__TAURI_INTERNALS__.convertFileSrc(abs);
       return abs;
     },
@@ -298,7 +302,7 @@ export default function App() {
       case "cite": setDlg("cite"); break;
       case "note": if (v && !insertNote(v, AUTHOR)) say("先选中要批注的文字"); break;
       case "insert_table": if (v) insertBlock(v, tableMarkdown(2, 3), 2); break;
-      case "insert_code": if (v) insertBlock(v, "```python\n\n```", 10); break;
+      case "insert_code": if (v) insertBlock(v, "```\n\n```", 4); break;
       case "insert_math": if (v) insertBlock(v, "$$\n\n$$", 3); break;
       case "insert_mermaid": if (v) insertBlock(v, "```mermaid\nflowchart LR\n  A[开始] --> B[结束]\n```", 11); break;
       case "insert_image": pickImage(); break;
@@ -331,10 +335,14 @@ export default function App() {
   }, []);
 
   /* ---------- actions ---------- */
+  /** 跳到某个位置，并把它滚到顶部（不是刚好露出在底部） */
   function jump(pos: number) {
     const v = view(); if (!v) return;
     setCmp(null);
-    v.dispatch({ selection: { anchor: Math.min(pos, v.state.doc.length) }, scrollIntoView: true });
+    const at = Math.min(pos, v.state.doc.length);
+    const hi = hs.findIndex((h) => h.pos === pos);
+    if (hi >= 0) { setScrollHeading(hi); lockHeading.current = Date.now() + 900; }
+    v.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at, { y: "start", yMargin: 28 }) });
     v.focus();
   }
   function resolveNote(n: Note) {
@@ -381,19 +389,38 @@ export default function App() {
     setCmp(null);
     say(`已恢复到「${versionTitle(cmp.v)}」，恢复前的内容已存为版本`);
   }
-  async function pickImage() {
-    const v = view(); if (!v || !be) return;
-    if (isTauri) {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const { invoke } = await import("@tauri-apps/api/core");
-      const src = await open({ multiple: false, filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "gif", "svg", "webp"] }] });
-      if (typeof src !== "string") return;
-      const dest = await invoke<string>("copy_into_folder", { src, dir: dirOf(path) + "/assets" });
-      const rel = relative(dirOf(path), dest);
-      insertAtCursor(`![${baseName(dest).replace(/\.[^.]+$/, "")}](${encodeURI(rel)})`, true);
-    } else {
-      say("浏览器预览里不能读取本地文件，桌面版会把图片复制到 assets/ 目录");
+  function pickImage() {
+    if (!path) return;
+    const inp = document.createElement("input");
+    inp.type = "file";
+    inp.accept = "image/*";
+    inp.multiple = true;
+    inp.onchange = () => { const v = view(); if (v && inp.files?.length) insertImages([...inp.files], v.state.selection.main.head); };
+    inp.click();
+  }
+  /** 粘贴或拖进来的图片：存到文档旁的 assets/，在指定位置插入图片语法 */
+  async function insertImages(files: File[], pos: number) {
+    const v = view();
+    if (!v || !be || !path) return;
+    const toB64 = (f: File) => new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1] || ""); r.onerror = rej; r.readAsDataURL(f); });
+    const stamp = () => { const d = new Date(), z = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`; };
+    const parts: string[] = [];
+    for (const f of files) {
+      const ext = (f.type.split("/")[1] || "png").replace("jpeg", "jpg").replace("svg+xml", "svg");
+      const name = f.name && f.name !== "image.png" ? f.name : `图片-${stamp()}.${ext}`;
+      try {
+        const dest = await be.saveImage(dirOf(path) + "/assets", name, await toB64(f));
+        parts.push(`![${baseName(dest).replace(/\.[^.]+$/, "")}](${encodeURI(relative(dirOf(path), dest))})`);
+      } catch (e) { say(`图片保存失败：${e}`); }
     }
+    if (!parts.length) return;
+    const line = v.state.doc.lineAt(pos);
+    const before = line.text.slice(0, pos - line.from).trim() ? "\n\n" : "";
+    const after = line.text.slice(pos - line.from).trim() ? "\n\n" : "";
+    const insert = before + parts.join("\n\n") + after;
+    v.dispatch({ changes: { from: pos, insert }, selection: { anchor: pos + insert.length }, scrollIntoView: true });
+    v.focus();
+    say(parts.length > 1 ? `已插入 ${parts.length} 张图片，保存在 assets/` : "图片已保存到 assets/");
   }
   function insertAtCursor(t: string, block = false) {
     const v = view(); if (!v) return;
@@ -510,7 +537,7 @@ export default function App() {
               <span className="fi"><Icon name="folder" size={14} /></span>
               <span><b>{root ? baseName(root) : "打开文件夹"}</b><small>{root || "选择一个放稿件的文件夹"}</small></span>
             </button>
-            <FileTree nodes={tree} current={path} onOpen={openFile} />
+            <FileTree nodes={tree} current={path} onOpen={openFile} showAll={s.showAllFiles} />
           </div>
           <div className="side-foot"><button className="tn" onClick={() => setDlg("settings")}><span className="ico"><Icon name="gear" size={14} /></span><span className="nm">设置</span><span className="ext">⌘,</span></button></div>
         </div>
@@ -523,7 +550,7 @@ export default function App() {
         <div className="scroller" ref={scroller} onScroll={() => window.requestAnimationFrame(syncScrollHeading)} onMouseDown={clickBelow}>
           <div className="doc">
             {!path && <div className="welcome"><h2>HolyMark</h2><p>打开一个放稿件的文件夹开始写作。文件就是普通的 Markdown，换任何编辑器都能打开。</p><button className="btn acc" onClick={chooseFolder}>打开文件夹</button></div>}
-            <div hidden={!path}><Editor ref={ed} initial="" preview={preview} previewKey={previewKey} onChange={onChange} onSelection={onSelection} /></div>
+            <div hidden={!path}><Editor ref={ed} initial="" preview={preview} previewKey={previewKey} onChange={onChange} onSelection={onSelection} onImages={insertImages} /></div>
           </div>
         </div>
         <FloatingToolbar view={ed.current?.view() ?? null} tick={tick} author={AUTHOR} />

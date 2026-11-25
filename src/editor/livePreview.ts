@@ -322,11 +322,11 @@ function build(state: EditorState, opts: PreviewOptions): DecorationSet {
     if (b.kind === "BulletList" || b.kind === "OrderedList") linesOf(b, "hm-list");
     inlineDecos(state, b, active, decos, opts);
   }
-  // 段落之间的空行收窄：光标不在这一行时，空行只占半行高
-  const cursorLines = new Set(sel.map((r) => doc.lineAt(r.head).number));
-  for (let n = 1; n <= doc.lines; n++) {
+  // 段落之间只隔一个空行时，这个空行收窄成段距；连续多个空行按正常行高显示，光标进出也不变
+  for (let n = 2; n < doc.lines; n++) {
     const line = doc.line(n);
-    if (line.length === 0 && !cursorLines.has(n) && !inBlock(blocks, line.from)) decos.push(lineCls("hm-gap").range(line.from));
+    if (line.text.trim() || inBlock(blocks, line.from)) continue;
+    if (doc.line(n - 1).text.trim() && doc.line(n + 1).text.trim()) decos.push(lineCls("hm-gap").range(line.from));
   }
   return Decoration.set(decos, true);
 }

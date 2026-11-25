@@ -2,10 +2,20 @@ import { useState } from "react";
 import type { TreeNode } from "../lib/backend";
 import { Icon } from "./Icons";
 
-interface Props { nodes: TreeNode[]; current: string; onOpen: (path: string) => void }
+interface Props { nodes: TreeNode[]; current: string; onOpen: (path: string) => void; showAll: boolean }
 
-export function FileTree({ nodes, current, onOpen }: Props) {
-  return <div className="tree" role="tree">{nodes.map((n) => <Item key={n.path} node={n} depth={0} current={current} onOpen={onOpen} />)}</div>;
+/** 默认只显示 Markdown 文件和含有 Markdown 的文件夹 */
+function onlyMarkdown(nodes: TreeNode[]): TreeNode[] {
+  return nodes.flatMap((n) => {
+    if (!n.dir) return /\.(md|markdown)$/i.test(n.name) ? [n] : [];
+    const kids = onlyMarkdown(n.children);
+    return kids.length ? [{ ...n, children: kids }] : [];
+  });
+}
+
+export function FileTree({ nodes, current, onOpen, showAll }: Props) {
+  const shown = showAll ? nodes : onlyMarkdown(nodes);
+  return <div className="tree" role="tree">{shown.map((n) => <Item key={n.path} node={n} depth={0} current={current} onOpen={onOpen} />)}</div>;
 }
 
 function Item({ node, depth, current, onOpen }: { node: TreeNode; depth: number; current: string; onOpen: (p: string) => void }) {
