@@ -7,6 +7,7 @@ import { Decoration, DecorationSet, EditorView, WidgetType } from "@codemirror/v
 import { syntaxTree } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
 import katex from "katex";
+import { TableWidget } from "./tableWidget";
 
 export interface PreviewOptions {
   /** 把文档里的图片路径解析成可显示的地址 */
@@ -71,32 +72,6 @@ class MermaidWidget extends WidgetType {
     });
     el.addEventListener("mousedown", (e) => focusAt(view, el, e, 11));
     return el;
-  }
-  ignoreEvent() { return false; }
-}
-
-class TableWidget extends WidgetType {
-  constructor(readonly src: string, readonly opts: PreviewOptions) { super(); }
-  eq(o: TableWidget) { return o.src === this.src; }
-  toDOM(view: EditorView) {
-    const wrap = document.createElement("div");
-    wrap.className = "hm-table";
-    const rows = this.src.split("\n").filter((l) => l.trim());
-    const cells = (l: string) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
-    const table = document.createElement("table");
-    rows.forEach((line, i) => {
-      if (i === 1 && /^\s*\|?\s*:?-{2,}/.test(line)) return;
-      const tr = document.createElement("tr");
-      cells(line).forEach((c) => {
-        const td = document.createElement(i === 0 ? "th" : "td");
-        td.innerHTML = renderInlineHTML(c, this.opts);
-        tr.appendChild(td);
-      });
-      table.appendChild(tr);
-    });
-    wrap.appendChild(table);
-    wrap.addEventListener("mousedown", (e) => focusAt(view, wrap, e, 2));
-    return wrap;
   }
   ignoreEvent() { return false; }
 }
@@ -166,7 +141,7 @@ class CheckboxWidget extends WidgetType {
     el.className = "hm-check" + (this.checked ? " on" : "");
     el.setAttribute("role", "checkbox");
     el.setAttribute("aria-checked", String(this.checked));
-    el.textContent = this.checked ? "✓" : "";
+    el.innerHTML = this.checked ? '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m3.5 8.5 3 3 6-7"/></svg>' : "";
     el.addEventListener("mousedown", (e) => {
       e.preventDefault();
       const pos = view.posAtDOM(el);
@@ -324,7 +299,7 @@ function build(state: EditorState, opts: PreviewOptions): DecorationSet {
     }
     if (b.kind === "Table") {
       if (active) linesOf(b, "hm-src-mono");
-      else blockReplace(b, new TableWidget(text, opts));
+      else blockReplace(b, new TableWidget(text, (c) => renderInlineHTML(c, opts)));
       continue;
     }
     if (b.kind === "HorizontalRule") {
@@ -347,7 +322,17 @@ function build(state: EditorState, opts: PreviewOptions): DecorationSet {
     if (b.kind === "BulletList" || b.kind === "OrderedList") linesOf(b, "hm-list");
     inlineDecos(state, b, active, decos, opts);
   }
+  // 段落之间的空行收窄：光标不在这一行时，空行只占半行高
+  const cursorLines = new Set(sel.map((r) => doc.lineAt(r.head).number));
+  for (let n = 1; n <= doc.lines; n++) {
+    const line = doc.line(n);
+    if (line.length === 0 && !cursorLines.has(n) && !inBlock(blocks, line.from)) decos.push(lineCls("hm-gap").range(line.from));
+  }
   return Decoration.set(decos, true);
+}
+
+function inBlock(blocks: Block[], pos: number) {
+  return blocks.some((b) => pos > b.from && pos < b.to);
 }
 
 /** 行内：强调、代码、链接、图片、任务框、引用、公式、批注 */
@@ -444,6 +429,29 @@ function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range
   });
 }
 
+/* ---------- 改动高亮：外部修改或恢复版本后，变动的行铺一层绿色再慢慢褪去 ---------- */
+export const flashLines = StateEffect.define<number[]>();
+const clearFlash = StateEffect.define<null>();
+const flashField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(v, tr) {
+    v = v.map(tr.changes);
+    for (const e of tr.effects) {
+      if (e.is(clearFlash)) v = Decoration.none;
+      if (e.is(flashLines)) {
+        const doc = tr.state.doc;
+        v = Decoration.set(e.value.filter((n) => n >= 1 && n <= doc.lines).map((n) => lineCls("hm-flash").range(doc.line(n).from)), true);
+      }
+    }
+    return v;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+export function flash(view: EditorView, lines: number[]) {
+  view.dispatch({ effects: flashLines.of(lines) });
+  window.setTimeout(() => view.dispatch({ effects: clearFlash.of(null) }), 1400);
+}
+
 export function livePreview(opts: PreviewOptions): Extension {
   const field = StateField.define<DecorationSet>({
     create: (s) => build(s, opts),
@@ -453,5 +461,5 @@ export function livePreview(opts: PreviewOptions): Extension {
     },
     provide: (f) => EditorView.decorations.from(f),
   });
-  return [focusField, field, EditorView.focusChangeEffect.of((_s, focusing) => setFocus.of(focusing))];
+  return [focusField, field, flashField, EditorView.focusChangeEffect.of((_s, focusing) => setFocus.of(focusing))];
 }

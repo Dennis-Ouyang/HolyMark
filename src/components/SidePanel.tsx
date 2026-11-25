@@ -38,6 +38,8 @@ export function SidePanel(p: Props) {
     if (el) setInk({ x: el.offsetLeft + 8, w: el.offsetWidth - 16 });
   }, [p.tab, p.notes.length, p.freshVersion]);
   const noteCounts = countNotesPerHeading(p.headings, p.notes);
+  const outlineRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { outlineRef.current?.querySelector(".oi.cur")?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [p.currentHeading]);
 
   return (
     <div className="panel-in">
@@ -51,7 +53,7 @@ export function SidePanel(p: Props) {
       {p.tab === "outline" && (
         <div className="pane">
           {p.headings.length ? (
-            <div className="ol">
+            <div className="ol" ref={outlineRef}>
               {p.headings.map((h, i) => (
                 <button key={i} className={"oi" + (h.level === 1 ? " l1" : "") + (i === p.currentHeading ? " cur" : "")} style={{ "--lv": Math.max(0, h.level - 2) } as React.CSSProperties} onClick={() => p.onJump(h.pos)}>
                   <span className="t">{h.text}</span>
@@ -87,6 +89,12 @@ export function SidePanel(p: Props) {
 }
 
 function VersionList(p: Props) {
+  // 记住已经显示过的版本，新出现的从上方滑入
+  const seen = useRef<Set<string> | null>(null);
+  const fresh = new Set<string>();
+  if (seen.current === null) seen.current = new Set(p.versions.map((v) => v.id));
+  else p.versions.forEach((v) => { if (!seen.current!.has(v.id)) fresh.add(v.id); });
+  useEffect(() => { p.versions.forEach((v) => seen.current!.add(v.id)); });
   let day = "";
   return <>{p.versions.map((v) => {
     const t = fmtTime(v.at);
@@ -94,7 +102,7 @@ function VersionList(p: Props) {
     return (
       <div key={v.id}>
         {head}
-        <button className={`ver ${v.source}` + (v.id === p.selectedVersion ? " sel" : "")} onClick={() => p.onOpenVersion(v.id)}>
+        <button className={`ver ${v.source}` + (v.id === p.selectedVersion ? " sel" : "") + (fresh.has(v.id) ? " enter" : "")} onClick={() => p.onOpenVersion(v.id)}>
           <span className="nd" />
           <span><div className="nm">{versionTitle(v)}</div><div className="tm">{t.hm} · {SRC[v.source]}{v.note ? ` · ${v.note}` : ""}</div></span>
           {v.id === p.freshVersion && <span className="nw">新</span>}

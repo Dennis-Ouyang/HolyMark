@@ -9,6 +9,16 @@ export interface TreeNode { name: string; path: string; dir: boolean; children: 
 export type VersionSource = "saved" | "external" | "auto";
 export interface VersionMeta { id: string; at: number; source: VersionSource; name?: string | null; note?: string | null }
 
+export interface FontFamily { name: string; display: string; cjk: boolean }
+
+/** 浏览器预览里拿不到系统字体，给一份 macOS 常见字体 */
+const FALLBACK_FONTS: FontFamily[] = [
+  ["PingFang SC", "苹方-简", true], ["Songti SC", "宋体-简", true], ["Heiti SC", "黑体-简", true], ["Kaiti SC", "楷体-简", true],
+  ["STFangsong", "华文仿宋", true], ["Hiragino Sans GB", "冬青黑体简体中文", true], ["Noto Serif SC", "思源宋体", true], ["Noto Sans SC", "思源黑体", true],
+  ["Georgia", "Georgia", false], ["Helvetica Neue", "Helvetica Neue", false], ["Iowan Old Style", "Iowan Old Style", false], ["New York", "New York", false],
+  ["Palatino", "Palatino", false], ["SF Pro Text", "SF Pro Text", false], ["Times New Roman", "Times New Roman", false],
+].map(([name, display, cjk]) => ({ name: name as string, display: display as string, cjk: cjk as boolean }));
+
 export interface Backend {
   isDemo: boolean;
   pickFolder(): Promise<string | null>;
@@ -20,6 +30,11 @@ export interface Backend {
   listVersions(path: string): Promise<VersionMeta[]>;
   readVersion(path: string, id: string): Promise<string>;
   onExternalChange(cb: (path: string) => void): () => void;
+  listFonts(): Promise<FontFamily[]>;
+  createFile(dir: string, base: string): Promise<string>;
+  takePendingOpen(): Promise<string[]>;
+  onOpenFile(cb: () => void): () => void;
+  onMenu(cb: (id: string) => void): () => void;
 }
 
 const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -44,6 +59,19 @@ async function tauriBackend(): Promise<Backend> {
     onExternalChange(cb) {
       let un: (() => void) | null = null;
       listen<{ path: string }>("external-change", (e) => cb(e.payload.path)).then((u) => (un = u));
+      return () => un?.();
+    },
+    listFonts: () => invoke("list_fonts"),
+    createFile: (dir, base) => invoke("create_file", { dir, base }),
+    takePendingOpen: () => invoke("take_pending_open"),
+    onOpenFile(cb) {
+      let un: (() => void) | null = null;
+      listen("open-file", () => cb()).then((u) => (un = u));
+      return () => un?.();
+    },
+    onMenu(cb) {
+      let un: (() => void) | null = null;
+      listen<string>("menu", (e) => cb(e.payload)).then((u) => (un = u));
       return () => un?.();
     },
   };
@@ -101,6 +129,16 @@ function demoBackend(): Backend {
     async listVersions(path) { return load(path).slice().reverse().map(({ blocks: _b, ...m }) => m); },
     async readVersion(path, id) { const r = load(path).find((x) => x.id === id); return r ? content(r) : ""; },
     onExternalChange(cb) { listeners.add(cb); return () => listeners.delete(cb); },
+    async listFonts() { return FALLBACK_FONTS; },
+    async createFile(dir, base) {
+      let p = `${dir}/${base}.md`, n = 2;
+      while (files.has(p)) p = `${dir}/${base} ${n++}.md`;
+      files.set(p, `# ${p.split("/").pop()!.replace(/\.md$/, "")}\n\n`);
+      return p;
+    },
+    async takePendingOpen() { return []; },
+    onOpenFile() { return () => {}; },
+    onMenu() { return () => {}; },
   };
   // 演示用：模拟 AI 在编辑器外改写文件
   (window as unknown as { holymarkSimulateExternal: (p: string, c: string) => Promise<void> }).holymarkSimulateExternal = async (p, c) => {

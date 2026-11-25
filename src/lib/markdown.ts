@@ -194,3 +194,25 @@ export function alignBlocks(oldText: string, newText: string): Row[] {
   flush();
   return rows;
 }
+
+/** 新文本里相对旧文本新增或改过的行号（从 1 开始），用于改动高亮 */
+export function changedLines(oldText: string, newText: string): number[] {
+  const A = oldText.split("\n"), B = newText.split("\n");
+  // 去掉首尾相同的部分，中间做 LCS，行数多时直接整段算作改动
+  let s = 0;
+  while (s < A.length && s < B.length && A[s] === B[s]) s++;
+  let ea = A.length - 1, eb = B.length - 1;
+  while (ea >= s && eb >= s && A[ea] === B[eb]) { ea--; eb--; }
+  const a = A.slice(s, ea + 1), b = B.slice(s, eb + 1);
+  if (a.length * b.length > 1_000_000) return b.map((_, i) => s + i + 1);
+  const dp = Array.from({ length: a.length + 1 }, () => new Uint32Array(b.length + 1));
+  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const out: number[] = [];
+  let i = 0, j = 0;
+  while (j < b.length) {
+    if (i < a.length && a[i] === b[j]) { i++; j++; }
+    else if (i < a.length && dp[i + 1][j] >= dp[i][j + 1]) i++;
+    else { if (b[j].trim()) out.push(s + j + 1); j++; }
+  }
+  return out;
+}

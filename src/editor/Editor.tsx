@@ -1,13 +1,13 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { Compartment, EditorState, Extension } from "@codemirror/state";
 import { EditorView, keymap, drawSelection, highlightActiveLine } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
-import { searchKeymap } from "@codemirror/search";
+import { searchKeymap, openSearchPanel } from "@codemirror/search";
 import { tags as t } from "@lezer/highlight";
-import { livePreview, PreviewOptions } from "./livePreview";
+import { flash, livePreview, PreviewOptions } from "./livePreview";
 import { continueList, toggleInline } from "./commands";
 
 export interface EditorHandle {
@@ -16,6 +16,10 @@ export interface EditorHandle {
   load: (text: string) => void;
   /** 外部修改后替换内容，保留光标大致位置 */
   replace: (text: string) => void;
+  flash: (lines: number[]) => void;
+  undo: () => void;
+  redo: () => void;
+  find: () => void;
 }
 
 interface Props {
@@ -98,6 +102,10 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial,
       v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: text }, selection: { anchor: head } });
       silent.current = false;
     },
+    flash(lines) { if (viewRef.current && lines.length) flash(viewRef.current, lines); },
+    undo() { const v = viewRef.current; if (v) { undo(v); v.focus(); } },
+    redo() { const v = viewRef.current; if (v) { redo(v); v.focus(); } },
+    find() { const v = viewRef.current; if (v) { v.focus(); openSearchPanel(v); } },
   }));
 
   return <div className="hm-editor" ref={host} />;

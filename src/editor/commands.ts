@@ -5,22 +5,25 @@ import type { EditorView } from "@codemirror/view";
 export type InlineKind = "bold" | "italic" | "strike" | "code" | "math";
 const MARK: Record<InlineKind, string> = { bold: "**", italic: "*", strike: "~~", code: "`", math: "$" };
 
-/** 加上或去掉行内符号。选区两侧已有同样符号时去掉。 */
+/** 加上或去掉行内符号。选区两侧已有同样符号时去掉。完成后光标放在这段文字末尾；没选中文字时光标停在两个符号中间。 */
 export function toggleInline(view: EditorView, kind: InlineKind) {
   const mk = MARK[kind];
   const { state } = view;
   view.dispatch(state.changeByRange((r) => {
+    if (r.empty) {
+      return { changes: { from: r.from, insert: mk + mk }, range: EditorSelection.cursor(r.from + mk.length) };
+    }
     const before = state.sliceDoc(r.from - mk.length, r.from);
     const after = state.sliceDoc(r.to, r.to + mk.length);
-    const isBoldStar = mk === "*" && (state.sliceDoc(r.from - 2, r.from) === "**" && state.sliceDoc(r.from - 3, r.from) !== "***");
+    const isBoldStar = mk === "*" && state.sliceDoc(r.from - 2, r.from) === "**" && state.sliceDoc(r.from - 3, r.from) !== "***";
     if (before === mk && after === mk && !isBoldStar) {
-      return { changes: [{ from: r.from - mk.length, to: r.from }, { from: r.to, to: r.to + mk.length }], range: EditorSelection.range(r.from - mk.length, r.to - mk.length) };
+      return { changes: [{ from: r.from - mk.length, to: r.from }, { from: r.to, to: r.to + mk.length }], range: EditorSelection.cursor(r.to - mk.length) };
     }
     const inner = state.sliceDoc(r.from, r.to);
     if (inner.length >= 2 * mk.length && inner.startsWith(mk) && inner.endsWith(mk)) {
-      return { changes: { from: r.from, to: r.to, insert: inner.slice(mk.length, -mk.length) }, range: EditorSelection.range(r.from, r.to - 2 * mk.length) };
+      return { changes: { from: r.from, to: r.to, insert: inner.slice(mk.length, -mk.length) }, range: EditorSelection.cursor(r.to - 2 * mk.length) };
     }
-    return { changes: [{ from: r.from, insert: mk }, { from: r.to, insert: mk }], range: EditorSelection.range(r.from + mk.length, r.to + mk.length) };
+    return { changes: [{ from: r.from, insert: mk }, { from: r.to, insert: mk }], range: EditorSelection.cursor(r.to + 2 * mk.length) };
   }));
   view.focus();
 }
@@ -62,7 +65,9 @@ export function setBlock(view: EditorView, kind: BlockKind) {
     const pre = { p: "", h1: "# ", h2: "## ", h3: "### ", quote: "> ", ul: "- ", ol: `${i + 1}. `, task: "- [ ] " }[kind];
     changes.push({ from: line.from + m[1].length, to: line.from + m[0].length, insert: pre });
   }
-  view.dispatch({ changes });
+  const set = state.changes(changes);
+  // 光标放到最后一行末尾
+  view.dispatch({ changes: set, selection: { anchor: set.mapPos(state.doc.line(z).to, 1) } });
   view.focus();
 }
 

@@ -72,3 +72,23 @@ describe("bib", () => {
     expect(shortAuthor("Sweller, John")).toBe("Sweller");
   });
 });
+
+import { changedLines } from "../src/lib/markdown";
+import { parseTable, serializeTable } from "../src/editor/tableWidget";
+
+describe("changedLines", () => {
+  it("reports added and modified lines in the new text", () => {
+    expect(changedLines("甲\n乙\n丙", "甲\n乙改\n丙\n丁")).toEqual([2, 4]);
+    expect(changedLines("一样", "一样")).toEqual([]);
+  });
+});
+
+describe("table model", () => {
+  it("round-trips alignment, escaped pipes and ragged rows", () => {
+    const m = parseTable("| 名 | 值 |\n| :--- | ---: |\n| a\\|b | 1 |\n| c |");
+    expect(m.head).toEqual(["名", "值"]);
+    expect(m.align).toEqual([":---", "---:"]);
+    expect(m.rows).toEqual([["a\\|b", "1"], ["c", ""]]);
+    expect(serializeTable(m)).toBe("| 名 | 值 |\n| :--- | ---: |\n| a\\|b | 1 |\n| c |   |");
+  });
+});

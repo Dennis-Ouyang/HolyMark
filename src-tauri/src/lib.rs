@@ -1,5 +1,6 @@
 //! HolyMark 后端：文件夹、读写、版本库、外部修改监听。
 mod fsops;
+mod menu;
 mod versions;
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -22,6 +23,19 @@ struct Inner {
 struct AppState {
     inner: Arc<Mutex<Inner>>,
     watcher: Mutex<Option<RecommendedWatcher>>,
+    /// 从 Finder 打开、但前端还没来得及处理的文件
+    pending_open: Arc<Mutex<Vec<String>>>,
+    fonts: Mutex<Option<Vec<FontFamily>>>,
+}
+
+#[derive(Serialize, Clone)]
+struct FontFamily {
+    /// CSS 里用的名字
+    name: String,
+    /// 给用户看的名字（有中文名时用中文名）
+    display: String,
+    /// 是否包含中文字形
+    cjk: bool,
 }
 
 fn err<E: std::fmt::Display>(e: E) -> String {
@@ -163,11 +177,74 @@ fn set_merge_window(state: State<AppState>, secs: u64) {
     state.inner.lock().unwrap().merge_ms = secs.max(1) * 1000;
 }
 
+/// 列出系统里装的字体家族。结果缓存，第一次调用大约需要几百毫秒。
+#[tauri::command]
+fn list_fonts(state: State<AppState>) -> Vec<FontFamily> {
+    let mut cache = state.fonts.lock().unwrap();
+    if let Some(f) = cache.as_ref() {
+        return f.clone();
+    }
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+    let mut map: std::collections::BTreeMap<String, FontFamily> = Default::default();
+    for face in db.faces() {
+        let Some((en, _)) = face.families.first() else { continue };
+        if en.starts_with('.') {
+            continue; // 系统内部字体
+        }
+        let zh = face.families.iter().find(|(_, l)| format!("{:?}", l).starts_with("Chinese")).map(|(n, _)| n.clone());
+        let entry = map.entry(en.clone()).or_insert_with(|| FontFamily { name: en.clone(), display: en.clone(), cjk: false });
+        if let Some(z) = zh {
+            entry.display = z;
+            entry.cjk = true;
+        }
+        if !entry.cjk && face.families.iter().any(|(n, _)| n.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c))) {
+            entry.cjk = true;
+        }
+    }
+    let mut list: Vec<FontFamily> = map.into_values().collect();
+    list.sort_by(|a, b| b.cjk.cmp(&a.cjk).then(a.display.cmp(&b.display)));
+    *cache = Some(list.clone());
+    list
+}
+
+/// 在指定目录新建一个不重名的 Markdown 文件，返回路径
+#[tauri::command]
+fn create_file(state: State<AppState>, dir: String, base: String) -> Result<String, String> {
+    let d = PathBuf::from(&dir);
+    let mut p = d.join(format!("{}.md", base));
+    let mut n = 2;
+    while p.exists() {
+        p = d.join(format!("{} {}.md", base, n));
+        n += 1;
+    }
+    let title = p.file_stem().and_then(|s| s.to_str()).unwrap_or("未命名").to_string();
+    let content = format!("# {}\n\n", title);
+    state.inner.lock().unwrap().written.insert(p.clone(), content.clone());
+    fsops::write_text(&p, &content).map_err(err)?;
+    Ok(p.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn take_pending_open(state: State<AppState>) -> Vec<String> {
+    std::mem::take(&mut *state.pending_open.lock().unwrap())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let state = AppState::default();
+    let pending = state.pending_open.clone();
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState::default())
+        .manage(state)
+        .setup(|app| {
+            let m = menu::build(app.handle())?;
+            app.set_menu(m)?;
+            Ok(())
+        })
+        .on_menu_event(|app, e| {
+            let _ = app.emit("menu", e.id().0.clone());
+        })
         .invoke_handler(tauri::generate_handler![
             open_folder,
             list_tree,
@@ -177,8 +254,25 @@ pub fn run() {
             list_versions,
             read_version,
             set_merge_window,
-            copy_into_folder
+            copy_into_folder,
+            list_fonts,
+            create_file,
+            take_pending_open
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("HolyMark 启动失败");
+    app.run(move |handle, event| {
+        // 在 Finder 里用 HolyMark 打开 .md 文件
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        if let tauri::RunEvent::Opened { urls } = &event {
+            for u in urls {
+                if let Ok(p) = u.to_file_path() {
+                    let p = p.to_string_lossy().to_string();
+                    pending.lock().unwrap().push(p.clone());
+                    let _ = handle.emit("open-file", p);
+                }
+            }
+        }
+        let _ = (&handle, &event, &pending);
+    });
 }

@@ -17,7 +17,7 @@ function Item({ node, depth, current, onOpen }: { node: TreeNode; depth: number;
         <button className={"tn dir" + (open ? "" : " closed")} style={{ "--d": depth } as React.CSSProperties} onClick={() => setOpen(!open)} role="treeitem" aria-expanded={open}>
           <span className="chev"><Icon name="chev" size={12} /></span><span className="nm">{node.name}</span>
         </button>
-        {open && node.children.map((c) => <Item key={c.path} node={c} depth={depth + 1} current={current} onOpen={onOpen} />)}
+        {open && <div className="kids">{node.children.map((c) => <Item key={c.path} node={c} depth={depth + 1} current={current} onOpen={onOpen} />)}</div>}
       </>
     );
   }

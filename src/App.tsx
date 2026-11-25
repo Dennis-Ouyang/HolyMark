@@ -2,16 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EditorView } from "@codemirror/view";
 import { Editor, EditorHandle } from "./editor/Editor";
 import { esc } from "./editor/livePreview";
-import { Backend, getBackend, isTauri, TreeNode, VersionMeta } from "./lib/backend";
-import { alignBlocks, countWords, docLayout, headings, Note, parseNotes, plainText, setDocLayout } from "./lib/markdown";
+import { Backend, FontFamily, getBackend, isTauri, TreeNode, VersionMeta } from "./lib/backend";
+import { alignBlocks, changedLines, countWords, docLayout, headings, Note, parseNotes, plainText, setDocLayout } from "./lib/markdown";
 import { loadSettings, saveSettings, Settings, fontStack } from "./lib/settings";
 import { BibEntry, parseBib, shortAuthor } from "./lib/bib";
 import { DEMO_START } from "./lib/demo";
 import { FileTree } from "./components/FileTree";
 import { FloatingToolbar, Ribbon } from "./components/Toolbars";
+import { BlockKind, insertBlock, insertLink, insertNote, setBlock, tableMarkdown, toggleInline } from "./editor/commands";
 import { PanelTab, SidePanel, fmtTime, versionTitle } from "./components/SidePanel";
 import { Compare } from "./components/Compare";
-import { CountPop, Palette, PaletteItem, SaveVersionDialog, SettingsDialog } from "./components/Dialogs";
+import { CountPop, HelpDialog, Palette, PaletteItem, SaveVersionDialog, SettingsDialog } from "./components/Dialogs";
 import { Icon } from "./components/Icons";
 
 const AUTHOR = "我";
@@ -48,7 +49,10 @@ export default function App() {
   const [showSide, setShowSide] = useState(true);
   const [showPanel, setShowPanel] = useState(true);
   const [focus, setFocus] = useState(false);
-  const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "cite">(null);
+  const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "cite" | "help_syntax" | "help_keys">(null);
+  const [fonts, setFonts] = useState<FontFamily[]>([]);
+  const [scrollHeading, setScrollHeading] = useState(0);
+  const scroller = useRef<HTMLDivElement>(null);
   const [tick, setTick] = useState(0);
   const [selText, setSelText] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -71,9 +75,12 @@ export default function App() {
 
   /* ---------- folder & files ---------- */
   useEffect(() => { getBackend().then(setBe); }, []);
+  useEffect(() => { be?.listFonts().then(setFonts).catch(() => setFonts([])); }, [be]);
   useEffect(() => {
     if (!be) return;
     (async () => {
+      const pending = await be.takePendingOpen().catch(() => [] as string[]);
+      if (pending.length) { await openExternalFile(pending[pending.length - 1]); return; }
       const start = be.isDemo ? dirOf(dirOf(DEMO_START)) : s.lastFolder;
       if (start) await openFolder(start, be.isDemo ? DEMO_START : undefined).catch(() => update({ lastFolder: "" }));
     })();
@@ -90,6 +97,27 @@ export default function App() {
     setBib(entries);
     const first = file || files.find((f) => f.name.endsWith(".md"))?.path;
     if (first) await openFile(first);
+  }
+  /** 从 Finder 打开的文件：在当前文件夹里就直接打开，否则把它所在的文件夹作为工作区 */
+  async function openExternalFile(p: string) {
+    if (root && p.startsWith(root + "/")) await openFile(p);
+    else await openFolder(dirOf(p), p);
+  }
+  useEffect(() => {
+    if (!be) return;
+    return be.onOpenFile(async () => {
+      const ps = await be.takePendingOpen();
+      if (ps.length) await openExternalFile(ps[ps.length - 1]);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [be, root]);
+  async function newFile() {
+    if (!be || !root) { await chooseFolder(); return; }
+    const p = await be.createFile(path ? dirOf(path) : root, "未命名");
+    setTree(await be.listTree(root));
+    await openFile(p);
+    const v = view();
+    if (v) { v.focus(); v.dispatch({ selection: { anchor: v.state.doc.length } }); }
   }
   async function chooseFolder() {
     if (!be) return;
@@ -114,6 +142,8 @@ export default function App() {
     live.current = { path: p, text: content, lastWritten: content, lastVersionAt: Date.now() };
     setPath(p); setText(content); setCmp(null); setFresh(null);
     ed.current?.load(content);
+    if (scroller.current) scroller.current.scrollTop = 0;
+    setScrollHeading(0);
     // 打开时留一个基线版本，之后的任何修改都能回到这里
     await be.saveVersion(p, content, "auto").catch(() => null);
     setVersions(await be.listVersions(p).catch(() => []));
@@ -150,8 +180,10 @@ export default function App() {
       if (p !== live.current.path) return;
       const content = await be.readText(p);
       if (content === live.current.text) return;
+      const before = live.current.text;
       live.current.text = content; live.current.lastWritten = content;
       ed.current?.replace(content);
+      ed.current?.flash(changedLines(before, content));
       setText(content);
       const vs = await be.listVersions(p);
       setVersions(vs);
@@ -169,7 +201,22 @@ export default function App() {
   const layout = useMemo(() => docLayout(text), [text]);
   const notes = useMemo<Note[]>(() => parseNotes(text), [text]);
   const hs = useMemo(() => headings(text), [text]);
-  const currentHeading = useMemo(() => { let c = 0; hs.forEach((h, i) => { if (h.pos <= cursor) c = i; }); return c; }, [hs, cursor]);
+  // 大纲高亮跟随正文滚动位置
+  const syncScrollHeading = useCallback(() => {
+    const v = view(), sc = scroller.current;
+    if (!v || !sc) return;
+    const top = sc.getBoundingClientRect().top + 80;
+    let c = 0;
+    hs.forEach((h, i) => {
+      if (h.pos > v.state.doc.length) return;
+      const y = v.lineBlockAt(h.pos).top + v.documentTop;
+      if (y <= top) c = i;
+    });
+    setScrollHeading(c);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hs]);
+  useEffect(() => { syncScrollHeading(); }, [syncScrollHeading]);
+  const currentHeading = scrollHeading;
   const count = useCallback((t: string, p: boolean) => countWords(t, p), []);
   const stats = useMemo(() => {
     const total = countWords(plainText(text), s.countPunct);
@@ -206,6 +253,81 @@ export default function App() {
     setCursor(r.head);
     setSelText(r.empty ? "" : v.state.sliceDoc(r.from, r.to));
     setTick((t) => t + 1);
+  }, []);
+
+  /** 点正文下方的空白：光标放到文末；最后一行有字就新起一段 */
+  function clickBelow(e: React.MouseEvent) {
+    const v = view();
+    if (!v || !path || cmp) return;
+    const t = e.target as HTMLElement;
+    if (t.closest(".cm-content") || t.closest("button,input,.welcome")) return;
+    const contentBottom = v.contentDOM.getBoundingClientRect().bottom;
+    if (e.clientY < contentBottom) return;
+    e.preventDefault();
+    // 新段落前面要有一个空行，否则会被 Markdown 当成上一段（比如列表）的续行
+    const text = v.state.doc.toString();
+    const trailing = (text.match(/\n*$/) || [""])[0].length;
+    const need = text.trim() ? Math.max(0, 2 - trailing) : 0;
+    const end = text.length + need;
+    v.dispatch({ changes: need ? { from: text.length, insert: "\n".repeat(need) } : undefined, selection: { anchor: end }, scrollIntoView: true });
+    v.focus();
+  }
+
+  /* ---------- 菜单 ---------- */
+  function onMenu(id: string) {
+    const v = view();
+    const ae = document.activeElement as HTMLElement | null;
+    const inField = !!ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || (ae.isContentEditable && !ae.classList.contains("cm-content")));
+    if (id === "undo" || id === "redo") {
+      if (inField) document.execCommand(id);
+      else if (id === "undo") ed.current?.undo(); else ed.current?.redo();
+      return;
+    }
+    const block = id.startsWith("block_") ? (id.slice(6) as BlockKind) : null;
+    if (block) { if (v) setBlock(v, block); return; }
+    const inline = { bold: "bold", italic: "italic", strike: "strike", code: "code", math: "math" } as const;
+    if (id in inline) { if (v) toggleInline(v, inline[id as keyof typeof inline]); return; }
+    switch (id) {
+      case "settings": setDlg("settings"); break;
+      case "new_file": newFile(); break;
+      case "open_folder": chooseFolder(); break;
+      case "save_version": if (path) setDlg("save"); break;
+      case "find": ed.current?.find(); break;
+      case "search": setDlg((d) => (d === "palette" ? null : "palette")); break;
+      case "link": if (v) insertLink(v); break;
+      case "cite": setDlg("cite"); break;
+      case "note": if (v && !insertNote(v, AUTHOR)) say("先选中要批注的文字"); break;
+      case "insert_table": if (v) insertBlock(v, tableMarkdown(2, 3), 2); break;
+      case "insert_code": if (v) insertBlock(v, "```python\n\n```", 10); break;
+      case "insert_math": if (v) insertBlock(v, "$$\n\n$$", 3); break;
+      case "insert_mermaid": if (v) insertBlock(v, "```mermaid\nflowchart LR\n  A[开始] --> B[结束]\n```", 11); break;
+      case "insert_image": pickImage(); break;
+      case "insert_hr": if (v) insertBlock(v, "---"); break;
+      case "toggle_side": setShowSide((x) => !x); break;
+      case "toggle_panel": setShowPanel((x) => !x); break;
+      case "toggle_ribbon": update({ ribbonCollapsed: !s.ribbonCollapsed }); break;
+      case "focus": setFocus((x) => !x); break;
+      case "panel_outline": setShowPanel(true); setTab("outline"); break;
+      case "panel_notes": setShowPanel(true); setTab("notes"); break;
+      case "panel_versions": setShowPanel(true); setTab("versions"); break;
+      case "toggle_syntax": update({ syntax: s.syntax === "always" ? "active" : "always" }); break;
+      case "help_syntax": setDlg("help_syntax"); break;
+      case "help_keys": setDlg("help_keys"); break;
+    }
+  }
+  const menuRef = useRef(onMenu);
+  menuRef.current = onMenu;
+  useEffect(() => { if (be) return be.onMenu((id) => menuRef.current(id)); }, [be]);
+
+  // 原生应用没有网页右键菜单；正文和输入框里保留系统的拷贝粘贴菜单
+  useEffect(() => {
+    if (!isTauri) return;
+    const f = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest(".cm-content, input, textarea, [contenteditable=true]")) e.preventDefault();
+    };
+    addEventListener("contextmenu", f);
+    return () => removeEventListener("contextmenu", f);
   }, []);
 
   /* ---------- actions ---------- */
@@ -249,7 +371,9 @@ export default function App() {
     await flush();
     await be.saveVersion(path, live.current.text, "auto", undefined, "恢复前自动保存");
     const content = await be.readVersion(path, cmp.v.id);
+    const before = live.current.text;
     ed.current?.replace(content);
+    window.setTimeout(() => ed.current?.flash(changedLines(before, content)), 50);
     live.current.text = content;
     setText(content);
     await flush();
@@ -324,7 +448,9 @@ export default function App() {
   const commands: PaletteItem[] = [
     { group: "命令", icon: "cmd", title: "保存版本", keys: ["⌘", "S"], run: () => setDlg("save") },
     { group: "命令", icon: "cmd", title: "插入引用（文献或文件）", run: () => setTimeout(() => setDlg("cite"), 0) },
-    { group: "命令", icon: "cmd", title: "打开文件夹…", run: chooseFolder },
+    { group: "命令", icon: "cmd", title: "打开文件夹…", keys: ["⌘", "O"], run: chooseFolder },
+    { group: "命令", icon: "cmd", title: "新建文稿", keys: ["⌘", "N"], run: newFile },
+    { group: "命令", icon: "cmd", title: "Markdown 语法速查", run: () => setTimeout(() => setDlg("help_syntax"), 0) },
     { group: "命令", icon: "cmd", title: "设置", keys: ["⌘", ","], run: () => setDlg("settings") },
     { group: "命令", icon: "cmd", title: "专注模式", keys: ["⌘", "⇧", "F"], run: () => setFocus((f) => !f) },
     ...hs.filter((h) => h.level >= 2).map((h) => ({ group: "跳转", icon: "go", title: h.text, run: () => jump(h.pos) })),
@@ -344,6 +470,8 @@ export default function App() {
       else if (mod && e.shiftKey && k === "f") { e.preventDefault(); setFocus((x) => !x); }
       else if (mod && e.key === "\\") { e.preventDefault(); setShowSide((x) => !x); }
       else if (mod && e.key === "/") { e.preventDefault(); setShowPanel((x) => !x); }
+      else if (mod && k === "n") { e.preventDefault(); newFile(); }
+      else if (mod && k === "o") { e.preventDefault(); chooseFolder(); }
       else if (e.key === "Escape" && !dlg) { if (cmp) setCmp(null); else if (focus) setFocus(false); }
     };
     addEventListener("keydown", f);
@@ -389,9 +517,10 @@ export default function App() {
       </aside>
 
       <main className="main">
-        <Ribbon view={ed.current?.view() ?? null} author={AUTHOR} settings={s} layout={layout} onLayout={applyLayout}
+        <Ribbon view={ed.current?.view() ?? null} author={AUTHOR} settings={s} fonts={fonts} layout={layout} onLayout={applyLayout}
+          collapsed={s.ribbonCollapsed} setCollapsed={(c) => update({ ribbonCollapsed: c })}
           onSaveVersion={() => setDlg("save")} onPickImage={pickImage} onCite={() => setDlg("cite")} />
-        <div className="scroller">
+        <div className="scroller" ref={scroller} onScroll={() => window.requestAnimationFrame(syncScrollHeading)} onMouseDown={clickBelow}>
           <div className="doc">
             {!path && <div className="welcome"><h2>HolyMark</h2><p>打开一个放稿件的文件夹开始写作。文件就是普通的 Markdown，换任何编辑器都能打开。</p><button className="btn acc" onClick={chooseFolder}>打开文件夹</button></div>}
             <div hidden={!path}><Editor ref={ed} initial="" preview={preview} previewKey={previewKey} onChange={onChange} onSelection={onSelection} /></div>
@@ -422,7 +551,8 @@ export default function App() {
 
       {countPop && <CountPop title={countPop.title} text={countPop.text} count={count} anchor={countPop.rect} onClose={() => setCountPop(null)} />}
       {dlg === "save" && <SaveVersionDialog changes={saveChanges} fileName={fileName} onSave={saveVersion} onClose={() => setDlg(null)} />}
-      {dlg === "settings" && <SettingsDialog s={s} onChange={update} onClose={() => setDlg(null)} />}
+      {dlg === "settings" && <SettingsDialog s={s} fonts={fonts} onChange={update} onClose={() => setDlg(null)} />}
+      {(dlg === "help_syntax" || dlg === "help_keys") && <HelpDialog kind={dlg === "help_syntax" ? "syntax" : "keys"} onClose={() => setDlg(null)} />}
       {dlg === "palette" && <Palette items={commands} search={search} onClose={() => setDlg(null)} placeholder="搜索全文、文件夹，或输入命令" />}
       {dlg === "cite" && <Palette items={citeItems} search={() => []} onClose={() => setDlg(null)} placeholder="搜索文献或文件，回车插入" />}
       {toast && <div className="toast" role="status"><i />{toast}</div>}

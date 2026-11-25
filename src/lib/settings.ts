@@ -13,15 +13,18 @@ export interface Settings {
   autoMinutes: number;
   mergeSeconds: number;
   lastFolder: string;
+  ribbonCollapsed: boolean;
+  /** 设置格式版本，用来迁移旧的默认值 */
+  v: number;
 }
 
 export const DEFAULTS: Settings = {
   theme: "system",
-  headingFont: "思源宋体",
-  bodyFont: "思源宋体",
-  fontSize: 17,
-  lineHeight: 1.9,
-  measure: 38,
+  headingFont: "PingFang SC",
+  bodyFont: "PingFang SC",
+  fontSize: 16,
+  lineHeight: 1.75,
+  measure: 40,
   syntax: "active",
   countPunct: false,
   goalOn: false,
@@ -29,27 +32,39 @@ export const DEFAULTS: Settings = {
   autoMinutes: 10,
   mergeSeconds: 5,
   lastFolder: "",
+  ribbonCollapsed: false,
+  v: 2,
 };
 
 const KEY = "holymark-settings";
 export function loadSettings(): Settings {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || "{}") }; } catch { return { ...DEFAULTS }; }
+  let saved: Partial<Settings> = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch { /* 读不到就用默认值 */ }
+  if ((saved.v ?? 1) < 2) {
+    // 第一版的默认排版（思源宋体 17px）换成新默认；用户自己改过的值保留
+    if (saved.headingFont === "思源宋体") delete saved.headingFont;
+    if (saved.bodyFont === "思源宋体") delete saved.bodyFont;
+    if (saved.fontSize === 17) delete saved.fontSize;
+    if (saved.lineHeight === 1.9) delete saved.lineHeight;
+    if (saved.measure === 38) delete saved.measure;
+  }
+  return { ...DEFAULTS, ...saved, v: 2 };
 }
 export function saveSettings(s: Settings) {
   try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* 隐私模式下忽略 */ }
 }
 
+/** 第一版设置里用过的中文名 → 系统字体家族名 */
 const ALIAS: Record<string, string> = {
-  "思源宋体": '"Noto Serif SC","Source Han Serif SC"', "Source Han Serif SC": '"Source Han Serif SC","Noto Serif SC"',
-  "思源黑体": '"Noto Sans SC","Source Han Sans SC"', "Source Han Sans SC": '"Source Han Sans SC","Noto Sans SC"',
-  "宋体": 'SimSun,"Songti SC",STSong', "黑体": 'SimHei,"Heiti SC",STHeiti', "楷体": 'KaiTi,STKaiti,"Kaiti SC"',
-  "仿宋": "FangSong,STFangsong", "苹方": '"PingFang SC"', "微软雅黑": '"Microsoft YaHei"', "等线": "DengXian",
+  "思源宋体": "Noto Serif SC", "思源黑体": "Noto Sans SC", "宋体": "Songti SC", "黑体": "Heiti SC",
+  "楷体": "Kaiti SC", "仿宋": "STFangsong", "苹方": "PingFang SC", "微软雅黑": "Microsoft YaHei", "等线": "DengXian",
 };
-export const FONT_SUGGESTIONS = ["思源宋体", "思源黑体", "宋体", "黑体", "楷体", "仿宋", "苹方", "微软雅黑", "等线", "华文中宋", "Times New Roman", "Georgia", "Inter", "Helvetica Neue"];
-const SERIF_HINT = /宋|仿宋|楷|Serif|Times|Georgia|Song|Ming/i;
+const SERIF = /song|serif|ming|kai|fangsong|times|georgia|palatino|garamond|new york|iowan|baskerville|宋|楷|仿宋|明/i;
 
-/** 用户填的字体名 → CSS font-family。字体没装时退回到思源宋体/黑体。 */
+/** 字体家族名 → CSS font-family，带合适的回退：字体没装时退回到系统的宋体或苹方 */
 export function fontStack(name: string): string {
-  const head = ALIAS[name] || `"${name.replace(/"/g, "")}"`;
-  return `${head},${SERIF_HINT.test(name) ? '"Songti SC","Noto Serif SC",serif' : '"PingFang SC","Noto Sans SC",sans-serif'}`;
+  const n = ALIAS[name] || name;
+  if (!n) return '-apple-system,"PingFang SC",sans-serif';
+  const fallback = SERIF.test(n) ? '"Songti SC","Noto Serif SC",serif' : '-apple-system,"PingFang SC","Noto Sans SC",sans-serif';
+  return `"${n.replace(/"/g, "")}",${fallback}`;
 }
