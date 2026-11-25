@@ -628,7 +628,7 @@ export default function App() {
       {dlg === "palette" && <Palette items={commands} search={search} onClose={() => setDlg(null)} placeholder="搜索全文、文件夹，或输入命令" />}
       {dlg === "cite" && <Palette items={citeItems} search={citeSearch} pinned={pickOther} onClose={() => setDlg(null)} placeholder="搜索文献或文件，回车插入" />}
       {dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage}
-        onClose={() => setDlg(null)} onDone={(m, out) => { setDlg(null); say(m, out ? { label: "在 Finder 中显示", run: () => be.reveal(out) } : undefined); }} />}
+        onClose={() => setDlg(null)} onDone={(m, out) => { setDlg(null); say(m, out ? { label: isWindows ? "在资源管理器中显示" : "在访达中显示", run: () => be.reveal(out) } : undefined); }} />}
       {toast && <div className="toast" role="status"><i />{toast.msg}{toast.action && <button className="lnk" onClick={() => { toast.action!.run(); setToast(null); }}>{toast.action.label}</button>}</div>}
     </div>
   );
