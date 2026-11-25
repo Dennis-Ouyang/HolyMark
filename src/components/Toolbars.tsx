@@ -141,7 +141,7 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
               {big("mermaid", "图表", "Mermaid 图表", run((x) => insertBlock(x, "```mermaid\nflowchart LR\n  A[开始] --> B[结束]\n```", 11)))}
               {big("hr", "分隔线", "分隔线", run((x) => insertBlock(x, "---")))}
             </div><span className="gl">块</span></div>
-            <div className="rgrp"><div className="row">{big("cite", "文献", "插入引用 ⌘⇧C", onCite)}{big("link", "链接", "插入链接 ⌘⇧K", run((x) => insertLink(x)))}</div><span className="gl">引用</span></div>
+            <div className="rgrp"><div className="row">{big("cite", "引用", "引用文献或文件 ⌘⇧C", onCite)}{big("link", "链接", "插入链接 ⌘⇧K", run((x) => insertLink(x)))}</div><span className="gl">引用与链接</span></div>
           </>}
           {tab === "layout" && <>
             <div className="rgrp"><div className="row">

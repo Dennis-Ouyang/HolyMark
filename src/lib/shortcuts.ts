@@ -10,6 +10,7 @@ export const SHORTCUTS: [string, string][] = [
   ["Mod+N", "new_file"],
   ["Mod+O", "open_folder"],
   ["Mod+S", "save_version"],
+  ["Mod+Shift+E", "export"],
   ["Mod+F", "find"],
   ["Mod+K", "search"],
   ["Mod+0", "block_p"],

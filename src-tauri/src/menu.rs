@@ -30,7 +30,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&item("open_folder", "打开文件夹…", Some("CmdOrCtrl+O"))?)
         .separator()
         .item(&item("save_version", "保存版本…", Some("CmdOrCtrl+S"))?)
-        .item(&MenuItemBuilder::with_id("export", "导出…").accelerator("CmdOrCtrl+Shift+E").enabled(false).build(app)?)
+        .item(&item("export", "导出…", Some("CmdOrCtrl+Shift+E"))?)
         .separator()
         .item(&PredefinedMenuItem::close_window(app, Some("关闭窗口"))?)
         .build()?;
@@ -76,7 +76,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&item("math", "行内公式", Some("CmdOrCtrl+Shift+M"))?)
         .item(&item("link", "链接", Some("CmdOrCtrl+Shift+K"))?)
         .separator()
-        .item(&item("cite", "插入引用…", Some("CmdOrCtrl+Shift+C"))?)
+        .item(&item("cite", "引用文献或文件…", Some("CmdOrCtrl+Shift+C"))?)
         .item(&item("note", "添加批注", Some("CmdOrCtrl+Alt+M"))?)
         .build()?;
 

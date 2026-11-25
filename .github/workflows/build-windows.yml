@@ -2,12 +2,21 @@ name: 构建 Windows 安装包
 
 on:
   push:
-    branches: [main]
+    # 第二个分支是合并进 main 之前试构建用的，合并后删掉
+    branches: [main, claude/web-interface-performance-ampyrf]
   workflow_dispatch:
+
+env:
+  # 内置进应用的导出工具，和 build-macos.yml 保持一致
+  PANDOC_VERSION: "3.9"
+  TYPST_VERSION: "v0.15.1"
 
 jobs:
   windows:
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,11 +26,42 @@ jobs:
         with: { workspaces: src-tauri }
       - run: npm ci
       - run: npm test
+      - run: npx tsc --noEmit
       - name: Rust 单元测试
         run: cargo test --lib
         working-directory: src-tauri
+      - name: 下载 Pandoc 和 Typst
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          T=x86_64-pc-windows-msvc
+          mkdir -p src-tauri/binaries "$RUNNER_TEMP/tools"
+          cd "$RUNNER_TEMP/tools"
+          gh release download "$PANDOC_VERSION" -R jgm/pandoc -p "pandoc-*-windows-x86_64.zip"
+          unzip -q pandoc-*.zip
+          cp "$(find . -name pandoc.exe -type f | head -1)" "$GITHUB_WORKSPACE/src-tauri/binaries/pandoc-$T.exe"
+          gh release download "$TYPST_VERSION" -R typst/typst -p "typst-$T.zip"
+          unzip -q "typst-$T.zip"
+          cp "$(find . -name typst.exe -type f | head -1)" "$GITHUB_WORKSPACE/src-tauri/binaries/typst-$T.exe"
+          ls -lh "$GITHUB_WORKSPACE"/src-tauri/binaries
+      - name: 端到端导出测试（真的调用 Pandoc 和 Typst）
+        run: |
+          set -euo pipefail
+          SMOKE="$(cygpath -m "$RUNNER_TEMP")/smoke"
+          npx vite-node scripts/export-smoke.ts "$SMOKE"
+          cd src-tauri
+          mkdir -p binaries-plain
+          cp binaries/pandoc-x86_64-pc-windows-msvc.exe binaries-plain/pandoc.exe
+          cp binaries/typst-x86_64-pc-windows-msvc.exe binaries-plain/typst.exe
+          for f in docx pdf; do
+            HOLYMARK_TOOLS_DIR="$(cygpath -w "$PWD/binaries-plain")" HM_EXPORT_JOB="$SMOKE/job-$f.json" cargo test --lib e2e_from_env -- --ignored --nocapture
+            test -s "$SMOKE/out.$f"
+          done
+        env:
+          SMOKE_FONT_CJK: "SimSun"
       - name: 打包（安装程序 .exe）
-        run: npm run tauri build -- --bundles nsis
+        run: npm run tauri build -- --bundles nsis --config src-tauri/tauri.tools.conf.json
       - uses: actions/upload-artifact@v4
         with:
           name: HolyMark-Windows

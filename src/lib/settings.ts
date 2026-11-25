@@ -85,6 +85,13 @@ const EQUIV: string[][] = [
 ];
 const SERIF = /song|serif|ming|kai|fangsong|times|georgia|palatino|garamond|new york|iowan|baskerville|simsun|宋|楷|仿宋|明/i;
 
+/** 同类字体在另一个系统上的名字（不含自己），给导出 PDF 的字体列表用 */
+export function fontFallbacks(name: string): string[] {
+  const n = (ALIAS[name] || name).toLowerCase();
+  const g = EQUIV.find((x) => x.some((f) => f.toLowerCase() === n));
+  return g ? g.filter((f) => f.toLowerCase() !== n) : [];
+}
+
 const GENERIC = new Set(["-apple-system", "serif", "sans-serif", "monospace"]);
 const q = (f: string) => (GENERIC.has(f) ? f : `"${f.replace(/"/g, "")}"`);
 

@@ -20,6 +20,7 @@ notify = "6"
 sha2 = "0.10"
 fontdb = "0.22"
 base64 = "0.22"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # Windows / Linux：再次双击 .md 时交给已经打开的窗口（macOS 系统本身就是单实例）
 [target.'cfg(not(target_os = "macos"))'.dependencies]

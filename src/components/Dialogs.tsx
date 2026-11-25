@@ -88,14 +88,16 @@ export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; f
 
 /* ---------------- ⌘K：搜索与命令 ---------------- */
 export interface PaletteItem { group: string; icon: string; title: string; sub?: string; keys?: string[]; run: () => void }
-export function Palette({ items, search, onClose, placeholder }: { items: PaletteItem[]; search: (q: string) => PaletteItem[]; onClose: () => void; placeholder: string }) {
+export function Palette({ items, search, onClose, placeholder, pinned }: { items: PaletteItem[]; search: (q: string) => PaletteItem[]; onClose: () => void; placeholder: string; pinned?: PaletteItem }) {
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const list = useMemo(() => {
     const ql = q.trim().toLowerCase();
-    const cmds = items.filter((c) => !ql || c.title.toLowerCase().includes(ql));
-    return ql ? [...search(q.trim()), ...cmds.slice(0, 6)] : cmds;
-  }, [q, items, search]);
+    const cmds = items.filter((c) => c !== pinned && (!ql || (c.title + " " + (c.sub || "")).toLowerCase().includes(ql)));
+    const out = ql ? [...search(q.trim()), ...cmds.slice(0, 12)] : cmds;
+    // 固定项（比如“选择其他文件…”）搜索时也一直在最后
+    return pinned ? [...out, pinned] : out;
+  }, [q, items, search, pinned]);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => { box.current?.querySelector(".sel")?.scrollIntoView({ block: "nearest" }); }, [sel]);
   const run = (i: number) => { const it = list[i]; onClose(); it?.run(); };
@@ -148,7 +150,7 @@ export const KEYS: [string, string][] = [
   ["搜索与命令", "⌘ K"], ["保存版本", "⌘ S"], ["新建文稿", "⌘ N"], ["打开文件夹", "⌘ O"], ["设置", "⌘ ,"], ["查找", "⌘ F"],
   ["粗体 / 斜体", "⌘ B / ⌘ I"], ["删除线", "⌘ ⇧ X"], ["行内代码", "⌘ E"], ["行内公式", "⌘ ⇧ M"], ["链接", "⌘ ⇧ K"],
   ["正文 / 标题 1–3", "⌘ 0 / ⌘ 1–3"], ["无序 / 有序 / 任务列表", "⌘ ⇧ 8 / 7 / 9"], ["引用", "⌘ ⇧ ."],
-  ["插入引用", "⌘ ⇧ C"], ["添加批注", "⌘ ⌥ M"], ["插入图片", "⌘ ⇧ I"],
+  ["引用文献或文件", "⌘ ⇧ C"], ["导出", "⌘ ⇧ E"], ["添加批注", "⌘ ⌥ M"], ["插入图片", "⌘ ⇧ I"],
   ["专注模式", "⌘ ⇧ F"], ["侧栏 / 右栏", "⌘ \\ / ⌘ /"], ["折叠功能区", "⌘ ⌥ R"], ["大纲 / 批注 / 版本", "⌘ ⌥ 1 / 2 / 3"],
   ["表格里换格", "Tab / ⇧ Tab"], ["离开当前块或表格", "Esc"],
 ];

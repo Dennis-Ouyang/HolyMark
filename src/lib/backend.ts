@@ -13,6 +13,18 @@ export type VersionSource = "saved" | "external" | "auto";
 export interface VersionMeta { id: string; at: number; source: VersionSource; name?: string | null; note?: string | null }
 
 export interface FontFamily { name: string; display: string; cjk: boolean }
+export interface ToolInfo { path: string; version: string; bundled: boolean }
+export interface ExportTools { pandoc: ToolInfo | null; typst: ToolInfo | null }
+/** 参考文档里读出来的样式，单位和导出选项一致 */
+export interface RefHeading { font?: string | null; size?: string | null; bold?: boolean | null; align?: string | null; before?: string | null; after?: string | null }
+export interface RefStyles {
+  pageMm: [string, string] | null; marginsCm: (string | null)[]; cjk: string | null; latin: string | null; size: string | null;
+  line: [string, string] | null; indent: string | null; before: string | null; after: string | null; align: string | null; headings: RefHeading[];
+}
+export interface ExportJob {
+  format: "docx" | "pdf"; markdown: string; output: string; defaultsDir: string; defaultsName: string; defaultsYaml: string;
+  referenceDoc: string | null; docxStyle: unknown; typstTemplate: string | null; assets: { name: string; data: string }[]; extraArgs: string[];
+}
 
 /** 浏览器预览里拿不到系统字体，给一份常见字体 */
 const WINDOWS_FONTS: FontFamily[] = [
@@ -30,6 +42,15 @@ const MAC_FONTS: FontFamily[] = [
 export interface Backend {
   isDemo: boolean;
   pickFolder(): Promise<string | null>;
+  /** 选一个文件（可以在文件夹以外）；extensions 为空表示任何文件 */
+  pickFile(title: string, extensions?: string[]): Promise<string | null>;
+  /** 选保存位置 */
+  pickSave(title: string, defaultPath: string, extension: string): Promise<string | null>;
+  exportTools(): Promise<ExportTools>;
+  exportRun(job: ExportJob): Promise<{ output: string; warnings: string }>;
+  readReference(path: string): Promise<RefStyles>;
+  /** 在 Finder 里显示 */
+  reveal(path: string): Promise<void>;
   openFolder(root: string): Promise<TreeNode[]>;
   listTree(root: string): Promise<TreeNode[]>;
   readText(path: string): Promise<string>;
@@ -52,13 +73,25 @@ const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
 async function tauriBackend(): Promise<Backend> {
   const { invoke } = await import("@tauri-apps/api/core");
   const { listen } = await import("@tauri-apps/api/event");
-  const { open } = await import("@tauri-apps/plugin-dialog");
+  const { open, save } = await import("@tauri-apps/plugin-dialog");
   return {
     isDemo: false,
     async pickFolder() {
       const r = await open({ directory: true, multiple: false, title: "打开文件夹" });
       return typeof r === "string" ? toPosix(r) : null;
     },
+    async pickFile(title, extensions) {
+      const r = await open({ multiple: false, directory: false, title, filters: extensions?.length ? [{ name: title, extensions }] : undefined });
+      return typeof r === "string" ? toPosix(r) : null;
+    },
+    async pickSave(title, defaultPath, extension) {
+      const r = await save({ title, defaultPath, filters: [{ name: extension.toUpperCase(), extensions: [extension] }] });
+      return r ? toPosix(r) : null;
+    },
+    exportTools: () => invoke("export_tools"),
+    exportRun: (job) => invoke("export_run", { job }),
+    readReference: (path) => invoke("read_reference", { path }),
+    reveal: (path) => invoke("reveal", { path }),
     openFolder: (root) => invoke("open_folder", { root }),
     listTree: (root) => invoke("list_tree", { root }),
     readText: (path) => invoke("read_text", { path }),
@@ -131,6 +164,12 @@ function demoBackend(): Backend {
   const b: Backend = {
     isDemo: true,
     async pickFolder() { return DEMO_ROOT; },
+    async pickFile() { return null; },
+    async pickSave() { return null; },
+    async exportTools() { return { pandoc: null, typst: null }; },
+    async exportRun() { throw new Error("浏览器预览里不能导出 Word 和 PDF"); },
+    async readReference() { throw new Error("浏览器预览里不能读取参考文档"); },
+    async reveal() { /* 浏览器里没有 Finder */ },
     async openFolder() { return tree(); },
     async listTree() { return tree(); },
     async readText(path) { return files.get(path) ?? ""; },

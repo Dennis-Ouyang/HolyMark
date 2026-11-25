@@ -1,8 +1,10 @@
 //! HolyMark 后端：文件夹、读写、版本库、外部修改监听。
+mod export;
 mod fsops;
 #[cfg(target_os = "macos")]
 mod menu;
 mod versions;
+mod xml;
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
@@ -253,6 +255,34 @@ fn create_file(state: State<AppState>, dir: String, base: String) -> Result<Stri
     Ok(slash(&p))
 }
 
+#[derive(Serialize)]
+struct ExportTools {
+    pandoc: Option<export::Tool>,
+    typst: Option<export::Tool>,
+}
+
+/// 导出要用的 Pandoc、Typst 在不在、是什么版本
+#[tauri::command]
+async fn export_tools() -> ExportTools {
+    ExportTools { pandoc: export::tool_info("pandoc"), typst: export::tool_info("typst") }
+}
+
+#[tauri::command]
+async fn export_run(job: export::ExportJob) -> Result<export::ExportResult, String> {
+    tauri::async_runtime::spawn_blocking(move || export::run(job)).await.map_err(err)?
+}
+
+/// 读参考文档（.docx / .dotx）里的样式，填进导出选项
+#[tauri::command]
+fn read_reference(path: String) -> Result<export::RefStyles, String> {
+    export::read_reference(Path::new(&path))
+}
+
+#[tauri::command]
+fn reveal(path: String) -> Result<(), String> {
+    export::reveal(&path)
+}
+
 #[tauri::command]
 fn take_pending_open(state: State<AppState>) -> Vec<String> {
     std::mem::take(&mut *state.pending_open.lock().unwrap())
@@ -326,7 +356,11 @@ pub fn run() {
             save_image,
             list_fonts,
             create_file,
-            take_pending_open
+            take_pending_open,
+            export_tools,
+            export_run,
+            read_reference,
+            reveal
         ])
         .build(tauri::generate_context!())
         .expect("HolyMark 启动失败");
