@@ -1,4 +1,6 @@
 /** 应用设置（所有文件的默认值）。单篇文件的版式写在它自己的属性区里，优先级更高。 */
+import { isWindows } from "./platform";
+
 export interface Settings {
   theme: "system" | "light" | "dark";
   headingFont: string;
@@ -20,10 +22,13 @@ export interface Settings {
   v: number;
 }
 
+/** 默认字体用系统自带的：macOS 苹方，Windows 微软雅黑 */
+const UI_FONT = isWindows ? "Microsoft YaHei" : "PingFang SC";
+
 export const DEFAULTS: Settings = {
   theme: "system",
-  headingFont: "PingFang SC",
-  bodyFont: "PingFang SC",
+  headingFont: UI_FONT,
+  bodyFont: UI_FONT,
   fontSize: 16,
   lineHeight: 1.75,
   measure: 40,
@@ -59,15 +64,37 @@ export function saveSettings(s: Settings) {
 
 /** 第一版设置里用过的中文名 → 系统字体家族名 */
 const ALIAS: Record<string, string> = {
-  "思源宋体": "Noto Serif SC", "思源黑体": "Noto Sans SC", "宋体": "Songti SC", "黑体": "Heiti SC",
-  "楷体": "Kaiti SC", "仿宋": "STFangsong", "苹方": "PingFang SC", "微软雅黑": "Microsoft YaHei", "等线": "DengXian",
+  "思源宋体": "Noto Serif SC", "思源黑体": "Noto Sans SC", "宋体": isWindows ? "SimSun" : "Songti SC", "黑体": isWindows ? "SimHei" : "Heiti SC",
+  "楷体": isWindows ? "KaiTi" : "Kaiti SC", "仿宋": isWindows ? "FangSong" : "STFangsong", "苹方": "PingFang SC", "微软雅黑": "Microsoft YaHei", "等线": "DengXian",
 };
-const SERIF = /song|serif|ming|kai|fangsong|times|georgia|palatino|garamond|new york|iowan|baskerville|宋|楷|仿宋|明/i;
 
-/** 字体家族名 → CSS font-family，带合适的回退：字体没装时退回到系统的宋体或苹方 */
+/**
+ * 同一类字体在 macOS 和 Windows 上的对应。文件属性区里写的是哪个系统的字体名都行，
+ * 在另一个系统上打开时自动用对应的字体，而不是退回到浏览器默认字体。
+ */
+const EQUIV: string[][] = [
+  ["PingFang SC", "Microsoft YaHei", "Noto Sans SC"],
+  ["Songti SC", "SimSun", "Noto Serif SC"],
+  ["Heiti SC", "SimHei", "Microsoft YaHei"],
+  ["Kaiti SC", "KaiTi", "STKaiti"],
+  ["STFangsong", "FangSong", "STFangsong"],
+  ["Hiragino Sans GB", "Microsoft YaHei"],
+  ["Helvetica Neue", "Segoe UI", "Arial"],
+  ["New York", "Georgia"],
+  ["SF Pro Text", "Segoe UI"],
+];
+const SERIF = /song|serif|ming|kai|fangsong|times|georgia|palatino|garamond|new york|iowan|baskerville|simsun|宋|楷|仿宋|明/i;
+
+const GENERIC = new Set(["-apple-system", "serif", "sans-serif", "monospace"]);
+const q = (f: string) => (GENERIC.has(f) ? f : `"${f.replace(/"/g, "")}"`);
+
+/** 字体家族名 → CSS font-family，带合适的回退：字体没装时用另一个系统上的对应字体，再退回到系统的宋体或黑体 */
 export function fontStack(name: string): string {
   const n = ALIAS[name] || name;
-  if (!n) return '-apple-system,"PingFang SC",sans-serif';
-  const fallback = SERIF.test(n) ? '"Songti SC","Noto Serif SC",serif' : '-apple-system,"PingFang SC","Noto Sans SC",sans-serif';
-  return `"${n.replace(/"/g, "")}",${fallback}`;
+  const sans = ["-apple-system", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "sans-serif"];
+  if (!n) return sans.map(q).join(",");
+  const fallback = SERIF.test(n) ? ["Songti SC", "SimSun", "Noto Serif SC", "serif"] : sans;
+  const same = EQUIV.find((g) => g.some((f) => f.toLowerCase() === n.toLowerCase())) ?? [];
+  const seen = new Set<string>();
+  return [n, ...same, ...fallback].filter((f) => !seen.has(f.toLowerCase()) && seen.add(f.toLowerCase())).map(q).join(",");
 }

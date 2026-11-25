@@ -13,24 +13,16 @@ import { PanelTab, SidePanel, fmtTime, versionTitle } from "./components/SidePan
 import { Compare } from "./components/Compare";
 import { CountPop, HelpDialog, Palette, PaletteItem, SaveVersionDialog, SettingsDialog } from "./components/Dialogs";
 import { Icon } from "./components/Icons";
+import { WindowControls } from "./components/WindowControls";
+import { baseName, dirOf, isInside, join, normalize, relative, toPosix } from "./lib/paths";
+import { isMac, isWindows, kbd, keyName } from "./lib/platform";
+import { menuIdFor } from "./lib/shortcuts";
 
 const AUTHOR = "我";
-const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent);
-const dirOf = (p: string) => p.replace(/\/[^/]*$/, "");
-const baseName = (p: string) => p.split("/").pop() || p;
-
-/** 把 a/b/../c 规范化 */
-function normalize(p: string) {
-  const out: string[] = [];
-  for (const part of p.split("/")) { if (part === "..") out.pop(); else if (part !== "." && part !== "") out.push(part); }
-  return (p.startsWith("/") ? "/" : "") + out.join("/");
-}
-function relative(fromDir: string, to: string) {
-  const a = fromDir.split("/").filter(Boolean), b = to.split("/").filter(Boolean);
-  let i = 0;
-  while (i < a.length && i < b.length && a[i] === b[i]) i++;
-  return [...a.slice(i).map(() => ".."), ...b.slice(i)].join("/") || ".";
-}
+/** macOS 有原生菜单负责快捷键；Windows 和浏览器预览里由前端处理 */
+const nativeMenu = isTauri && isMac;
+/** Windows 上不用系统标题栏，窗口按钮自己画 */
+const customFrame = isTauri && isWindows;
 function flatten(nodes: TreeNode[]): TreeNode[] { return nodes.flatMap((n) => (n.dir ? flatten(n.children) : [n])); }
 
 export default function App() {
@@ -99,9 +91,9 @@ export default function App() {
     const first = file || files.find((f) => f.name.endsWith(".md"))?.path;
     if (first) await openFile(first);
   }
-  /** 从 Finder 打开的文件：在当前文件夹里就直接打开，否则把它所在的文件夹作为工作区 */
+  /** 从访达或资源管理器打开的文件：在当前文件夹里就直接打开，否则把它所在的文件夹作为工作区 */
   async function openExternalFile(p: string) {
-    if (root && p.startsWith(root + "/")) await openFile(p);
+    if (isInside(root, p)) await openFile(p);
     else await openFolder(dirOf(p), p);
   }
   useEffect(() => {
@@ -199,6 +191,20 @@ export default function App() {
     addEventListener("beforeunload", f);
     return () => removeEventListener("beforeunload", f);
   });
+  // 关窗口（标题栏按钮、Alt+F4、⌘Q、任务栏）之前把还没写盘的内容存下来；最多等 2 秒，存不了也不拦着关
+  const flushRef = useRef(flush);
+  flushRef.current = flush;
+  useEffect(() => {
+    if (!isTauri) return;
+    let un: (() => void) | undefined, alive = true;
+    import("@tauri-apps/api/window").then(async ({ getCurrentWindow }) => {
+      const u = await getCurrentWindow().onCloseRequested(async () => {
+        await Promise.race([flushRef.current().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
+      });
+      if (alive) un = u; else u();
+    });
+    return () => { alive = false; un?.(); };
+  }, []);
 
   /* ---------- derived ---------- */
   const layout = useMemo(() => docLayout(text), [text]);
@@ -238,7 +244,8 @@ export default function App() {
     citeLabel: (k: string) => { const b = bibMap.get(k); return b ? `${shortAuthor(b.author)}, ${b.year}` : "@" + k; },
     resolveImage: (src: string) => {
       if (/^(https?:|data:)/.test(src)) return src;
-      const abs = normalize(dirOf(live.current.path) + "/" + decodeURI(src));
+      const raw = decodeURI(src);
+      const abs = /^(\/|[A-Za-z]:[\\/])/.test(raw) ? toPosix(raw) : normalize(join(dirOf(live.current.path), raw));
       if (!isTauri && demoImages.has(abs)) return demoImages.get(abs)!;
       if (isTauri) return (window as unknown as { __TAURI_INTERNALS__: { convertFileSrc: (p: string) => string } }).__TAURI_INTERNALS__.convertFileSrc(abs);
       return abs;
@@ -417,7 +424,7 @@ export default function App() {
       const ext = (f.type.split("/")[1] || "png").replace("jpeg", "jpg").replace("svg+xml", "svg");
       const name = f.name && f.name !== "image.png" ? f.name : `图片-${stamp()}.${ext}`;
       try {
-        const dest = await be.saveImage(dirOf(path) + "/assets", name, await toB64(f));
+        const dest = await be.saveImage(join(dirOf(path), "assets"), name, await toB64(f));
         parts.push(`![${baseName(dest).replace(/\.[^.]+$/, "")}](${encodeURI(relative(dirOf(path), dest))})`);
       } catch (e) { say(`图片保存失败：${e}`); }
     }
@@ -481,13 +488,13 @@ export default function App() {
   }, [text, hs, folderTexts, root, path]);
 
   const commands: PaletteItem[] = [
-    { group: "命令", icon: "cmd", title: "保存版本", keys: ["⌘", "S"], run: () => setDlg("save") },
+    { group: "命令", icon: "cmd", title: "保存版本", keys: ["⌘", "S"].map((k) => keyName(k)), run: () => setDlg("save") },
     { group: "命令", icon: "cmd", title: "插入引用（文献或文件）", run: () => setTimeout(() => setDlg("cite"), 0) },
-    { group: "命令", icon: "cmd", title: "打开文件夹…", keys: ["⌘", "O"], run: chooseFolder },
-    { group: "命令", icon: "cmd", title: "新建文稿", keys: ["⌘", "N"], run: newFile },
+    { group: "命令", icon: "cmd", title: "打开文件夹…", keys: ["⌘", "O"].map((k) => keyName(k)), run: chooseFolder },
+    { group: "命令", icon: "cmd", title: "新建文稿", keys: ["⌘", "N"].map((k) => keyName(k)), run: newFile },
     { group: "命令", icon: "cmd", title: "Markdown 语法速查", run: () => setTimeout(() => setDlg("help_syntax"), 0) },
-    { group: "命令", icon: "cmd", title: "设置", keys: ["⌘", ","], run: () => setDlg("settings") },
-    { group: "命令", icon: "cmd", title: "专注模式", keys: ["⌘", "⇧", "F"], run: () => setFocus((f) => !f) },
+    { group: "命令", icon: "cmd", title: "设置", keys: ["⌘", ","].map((k) => keyName(k)), run: () => setDlg("settings") },
+    { group: "命令", icon: "cmd", title: "专注模式", keys: ["⌘", "⇧", "F"].map((k) => keyName(k)), run: () => setFocus((f) => !f) },
     ...hs.filter((h) => h.level >= 2).map((h) => ({ group: "跳转", icon: "go", title: h.text, run: () => jump(h.pos) })),
   ];
   const citeItems: PaletteItem[] = [
@@ -496,18 +503,22 @@ export default function App() {
   ];
 
   /* ---------- keyboard ---------- */
+  // 没有原生菜单时（Windows、浏览器预览），菜单里的快捷键都在这里处理；
+  // macOS 上原生菜单先接住这些按键，这里只兜底几个常用的
+  const APP_LEVEL = useMemo(() => new Set(["search", "save_version", "settings", "focus", "toggle_side", "toggle_panel", "toggle_ribbon", "new_file", "open_folder", "panel_outline", "panel_notes", "panel_versions"]), []);
+  const MAC_FALLBACK = useMemo(() => new Set(["search", "save_version", "settings", "focus", "toggle_side", "toggle_panel", "new_file", "open_folder"]), []);
   useEffect(() => {
     const f = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey, k = e.key.toLowerCase();
-      if (mod && k === "k") { e.preventDefault(); setDlg((d) => (d === "palette" ? null : "palette")); }
-      else if (mod && k === "s") { e.preventDefault(); if (path) setDlg("save"); }
-      else if (mod && (k === "," || e.code === "Comma")) { e.preventDefault(); setDlg("settings"); }
-      else if (mod && e.shiftKey && k === "f") { e.preventDefault(); setFocus((x) => !x); }
-      else if (mod && e.key === "\\") { e.preventDefault(); setShowSide((x) => !x); }
-      else if (mod && e.key === "/") { e.preventDefault(); setShowPanel((x) => !x); }
-      else if (mod && k === "n") { e.preventDefault(); newFile(); }
-      else if (mod && k === "o") { e.preventDefault(); chooseFolder(); }
-      else if (e.key === "Escape" && !dlg) { if (cmp) setCmp(null); else if (focus) setFocus(false); }
+      if (e.key === "Escape" && !dlg) { if (cmp) setCmp(null); else if (focus) setFocus(false); return; }
+      if (e.defaultPrevented || e.isComposing) return; // 编辑器自己处理过的（如 ⌘B），或正在用输入法
+      const id = menuIdFor(e);
+      if (!id || (nativeMenu && !MAC_FALLBACK.has(id))) return;
+      // 焦点在输入框、表格单元格里时，格式和插入类的快捷键不作用到正文
+      const ae = document.activeElement as HTMLElement | null;
+      const inField = !!ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || (ae.isContentEditable && !ae.classList.contains("cm-content")));
+      if (inField && !APP_LEVEL.has(id)) return;
+      e.preventDefault();
+      onMenu(id);
     };
     addEventListener("keydown", f);
     return () => removeEventListener("keydown", f);
@@ -518,24 +529,25 @@ export default function App() {
   useEffect(() => { if (dlg === "save" && be && versions[0]) be.readVersion(path, versions[0].id).then(setLastVersionText); }, [dlg, be, versions, path]);
   const saveChanges = useMemo(() => (dlg === "save" ? alignBlocks(lastVersionText, text).filter((r) => r.ops).length : changesSinceLast), [dlg, lastVersionText, text, changesSinceLast]);
 
-  const appCls = ["app", showSide ? "" : "no-side", showPanel ? "" : "no-panel", focus ? "focus" : "", isTauri && isMac ? "mac" : ""].join(" ");
+  const appCls = ["app", showSide ? "" : "no-side", showPanel ? "" : "no-panel", focus ? "focus" : "", isTauri && isMac ? "mac" : "", customFrame ? "framed" : ""].join(" ");
   const fileName = baseName(path);
   const crumbs = path && root ? relative(root, path).split("/") : [];
 
   return (
     <div className={appCls} style={editorStyle}>
       <header className="titlebar" data-tauri-drag-region>
-        <button className="ib" title="切换侧栏 ⌘\" aria-label="切换侧栏" onClick={() => setShowSide(!showSide)}><Icon name="side" /></button>
+        <button className="ib" title={kbd("切换侧栏 ⌘\\")} aria-label="切换侧栏" onClick={() => setShowSide(!showSide)}><Icon name="side" /></button>
         <div className="crumbs" data-tauri-drag-region>
           {root && <span>{baseName(root)}</span>}
           {crumbs.map((c, i) => <span key={i} className="crumb"><span className="sep">/</span>{i === crumbs.length - 1 ? <b>{c}</b> : c}</span>)}
         </div>
         <div className="spacer" data-tauri-drag-region />
         {path && <div className={"savestate " + saveState}><i />{saveState === "saving" ? "保存中" : saveState === "error" ? "保存失败" : "已保存"}</div>}
-        <button className="searchbtn" onClick={() => setDlg("palette")} aria-label="搜索或执行命令"><Icon name="search" size={14} /><span className="lbl">搜索</span><kbd>⌘K</kbd></button>
-        <button className={"ib" + (focus ? " on" : "")} title="专注 ⌘⇧F" aria-label="专注模式" onClick={() => setFocus(!focus)}><Icon name="focus" /></button>
+        <button className="searchbtn" onClick={() => setDlg("palette")} aria-label="搜索或执行命令"><Icon name="search" size={14} /><span className="lbl">搜索</span><kbd>{kbd("⌘K")}</kbd></button>
+        <button className={"ib" + (focus ? " on" : "")} title={kbd("专注 ⌘⇧F")} aria-label="专注模式" onClick={() => setFocus(!focus)}><Icon name="focus" /></button>
         <button className="ib primary" title="导出功能在下一阶段实现" disabled>导出</button>
-        <button className="ib" title="切换右栏 ⌘/" aria-label="切换右栏" onClick={() => setShowPanel(!showPanel)}><Icon name="panel" /></button>
+        <button className="ib" title={kbd("切换右栏 ⌘/")} aria-label="切换右栏" onClick={() => setShowPanel(!showPanel)}><Icon name="panel" /></button>
+        {customFrame && <WindowControls />}
       </header>
 
       <aside className="side" aria-label="文件夹">
@@ -547,7 +559,7 @@ export default function App() {
             </button>
             <FileTree nodes={tree} current={path} onOpen={openFile} showAll={s.showAllFiles} />
           </div>
-          <div className="side-foot"><button className="tn" onClick={() => setDlg("settings")}><span className="ico"><Icon name="gear" size={14} /></span><span className="nm">设置</span><span className="ext">⌘,</span></button></div>
+          <div className="side-foot"><button className="tn" onClick={() => setDlg("settings")}><span className="ico"><Icon name="gear" size={14} /></span><span className="nm">设置</span><span className="ext">{kbd("⌘,")}</span></button></div>
         </div>
       </aside>
 

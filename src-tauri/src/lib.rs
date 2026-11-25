@@ -1,5 +1,6 @@
 //! HolyMark 后端：文件夹、读写、版本库、外部修改监听。
 mod fsops;
+#[cfg(target_os = "macos")]
 mod menu;
 mod versions;
 
@@ -9,13 +10,14 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, State};
+use fsops::slash;
 use versions::{Meta, Source, Store};
 
 #[derive(Default)]
 struct Inner {
     root: Option<PathBuf>,
-    /// 编辑器自己最近写入的内容，用来区分外部修改
-    written: HashMap<PathBuf, String>,
+    /// 编辑器自己最近写入的内容，用来区分外部修改。键用 key() 统一过斜杠方向
+    written: HashMap<String, String>,
     merge_ms: u64,
 }
 
@@ -23,7 +25,7 @@ struct Inner {
 struct AppState {
     inner: Arc<Mutex<Inner>>,
     watcher: Mutex<Option<RecommendedWatcher>>,
-    /// 从 Finder 打开、但前端还没来得及处理的文件
+    /// 从访达 / 资源管理器打开、但前端还没来得及处理的文件
     pending_open: Arc<Mutex<Vec<String>>>,
     fonts: Mutex<Option<Vec<FontFamily>>>,
 }
@@ -40,6 +42,11 @@ struct FontFamily {
 
 fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
+}
+
+/// written 表的键：同一个文件不管前端传来的是 C:/a/b.md，还是文件监听给的 C:\\a\\b.md，都对得上
+fn key(p: &Path) -> String {
+    slash(p)
 }
 
 fn rel(root: &Path, p: &Path) -> String {
@@ -78,7 +85,7 @@ fn open_folder(app: tauri::AppHandle, state: State<AppState>, root: String) -> R
             let Ok(now) = std::fs::read_to_string(&p) else { continue };
             let (root, prev, merge) = {
                 let i = inner.lock().unwrap();
-                (i.root.clone(), i.written.get(&p).cloned(), i.merge_ms)
+                (i.root.clone(), i.written.get(&key(&p)).cloned(), i.merge_ms)
             };
             let Some(root) = root else { continue };
             if prev.as_deref() == Some(now.as_str()) {
@@ -91,8 +98,8 @@ fn open_folder(app: tauri::AppHandle, state: State<AppState>, root: String) -> R
                 let _ = store.save(&file, &prev, Source::Auto, None, None, merge);
             }
             let version = store.save(&file, &now, Source::External, None, None, merge).ok().flatten();
-            inner.lock().unwrap().written.insert(p.clone(), now);
-            let _ = handle.emit("external-change", ExternalChange { path: p.to_string_lossy().to_string(), version });
+            inner.lock().unwrap().written.insert(key(&p), now);
+            let _ = handle.emit("external-change", ExternalChange { path: slash(&p), version });
         }
     })
     .map_err(err)?;
@@ -110,14 +117,14 @@ fn list_tree(root: String) -> Result<Vec<fsops::Node>, String> {
 fn read_text(state: State<AppState>, path: String) -> Result<String, String> {
     let p = PathBuf::from(&path);
     let s = fsops::read_text(&p).map_err(err)?;
-    state.inner.lock().unwrap().written.insert(p, s.clone());
+    state.inner.lock().unwrap().written.insert(key(&p), s.clone());
     Ok(s)
 }
 
 #[tauri::command]
 fn write_text(state: State<AppState>, path: String, content: String) -> Result<(), String> {
     let p = PathBuf::from(&path);
-    state.inner.lock().unwrap().written.insert(p.clone(), content.clone());
+    state.inner.lock().unwrap().written.insert(key(&p), content.clone());
     fsops::write_text(&p, &content).map_err(err)
 }
 
@@ -175,7 +182,7 @@ fn copy_into_folder(src: String, dir: String) -> Result<String, String> {
     let ext = srcp.extension().and_then(|s| s.to_str()).map(|e| format!(".{}", e)).unwrap_or_default();
     let dest = unique_path(&dirp, &stem, &ext);
     std::fs::copy(&srcp, &dest).map_err(err)?;
-    Ok(dest.to_string_lossy().to_string())
+    Ok(slash(&dest))
 }
 
 /// 保存粘贴或拖进来的图片（base64），返回新路径
@@ -190,7 +197,7 @@ fn save_image(dir: String, name: String, data: String) -> Result<String, String>
     let ext = np.extension().and_then(|s| s.to_str()).map(|e| format!(".{}", e)).unwrap_or_else(|| ".png".into());
     let dest = unique_path(&dirp, stem, &ext);
     std::fs::write(&dest, bytes).map_err(err)?;
-    Ok(dest.to_string_lossy().to_string())
+    Ok(slash(&dest))
 }
 
 #[tauri::command]
@@ -241,9 +248,9 @@ fn create_file(state: State<AppState>, dir: String, base: String) -> Result<Stri
     }
     let title = p.file_stem().and_then(|s| s.to_str()).unwrap_or("未命名").to_string();
     let content = format!("# {}\n\n", title);
-    state.inner.lock().unwrap().written.insert(p.clone(), content.clone());
+    state.inner.lock().unwrap().written.insert(key(&p), content.clone());
     fsops::write_text(&p, &content).map_err(err)?;
-    Ok(p.to_string_lossy().to_string())
+    Ok(slash(&p))
 }
 
 #[tauri::command]
@@ -251,16 +258,56 @@ fn take_pending_open(state: State<AppState>) -> Vec<String> {
     std::mem::take(&mut *state.pending_open.lock().unwrap())
 }
 
+/// 命令行参数里的 Markdown 文件（Windows 上双击 .md、或「打开方式」选 HolyMark 时，文件路径从这里传进来）
+#[cfg(not(target_os = "macos"))]
+fn md_args(args: &[String], cwd: &Path) -> Vec<String> {
+    args.iter()
+        .skip(1)
+        .filter(|a| !a.starts_with('-'))
+        .map(|a| cwd.join(a))
+        .filter(|p| p.is_file() && matches!(p.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref(), Some("md" | "markdown")))
+        .map(|p| slash(&p))
+        .collect()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = AppState::default();
     let pending = state.pending_open.clone();
-    let app = tauri::Builder::default()
+    #[cfg(not(target_os = "macos"))]
+    if let Ok(cwd) = std::env::current_dir() {
+        let args: Vec<String> = std::env::args().collect();
+        pending.lock().unwrap().extend(md_args(&args, &cwd));
+    }
+    let builder = tauri::Builder::default();
+    // 只开一个窗口：应用已经在运行时再双击 .md，交给已有的窗口打开（单实例插件必须最先注册）
+    #[cfg(not(target_os = "macos"))]
+    let builder = {
+        let pending = pending.clone();
+        builder.plugin(tauri_plugin_single_instance::init(move |app, args, cwd| {
+            use tauri::Manager;
+            let files = md_args(&args, Path::new(&cwd));
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+            if !files.is_empty() {
+                pending.lock().unwrap().extend(files.iter().cloned());
+                let _ = app.emit("open-file", files.last().cloned());
+            }
+        }))
+    };
+    let app = builder
         .plugin(tauri_plugin_dialog::init())
         .manage(state)
         .setup(|app| {
-            let m = menu::build(app.handle())?;
-            app.set_menu(m)?;
+            // macOS 用原生菜单栏；Windows 上窗口没有系统标题栏，菜单里的命令在功能区、⌘K 和快捷键里都有
+            #[cfg(target_os = "macos")]
+            {
+                let m = menu::build(app.handle())?;
+                app.set_menu(m)?;
+            }
+            let _ = app;
             Ok(())
         })
         .on_menu_event(|app, e| {
@@ -284,12 +331,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("HolyMark 启动失败");
     app.run(move |handle, event| {
-        // 在 Finder 里用 HolyMark 打开 .md 文件
+        // 在访达里用 HolyMark 打开 .md 文件
         #[cfg(any(target_os = "macos", target_os = "ios"))]
         if let tauri::RunEvent::Opened { urls } = &event {
             for u in urls {
                 if let Ok(p) = u.to_file_path() {
-                    let p = p.to_string_lossy().to_string();
+                    let p = slash(&p);
                     pending.lock().unwrap().push(p.clone());
                     let _ = handle.emit("open-file", p);
                 }

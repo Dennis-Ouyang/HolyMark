@@ -16,6 +16,17 @@ fn skip(name: &str) -> bool {
     name.starts_with('.') || name == "node_modules" || name == "target"
 }
 
+/// 交给前端的路径一律用正斜杠。Windows 的 `C:\a\b` 变成 `C:/a/b`（Windows 也认正斜杠）；
+/// macOS 和 Linux 上反斜杠是合法的文件名字符，原样保留。
+pub fn slash(p: &Path) -> String {
+    let s = p.to_string_lossy();
+    if cfg!(windows) {
+        s.replace('\\', "/")
+    } else {
+        s.into_owned()
+    }
+}
+
 pub fn tree(root: &Path) -> std::io::Result<Vec<Node>> {
     let mut out = Vec::new();
     let mut entries: Vec<_> = fs::read_dir(root)?.filter_map(|e| e.ok()).collect();
@@ -31,7 +42,7 @@ pub fn tree(root: &Path) -> std::io::Result<Vec<Node>> {
         let path = e.path();
         let dir = path.is_dir();
         let children = if dir { tree(&path).unwrap_or_default() } else { Vec::new() };
-        out.push(Node { name, path: path.to_string_lossy().to_string(), dir, children });
+        out.push(Node { name, path: slash(&path), dir, children });
     }
     Ok(out)
 }
@@ -44,7 +55,21 @@ pub fn read_text(path: &Path) -> std::io::Result<String> {
 pub fn write_text(path: &Path, content: &str) -> std::io::Result<()> {
     let tmp: PathBuf = path.with_extension("holymark-tmp");
     fs::write(&tmp, content)?;
-    fs::rename(&tmp, path)
+    // Windows 上稿件正被别的程序（杀毒软件、同步盘、预览）短暂占用时，改名会失败，稍等重试几次
+    let mut tries = 0;
+    loop {
+        match fs::rename(&tmp, path) {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && tries < 10 => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(e);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -62,6 +87,17 @@ mod tests {
         assert_eq!(t.len(), 2);
         assert!(t[0].dir && t[0].name == "正文");
         assert_eq!(t[0].children[0].name, "01.md");
+    }
+
+    #[test]
+    fn slash_only_rewrites_on_windows() {
+        let p = Path::new("a").join("b.md");
+        if cfg!(windows) {
+            assert_eq!(slash(&p), "a/b.md");
+        } else {
+            assert_eq!(slash(Path::new("a\\b.md")), "a\\b.md");
+            assert_eq!(slash(&p), "a/b.md");
+        }
     }
 
     #[test]

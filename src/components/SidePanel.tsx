@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Heading, Note } from "../lib/markdown";
 import type { VersionMeta } from "../lib/backend";
 import { Icon } from "./Icons";
+import { kbd } from "../lib/platform";
 
 export type PanelTab = "outline" | "notes" | "versions";
 const SRC = { saved: "你保存的", external: "外部修改", auto: "自动" } as const;
@@ -80,8 +81,8 @@ export function SidePanel(p: Props) {
 
       {p.tab === "versions" && (
         <div className="pane">
-          <div className="ph"><b>{p.fileName}</b><button className="lnk" onClick={p.onSaveVersion}>保存版本 ⌘S</button></div>
-          {p.versions.length ? <VersionList {...p} /> : <div className="empty">还没有版本<br />按 ⌘S 保存第一个</div>}
+          <div className="ph"><b>{p.fileName}</b><button className="lnk" onClick={p.onSaveVersion}>{kbd("保存版本 ⌘S")}</button></div>
+          {p.versions.length ? <VersionList {...p} /> : <div className="empty">还没有版本<br />{kbd("按 ⌘S 保存第一个")}</div>}
         </div>
       )}
     </div>

@@ -28,10 +28,47 @@ npm run tauri build    # 打包，产物在 src-tauri/target/release/bundle/
 
 只想看界面，不装 Rust 也可以：`npm run dev`，然后浏览器打开 <http://localhost:1420>。浏览器里用的是内置的演示文件夹，不会读写你的文件。
 
+## 在 Windows 上运行
+
+需要先装好：
+
+1. Microsoft C++ 生成工具：装 [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)，勾选「使用 C++ 的桌面开发」
+2. Rust：下载运行 [rustup-init.exe](https://rustup.rs)，一路默认
+3. Node.js 20 或更新版本
+4. WebView2：Windows 10 和 11 已经自带，不用另装
+
+然后在项目目录里（PowerShell 或命令提示符）：
+
+```bash
+npm install
+npm run tauri dev                         # 开发模式
+npm run tauri build -- --bundles nsis     # 打包，安装程序在 src-tauri/target/release/bundle/nsis/
+```
+
+不想在本机装工具链：GitHub 上「Actions → 构建 Windows 安装包 → Run workflow」，跑完在页面底部下载安装程序。
+
+Windows 版和 Mac 版的区别：
+
+- 窗口没有系统标题栏，最小化、最大化、关闭按钮由应用自己画在右上角；拖动标题栏空白处移动窗口，双击最大化。
+- 没有菜单栏。菜单里的命令都在功能区、`Ctrl+K` 命令面板和快捷键里，快捷键把 `⌘` 换成 `Ctrl`、`⌥` 换成 `Alt`。
+- 默认字体是微软雅黑。文件属性区里写的 Mac 字体（如 `Songti SC`）在 Windows 上会自动用对应的字体（中易宋体）显示，反过来也一样。
+- 安装包没有代码签名，第一次运行时 SmartScreen 可能拦一下：点「更多信息 → 仍要运行」。
+
+## 长稿性能
+
+浏览器预览里加 `?stress` 会生成一篇 20 万字的测试稿并直接打开（`?stress=400000` 指定字数），用来手动试手感。自动测量：
+
+```bash
+npm run dev
+NODE_PATH=$(npm root -g) node scripts/bench-long-doc.mjs 200000   # 需要 Playwright
+```
+
+输出每次按键、每次移动光标的耗时和长任务（超过 50ms）次数。
+
 ## 测试
 
 ```bash
-npm test                          # 前端：切块、字数、批注、大纲、版本对齐
+npm test                          # 前端：切块、字数、批注、大纲、版本对齐、实时预览增量更新、路径与快捷键
 cd src-tauri && cargo test --lib  # 后端：文件树、读写、版本库
 ```
 
@@ -39,15 +76,19 @@ cd src-tauri && cargo test --lib  # 后端：文件树、读写、版本库
 
 ```
 src/
-  editor/livePreview.ts   实时预览：按块显示源码 / 渲染（CodeMirror 6 装饰）
+  editor/livePreview.ts   实时预览：按块显示源码 / 渲染（CodeMirror 6 装饰，增量更新）
   editor/commands.ts      格式命令（加减 Markdown 符号）
   lib/markdown.ts         切块、纯文本、字数、批注、大纲、版本对齐与逐字比较
   lib/backend.ts          后端接口：Tauri 里调 Rust，浏览器里用演示数据
+  lib/paths.ts            路径（前端一律用正斜杠，兼容 Windows 盘符）
+  lib/platform.ts         平台判断、快捷键在 Mac / Windows 上的写法
+  lib/shortcuts.ts        没有原生菜单时（Windows）的菜单快捷键
   components/             文件树、功能区、右栏、对照视图、对话框
 src-tauri/src/
   fsops.rs                文件树、原子写入
   versions.rs             版本库：按段落内容寻址，存在文件夹的 .holymark/ 里
-  lib.rs                  Tauri 命令、外部修改监听
+  lib.rs                  Tauri 命令、外部修改监听、双击文件打开（单实例）
+src-tauri/tauri.windows.conf.json   Windows 窗口：不要系统标题栏
 ```
 
 ## 数据放在哪

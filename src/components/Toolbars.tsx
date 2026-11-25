@@ -7,6 +7,7 @@ import { Icon } from "./Icons";
 import { FontSelect, Select } from "./Select";
 import type { Settings } from "../lib/settings";
 import type { FontFamily } from "../lib/backend";
+import { kbd } from "../lib/platform";
 
 export const BLOCKS: { value: BlockKind; label: string }[] = [
   { value: "p", label: "正文" }, { value: "h1", label: "标题 1" }, { value: "h2", label: "标题 2" }, { value: "h3", label: "标题 3" },
@@ -15,7 +16,7 @@ export const BLOCKS: { value: BlockKind; label: string }[] = [
 const keep = (e: React.MouseEvent) => e.preventDefault(); // 点按钮不让编辑器失去选区
 
 function TB({ title, onClick, children, className }: { title: string; onClick: () => void; children: React.ReactNode; className?: string }) {
-  return <button type="button" className={"rb" + (className ? " " + className : "")} title={title} aria-label={title} onMouseDown={keep} onClick={onClick}>{children}</button>;
+  return <button type="button" className={"rb" + (className ? " " + className : "")} title={kbd(title)} aria-label={title.replace(/\s*[⌘⇧⌥].*$/, "")} onMouseDown={keep} onClick={onClick}>{children}</button>;
 }
 
 /* ---------------- 选中文字时的浮动工具栏 ---------------- */
@@ -76,7 +77,7 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
   const v = view;
   const run = (f: (v: EditorView) => void) => () => { if (v) f(v); };
   const big = (icon: string, label: string, title: string, f: () => void) => (
-    <button type="button" className="rb tall" title={title} aria-label={title} onMouseDown={keep} onClick={f}><Icon name={icon} size={18} /><span>{label}</span></button>
+    <button type="button" className="rb tall" title={kbd(title)} aria-label={title.replace(/\s*[⌘⇧⌥].*$/, "")} onMouseDown={keep} onClick={f}><Icon name={icon} size={18} /><span>{label}</span></button>
   );
   const num = (k: string, label: string, ph: string, attrs: { min: number; max: number; step?: number }, unit?: string) => (
     <label className="rfield">{label}
@@ -97,7 +98,7 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
           <button key={k} role="tab" aria-selected={tab === k} className={"rtab" + (tab === k ? " on" : "")}
             onClick={() => { setTab(k); setCollapsed(false); }} onDoubleClick={() => setCollapsed(!collapsed)}>{l}</button>
         ))}
-        <button className="ib collapse" title={collapsed ? "展开功能区 ⌘⌥R" : "折叠功能区 ⌘⌥R"} aria-label="折叠功能区" onClick={() => setCollapsed(!collapsed)}><Icon name="up" /></button>
+        <button className="ib collapse" title={kbd(collapsed ? "展开功能区 ⌘⌥R" : "折叠功能区 ⌘⌥R")} aria-label="折叠功能区" onClick={() => setCollapsed(!collapsed)}><Icon name="up" /></button>
       </div>
       <div className="rbody-wrap" aria-hidden={collapsed}>
         <div className="rbody" key={tab}>

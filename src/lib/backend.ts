@@ -4,6 +4,8 @@
  */
 import { DEMO_FILES, DEMO_ROOT, DEMO_START } from "./demo";
 import { longManuscript } from "./stress";
+import { toPosix } from "./paths";
+import { isWindows } from "./platform";
 import { splitBlocks } from "./markdown";
 
 export interface TreeNode { name: string; path: string; dir: boolean; children: TreeNode[] }
@@ -12,8 +14,13 @@ export interface VersionMeta { id: string; at: number; source: VersionSource; na
 
 export interface FontFamily { name: string; display: string; cjk: boolean }
 
-/** 浏览器预览里拿不到系统字体，给一份 macOS 常见字体 */
-const FALLBACK_FONTS: FontFamily[] = [
+/** 浏览器预览里拿不到系统字体，给一份常见字体 */
+const WINDOWS_FONTS: FontFamily[] = [
+  ["Microsoft YaHei", "微软雅黑", true], ["DengXian", "等线", true], ["SimSun", "宋体", true], ["SimHei", "黑体", true],
+  ["KaiTi", "楷体", true], ["FangSong", "仿宋", true], ["Noto Serif SC", "思源宋体", true], ["Noto Sans SC", "思源黑体", true],
+  ["Cambria", "Cambria", false], ["Georgia", "Georgia", false], ["Segoe UI", "Segoe UI", false], ["Times New Roman", "Times New Roman", false],
+].map(([name, display, cjk]) => ({ name: name as string, display: display as string, cjk: cjk as boolean }));
+const MAC_FONTS: FontFamily[] = [
   ["PingFang SC", "苹方-简", true], ["Songti SC", "宋体-简", true], ["Heiti SC", "黑体-简", true], ["Kaiti SC", "楷体-简", true],
   ["STFangsong", "华文仿宋", true], ["Hiragino Sans GB", "冬青黑体简体中文", true], ["Noto Serif SC", "思源宋体", true], ["Noto Sans SC", "思源黑体", true],
   ["Georgia", "Georgia", false], ["Helvetica Neue", "Helvetica Neue", false], ["Iowan Old Style", "Iowan Old Style", false], ["New York", "New York", false],
@@ -50,7 +57,7 @@ async function tauriBackend(): Promise<Backend> {
     isDemo: false,
     async pickFolder() {
       const r = await open({ directory: true, multiple: false, title: "打开文件夹" });
-      return typeof r === "string" ? r : null;
+      return typeof r === "string" ? toPosix(r) : null;
     },
     openFolder: (root) => invoke("open_folder", { root }),
     listTree: (root) => invoke("list_tree", { root }),
@@ -143,7 +150,7 @@ function demoBackend(): Backend {
     async listVersions(path) { return load(path).slice().reverse().map(({ blocks: _b, ...m }) => m); },
     async readVersion(path, id) { const r = load(path).find((x) => x.id === id); return r ? content(r) : ""; },
     onExternalChange(cb) { listeners.add(cb); return () => listeners.delete(cb); },
-    async listFonts() { return FALLBACK_FONTS; },
+    async listFonts() { return isWindows ? WINDOWS_FONTS : MAC_FONTS; },
     async saveImage(dir, name, data) {
       let p = `${dir}/${name}`, n = 1;
       const [stem, ext] = name.includes(".") ? [name.replace(/\.[^.]+$/, ""), name.slice(name.lastIndexOf("."))] : [name, ".png"];

@@ -4,6 +4,7 @@ import type { FontFamily } from "../lib/backend";
 import { FontSelect } from "./Select";
 import { NumberField } from "./NumberField";
 import { Icon } from "./Icons";
+import { kbd } from "../lib/platform";
 
 function Scrim({ onClose, center, children }: { onClose: () => void; center?: boolean; children: React.ReactNode }) {
   useEffect(() => {
@@ -152,7 +153,7 @@ export const KEYS: [string, string][] = [
   ["表格里换格", "Tab / ⇧ Tab"], ["离开当前块或表格", "Esc"],
 ];
 export function KeyTable() {
-  return <table className="kt"><tbody>{KEYS.map(([a, b]) => <tr key={a}><td>{a}</td><td><kbd>{b}</kbd></td></tr>)}</tbody></table>;
+  return <table className="kt"><tbody>{KEYS.map(([a, b]) => <tr key={a}><td>{a}</td><td><kbd>{kbd(b)}</kbd></td></tr>)}</tbody></table>;
 }
 
 const SYNTAX: [string, string][] = [
