@@ -1,0 +1,69 @@
+# HolyMark
+
+面向长篇中文写作的本地 Markdown 编辑器。打开一个文件夹就开始写，稿件就是普通的 `.md` 文件。
+
+- **实时预览**：光标所在的块显示 Markdown 源码，其余部分按格式渲染。支持标题、强调、列表、任务列表、引用、表格、代码块（高亮）、LaTeX 公式、Mermaid 图表、图片、文献引用 `[@key]`、批注。
+- **浮动工具栏与功能区**：选中文字出现格式栏；编辑区上方的功能区可折叠，分「开始」「插入」「本文版式」。
+- **版本**：自动保存；`⌘S` 保存带名字的版本；文件被外部程序（比如 Claude Code）改写时自动记一个版本。点开任意版本与现在整篇对照，红删绿增，可以恢复。
+- **批注**：用 CriticMarkup 写在文件里：`{==原文==}{>>@作者 日期：内容<<}`，AI 读得到，换编辑器也不丢。
+- **设置分两层**：`⌘,` 是所有文件的默认值；「本文版式」写进文件开头的 YAML 属性区，只对这一篇生效。
+
+设计稿与设计说明：<https://claude.ai/artifact/Uj4kSG4mLp19vCAiD6M7n3>
+
+## 在 Mac 上运行
+
+需要先装好：
+
+1. Xcode 命令行工具：`xcode-select --install`
+2. Rust：`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+3. Node.js 20 或更新版本
+
+然后在项目目录里：
+
+```bash
+npm install
+npm run tauri dev      # 开发模式，改代码会自动刷新
+npm run tauri build    # 打包，产物在 src-tauri/target/release/bundle/
+```
+
+只想看界面，不装 Rust 也可以：`npm run dev`，然后浏览器打开 <http://localhost:1420>。浏览器里用的是内置的演示文件夹，不会读写你的文件。
+
+## 测试
+
+```bash
+npm test                          # 前端：切块、字数、批注、大纲、版本对齐
+cd src-tauri && cargo test --lib  # 后端：文件树、读写、版本库
+```
+
+## 结构
+
+```
+src/
+  editor/livePreview.ts   实时预览：按块显示源码 / 渲染（CodeMirror 6 装饰）
+  editor/commands.ts      格式命令（加减 Markdown 符号）
+  lib/markdown.ts         切块、纯文本、字数、批注、大纲、版本对齐与逐字比较
+  lib/backend.ts          后端接口：Tauri 里调 Rust，浏览器里用演示数据
+  components/             文件树、功能区、右栏、对照视图、对话框
+src-tauri/src/
+  fsops.rs                文件树、原子写入
+  versions.rs             版本库：按段落内容寻址，存在文件夹的 .holymark/ 里
+  lib.rs                  Tauri 命令、外部修改监听
+```
+
+## 数据放在哪
+
+- 稿件：你的文件夹里，原样的 Markdown。
+- 版本：文件夹里的 `.holymark/`。删掉它不影响稿件，只是丢了历史版本。
+- 应用设置：应用自己的存储里。
+
+## 路线
+
+- [x] 文件夹与文件树、自动保存
+- [x] 实时预览编辑器、浮动工具栏、功能区
+- [x] 大纲、批注、字数（含选中字数浮窗）
+- [x] 版本库、外部修改记录、整篇对照与恢复
+- [x] 设置与本文版式、⌘K 搜索（当前文件与文件夹内 Markdown）
+- [ ] 导出：Word / PDF / Markdown，全部选项可设置、实时预览，配置保存为 Pandoc defaults 文件
+- [ ] 输入 `@` 直接弹出文献与文件列表
+- [ ] 粘贴图片自动存入 assets/
+- [ ] 全文索引（SQLite FTS5），搜索 Excel、PDF 文字层

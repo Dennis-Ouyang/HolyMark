@@ -1,0 +1,104 @@
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { Compartment, EditorState, Extension } from "@codemirror/state";
+import { EditorView, keymap, drawSelection, highlightActiveLine } from "@codemirror/view";
+import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { languages } from "@codemirror/language-data";
+import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
+import { searchKeymap } from "@codemirror/search";
+import { tags as t } from "@lezer/highlight";
+import { livePreview, PreviewOptions } from "./livePreview";
+import { continueList, toggleInline } from "./commands";
+
+export interface EditorHandle {
+  view: () => EditorView | null;
+  /** 换成另一个文件的内容（不进撤销历史） */
+  load: (text: string) => void;
+  /** 外部修改后替换内容，保留光标大致位置 */
+  replace: (text: string) => void;
+}
+
+interface Props {
+  initial: string;
+  preview: PreviewOptions;
+  previewKey: string;
+  onChange: (text: string) => void;
+  onSelection: (view: EditorView) => void;
+}
+
+/** 代码块里的语法高亮颜色走主题变量 */
+const codeHighlight = HighlightStyle.define([
+  { tag: [t.keyword, t.controlKeyword, t.operatorKeyword, t.definitionKeyword], color: "var(--hl-kw)" },
+  { tag: [t.string, t.special(t.string)], color: "var(--hl-str)" },
+  { tag: [t.number, t.bool, t.null], color: "var(--hl-num)" },
+  { tag: [t.comment, t.lineComment, t.blockComment], color: "var(--hl-com)", fontStyle: "italic" },
+  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "var(--hl-fn)" },
+]);
+
+export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial, preview, previewKey, onChange, onSelection }, ref) {
+  const host = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const previewCompartment = useRef(new Compartment());
+  const cb = useRef({ onChange, onSelection });
+  cb.current = { onChange, onSelection };
+  const silent = useRef(false);
+  const exts = useRef<Extension[]>([]);
+  const previewRef = useRef(preview);
+  previewRef.current = preview;
+
+  useEffect(() => {
+    exts.current = [
+          history(),
+          drawSelection(),
+          highlightActiveLine(),
+          EditorView.lineWrapping,
+          markdown({ base: markdownLanguage, codeLanguages: languages }),
+          syntaxHighlighting(codeHighlight),
+          previewCompartment.current.of(livePreview(preview)),
+          keymap.of([
+            { key: "Enter", run: continueList },
+            { key: "Mod-b", run: (v) => (toggleInline(v, "bold"), true) },
+            { key: "Mod-i", run: (v) => (toggleInline(v, "italic"), true) },
+            { key: "Mod-e", run: (v) => (toggleInline(v, "code"), true) },
+            ...searchKeymap,
+            ...historyKeymap,
+            ...defaultKeymap,
+            indentWithTab,
+          ]),
+          EditorView.updateListener.of((u) => {
+            if (u.docChanged && !silent.current) cb.current.onChange(u.state.doc.toString());
+            if (u.selectionSet || u.docChanged || u.focusChanged) cb.current.onSelection(u.view);
+          }),
+          EditorView.contentAttributes.of({ spellcheck: "false", "aria-label": "正文" }),
+        ];
+    const view = new EditorView({ parent: host.current!, state: EditorState.create({ doc: initial, extensions: exts.current }) });
+    viewRef.current = view;
+    return () => view.destroy();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 语法显示方式、文献库变化时重建装饰
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: previewCompartment.current.reconfigure(livePreview(preview)) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewKey]);
+
+  useImperativeHandle(ref, () => ({
+    view: () => viewRef.current,
+    load(text) {
+      const v = viewRef.current!;
+      v.setState(EditorState.create({ doc: text, extensions: exts.current }));
+      v.dispatch({ effects: previewCompartment.current.reconfigure(livePreview(previewRef.current)) });
+      v.scrollDOM.scrollTop = 0;
+    },
+    replace(text) {
+      const v = viewRef.current!;
+      const head = Math.min(v.state.selection.main.head, text.length);
+      silent.current = true;
+      v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: text }, selection: { anchor: head } });
+      silent.current = false;
+    },
+  }));
+
+  return <div className="hm-editor" ref={host} />;
+});
