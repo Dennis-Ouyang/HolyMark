@@ -3,6 +3,10 @@ import { isWindows } from "./platform";
 
 export interface Settings {
   theme: "system" | "light" | "dark";
+  /** 主题色（按钮、选中、光标的颜色） */
+  accent: AccentName;
+  /** 关闭应用时，如果这次打开以后改过文件，问一声要不要保存 */
+  askOnClose: boolean;
   headingFont: string;
   bodyFont: string;
   fontSize: number;
@@ -27,6 +31,8 @@ const UI_FONT = isWindows ? "Microsoft YaHei" : "PingFang SC";
 
 export const DEFAULTS: Settings = {
   theme: "system",
+  accent: "indigo",
+  askOnClose: true,
   headingFont: UI_FONT,
   bodyFont: UI_FONT,
   fontSize: 16,
@@ -44,6 +50,35 @@ export const DEFAULTS: Settings = {
   v: 2,
 };
 
+/** 主题色预设：[主色, 文字和图标用的深一点的色]，浅色和深色界面各一套 */
+export const ACCENTS = {
+  indigo: { name: "靛蓝", light: ["#5A62DE", "#4148C4"], dark: ["#7D84F4", "#B9BDFA"] },
+  blue: { name: "海蓝", light: ["#2F6FEB", "#1F5AC8"], dark: ["#5B93F5", "#A9C8FB"] },
+  teal: { name: "青碧", light: ["#0F858A", "#0B6C70"], dark: ["#38BDB6", "#9FE3DC"] },
+  green: { name: "松绿", light: ["#2C8A56", "#216F45"], dark: ["#4CC38A", "#A6E5C4"] },
+  amber: { name: "琥珀", light: ["#C46F09", "#9C5806"], dark: ["#E9A23B", "#F5D29A"] },
+  red: { name: "朱砂", light: ["#D1453A", "#AE352B"], dark: ["#F0736A", "#F8B9B3"] },
+  rose: { name: "胭脂", light: ["#C83E78", "#A82F62"], dark: ["#EE72A6", "#F8BBD5"] },
+  purple: { name: "紫藤", light: ["#8653E6", "#6C3BCB"], dark: ["#A78BFA", "#D6C8FD"] },
+  graphite: { name: "石墨", light: ["#4A4F5C", "#2F333D"], dark: ["#8D93A1", "#D5D8DF"] },
+} as const;
+export type AccentName = keyof typeof ACCENTS;
+
+function rgba(hex: string, a: number) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
+}
+/** 把主题色写到根元素上，覆盖样式表里的默认靛蓝 */
+export function applyAccent(name: AccentName, dark: boolean) {
+  const a = ACCENTS[name] ?? ACCENTS.indigo;
+  const [c, fg] = dark ? a.dark : a.light;
+  const st = document.documentElement.style;
+  st.setProperty("--accent", c);
+  st.setProperty("--accent-fg", fg);
+  st.setProperty("--accent-soft", rgba(c, dark ? 0.16 : 0.1));
+  st.setProperty("--accent-line", rgba(c, dark ? 0.45 : 0.4));
+}
+
 const KEY = "holymark-settings";
 export function loadSettings(): Settings {
   let saved: Partial<Settings> = {};
@@ -56,7 +91,9 @@ export function loadSettings(): Settings {
     if (saved.lineHeight === 1.9) delete saved.lineHeight;
     if (saved.measure === 38) delete saved.measure;
   }
-  return { ...DEFAULTS, ...saved, v: 2 };
+  const out = { ...DEFAULTS, ...saved, v: 2 };
+  if (!(out.accent in ACCENTS)) out.accent = "indigo";
+  return out;
 }
 export function saveSettings(s: Settings) {
   try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* 隐私模式下忽略 */ }

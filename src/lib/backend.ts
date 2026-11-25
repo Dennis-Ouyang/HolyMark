@@ -51,6 +51,10 @@ export interface Backend {
   readReference(path: string): Promise<RefStyles>;
   /** 在 Finder 里显示 */
   reveal(path: string): Promise<void>;
+  /** 用系统默认的程序打开 */
+  openPath(path: string): Promise<void>;
+  /** 导出进行到哪一步：style → pandoc → typst → write */
+  onExportProgress(cb: (stage: string) => void): () => void;
   openFolder(root: string): Promise<TreeNode[]>;
   listTree(root: string): Promise<TreeNode[]>;
   readText(path: string): Promise<string>;
@@ -92,6 +96,12 @@ async function tauriBackend(): Promise<Backend> {
     exportRun: (job) => invoke("export_run", { job }),
     readReference: (path) => invoke("read_reference", { path }),
     reveal: (path) => invoke("reveal", { path }),
+    openPath: (path) => invoke("open_path", { path }),
+    onExportProgress(cb) {
+      let un: (() => void) | null = null, alive = true;
+      listen<string>("export-progress", (e) => cb(e.payload)).then((u) => { if (alive) un = u; else u(); });
+      return () => { alive = false; un?.(); };
+    },
     openFolder: (root) => invoke("open_folder", { root }),
     listTree: (root) => invoke("list_tree", { root }),
     readText: (path) => invoke("read_text", { path }),
@@ -170,6 +180,8 @@ function demoBackend(): Backend {
     async exportRun() { throw new Error("浏览器预览里不能导出 Word 和 PDF"); },
     async readReference() { throw new Error("浏览器预览里不能读取参考文档"); },
     async reveal() { /* 浏览器里没有 Finder */ },
+    async openPath() { /* 浏览器里打不开本机文件 */ },
+    onExportProgress() { return () => {}; },
     async openFolder() { return tree(); },
     async listTree() { return tree(); },
     async readText(path) { return files.get(path) ?? ""; },

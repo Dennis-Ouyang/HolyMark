@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fontStack, Settings } from "../lib/settings";
+import { ACCENTS, AccentName, fontStack, Settings } from "../lib/settings";
 import type { FontFamily } from "../lib/backend";
 import { FontSelect } from "./Select";
 import { NumberField } from "./NumberField";
 import { Icon } from "./Icons";
-import { kbd } from "../lib/platform";
+import { isWindows, kbd } from "../lib/platform";
+import { Segmented } from "./Segmented";
 
 function Scrim({ onClose, center, children }: { onClose: () => void; center?: boolean; children: React.ReactNode }) {
   useEffect(() => {
@@ -38,48 +39,99 @@ export function SaveVersionDialog({ changes, fileName, onSave, onClose }: { chan
 
 /* ---------------- 设置 ---------------- */
 type Pane = "general" | "editor" | "count" | "versions" | "keys";
+const PANES: [Pane, string][] = [["general", "通用"], ["editor", "编辑器"], ["count", "字数统计"], ["versions", "版本"], ["keys", "快捷键"]];
+
+/** 设置里的一行：左边名称（可带说明），右边控件 */
+function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return <div className="prow"><div className="pl">{label}{hint && <small>{hint}</small>}</div><div className="pc">{children}</div></div>;
+}
+
 export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; fonts: FontFamily[]; onChange: (p: Partial<Settings>) => void; onClose: () => void }) {
   const [pane, setPane] = useState<Pane>("editor");
-  const seg = <K extends keyof Settings>(k: K, opts: [Settings[K], string][]) => (
-    <div className="seg">{opts.map(([v, l]) => <button key={String(v)} className={s[k] === v ? "on" : ""} onClick={() => onChange({ [k]: v } as Partial<Settings>)}>{l}</button>)}</div>
-  );
   const num = (k: keyof Settings, attrs: { min: number; max?: number; step?: number; disabled?: boolean }, unit?: string) => (
     <NumberField value={String(s[k])} {...attrs} unit={unit} ariaLabel={String(k)} onCommit={(v) => { const n = parseFloat(v); if (!Number.isNaN(n)) onChange({ [k]: n } as Partial<Settings>); }} />
   );
-  const font = (k: "headingFont" | "bodyFont", sample: string, bold?: boolean) => (
-    <div><FontSelect value={s[k]} fonts={fonts} ariaLabel={k === "headingFont" ? "标题字体" : "正文字体"} onChange={(v) => onChange({ [k]: v } as Partial<Settings>)} />
-      <div className="fontprev" style={{ fontFamily: fontStack(s[k]), fontWeight: bold ? 600 : 400 }}>{sample}</div></div>
+  const sw = (k: "showAllFiles" | "goalOn" | "askOnClose", label: string) => (
+    <button className={"switch" + (s[k] ? " on" : "")} role="switch" aria-checked={s[k]} aria-label={label} onClick={() => onChange({ [k]: !s[k] } as Partial<Settings>)} />
   );
   return (
     <Scrim onClose={onClose} center>
       <div className="prefs" role="dialog" aria-label="设置">
         <nav>
           <div className="tl">设置</div>
-          {([["general", "通用"], ["editor", "编辑器"], ["count", "字数统计"], ["versions", "版本"], ["keys", "快捷键"]] as [Pane, string][]).map(([k, l]) =>
-            <button key={k} className={pane === k ? "on" : ""} onClick={() => setPane(k)}>{l}</button>)}
+          {PANES.map(([k, l]) => <button key={k} className={pane === k ? "on" : ""} onClick={() => setPane(k)}>{l}</button>)}
         </nav>
         <div className="pb">
-          <button className="ib close-x" onClick={onClose} aria-label="关闭"><Icon name="close" /></button>
-          {pane === "general" && <><h4>通用</h4>
-            <div className="prow"><span>界面</span>{seg("theme", [["system", "跟随系统"], ["light", "浅色"], ["dark", "深色"]])}</div>
-            <div className="prow"><span>文件树<small>关闭时只显示 Markdown 文件</small></span>
-              <div className="inline"><button className={"switch" + (s.showAllFiles ? " on" : "")} role="switch" aria-checked={s.showAllFiles} aria-label="显示所有文件" onClick={() => onChange({ showAllFiles: !s.showAllFiles })} /><span className="dnote">显示所有文件</span></div></div></>}
-          {pane === "editor" && <><h4>编辑器默认值</h4>
-            <p className="dnote">所有文件默认使用这里的设置；单个文件可以在功能区「本文版式」里覆盖。</p>
-            <div className="prow"><span>标题字体<small>列出的是这台 Mac 上装的字体</small></span>{font("headingFont", "3.3　分析框架", true)}</div>
-            <div className="prow"><span>正文字体</span>{font("bodyFont", "本研究借鉴认知负荷理论，将写作过程中的负荷分为三类。")}</div>
-            <div className="prow"><span>字号</span>{num("fontSize", { min: 12, max: 28 }, "px")}</div>
-            <div className="prow"><span>行距</span>{num("lineHeight", { min: 1.2, max: 2.6, step: 0.05 })}</div>
-            <div className="prow"><span>版心宽度<small>每行大约多少个字</small></span>{num("measure", { min: 24, max: 60 }, "字")}</div>
-            <div className="prow"><span>Markdown 语法</span>{seg("syntax", [["active", "光标所在块显示"], ["always", "始终显示"]])}</div></>}
-          {pane === "count" && <><h4>字数统计</h4>
-            <div className="prow"><span>状态栏口径</span>{seg("countPunct", [[false, "不含标点"], [true, "含标点"]])}</div>
-            <div className="prow"><span>写作目标<small>开启后状态栏显示进度</small></span>
-              <div className="inline"><button className={"switch" + (s.goalOn ? " on" : "")} role="switch" aria-checked={s.goalOn} aria-label="写作目标" onClick={() => onChange({ goalOn: !s.goalOn })} />{num("goal", { min: 100, step: 500, disabled: !s.goalOn }, "字")}</div></div></>}
-          {pane === "versions" && <><h4>版本</h4>
-            <div className="prow"><span>自动版本间隔</span><div className="inline">{num("autoMinutes", { min: 1, max: 240 }, "分钟")}</div></div>
-            <div className="prow"><span>外部修改合并<small>这段时间内的连续写入记为一条</small></span><div className="inline">{num("mergeSeconds", { min: 1, max: 600 }, "秒")}</div></div></>}
-          {pane === "keys" && <><h4>快捷键</h4><KeyTable /></>}
+          <div className="pbh"><h4>{PANES.find(([k]) => k === pane)![1]}</h4><button className="ib" onClick={onClose} aria-label="关闭"><Icon name="close" /></button></div>
+          {pane === "general" && <>
+            <Row label="外观"><Segmented label="外观" value={s.theme} options={[["system", "跟随系统"], ["light", "浅色"], ["dark", "深色"]]} onChange={(v) => onChange({ theme: v })} /></Row>
+            <Row label="主题色" hint="按钮、选中和光标的颜色">
+              <div className="swatches" role="radiogroup" aria-label="主题色">
+                {(Object.keys(ACCENTS) as AccentName[]).map((k) => (
+                  <button key={k} role="radio" aria-checked={s.accent === k} aria-label={ACCENTS[k].name} title={ACCENTS[k].name} className={"sw" + (s.accent === k ? " on" : "")}
+                    style={{ "--c": ACCENTS[k].light[0], "--cd": ACCENTS[k].dark[0] } as React.CSSProperties} onClick={() => onChange({ accent: k })}>
+                    <Icon name="check" size={12} />
+                  </button>
+                ))}
+                <span className="swname">{ACCENTS[s.accent].name}</span>
+              </div>
+            </Row>
+            <Row label="文件树" hint="关闭时只显示 Markdown 文件"><label className="inline">{sw("showAllFiles", "显示所有文件")}<span>显示所有文件</span></label></Row>
+            <Row label="关闭应用时" hint="不保存的修改会留在「版本」里，随时能找回"><label className="inline">{sw("askOnClose", "询问是否保存修改")}<span>有修改时询问是否保存</span></label></Row>
+          </>}
+          {pane === "editor" && <>
+            <EditorPreview s={s} />
+            <Row label="标题字体" hint={isWindows ? "列出的是这台电脑上装的字体" : "列出的是这台 Mac 上装的字体"}><FontSelect value={s.headingFont} fonts={fonts} ariaLabel="标题字体" onChange={(v) => onChange({ headingFont: v })} /></Row>
+            <Row label="正文字体"><FontSelect value={s.bodyFont} fonts={fonts} ariaLabel="正文字体" onChange={(v) => onChange({ bodyFont: v })} /></Row>
+            <Row label="字号">{num("fontSize", { min: 12, max: 28 }, "px")}</Row>
+            <Row label="行距">{num("lineHeight", { min: 1.2, max: 2.6, step: 0.05 }, "倍")}</Row>
+            <Row label="版心宽度" hint="每行大约多少个字">{num("measure", { min: 24, max: 60 }, "字")}</Row>
+            <Row label="Markdown 符号"><Segmented label="Markdown 符号" value={s.syntax} options={[["active", "光标所在处显示"], ["always", "始终显示"]]} onChange={(v) => onChange({ syntax: v })} /></Row>
+          </>}
+          {pane === "count" && <>
+            <Row label="状态栏字数"><Segmented label="状态栏字数" value={s.countPunct} options={[[false, "不含标点"], [true, "含标点"]]} onChange={(v) => onChange({ countPunct: v })} /></Row>
+            <Row label="写作目标" hint="开启后状态栏显示进度"><div className="inline">{sw("goalOn", "写作目标")}{num("goal", { min: 100, step: 500, disabled: !s.goalOn }, "字")}</div></Row>
+          </>}
+          {pane === "versions" && <>
+            <Row label="自动版本间隔">{num("autoMinutes", { min: 1, max: 240 }, "分钟")}</Row>
+            <Row label="外部修改合并" hint="这段时间内的连续写入记为一条">{num("mergeSeconds", { min: 1, max: 600 }, "秒")}</Row>
+          </>}
+          {pane === "keys" && <KeyTable />}
+        </div>
+      </div>
+    </Scrim>
+  );
+}
+
+/** 编辑器默认值的实时预览：标题和正文放在一起，按设置的字号、行距、版心宽度排出来 */
+function EditorPreview({ s }: { s: Settings }) {
+  const width = s.measure * s.fontSize;
+  return (
+    <div className="edprev" aria-label="预览">
+      <div className="epv-scroll">
+        <div className="epv-col" style={{ width, fontSize: s.fontSize, lineHeight: s.lineHeight }}>
+          <div className="epv-h" style={{ fontFamily: fontStack(s.headingFont) }}>这是标题的预览。</div>
+          <p className="epv-b" style={{ fontFamily: fontStack(s.bodyFont) }}>这是正文部分的预览。你在此设置的是 HolyMark 打开所有文件时的默认值，如果你只想设置单个文件的显示方式，请在功能区“版式”中单独设置。</p>
+        </div>
+      </div>
+      <div className="epv-meta"><span>字号 {s.fontSize} px</span><span>行距 {s.lineHeight}</span><span>版心 {s.measure} 字 · {width} px</span></div>
+    </div>
+  );
+}
+
+/* ---------------- 关闭前：要不要保存修改 ---------------- */
+export function UnsavedDialog({ fileName, onSave, onDiscard, onCancel }: { fileName: string; onSave: () => void; onDiscard: () => void; onCancel: () => void }) {
+  return (
+    <Scrim onClose={onCancel} center>
+      <div className="sheetdlg ask" role="alertdialog" aria-label="保存修改">
+        <div className="ask-ico"><Icon name="doc" size={22} /></div>
+        <div className="dh"><h3>要保存对「{fileName}」的修改吗？</h3></div>
+        <div className="db"><p className="dnote">选「不保存」，文件会回到这次打开时的样子。刚才写的内容不会丢：它会作为一个版本留在右栏的「版本」里，随时可以找回。</p></div>
+        <div className="df split">
+          <button className="btn" onClick={onDiscard}>不保存</button>
+          <span className="sp" />
+          <button className="btn" onClick={onCancel}>取消</button>
+          <button className="btn acc" autoFocus onClick={onSave}>保存</button>
         </div>
       </div>
     </Scrim>
@@ -129,7 +181,8 @@ export function Palette({ items, search, onClose, placeholder, pinned }: { items
 /* ---------------- 字数浮窗 ---------------- */
 export function CountPop({ title, text, count, anchor, onClose }: { title: string; text: string; count: (t: string, p: boolean) => number; anchor: DOMRect; onClose: () => void }) {
   useEffect(() => {
-    const f = () => onClose();
+    // 点状态栏上打开它的那个按钮由按钮自己处理（再点一次是关闭），这里不抢
+    const f = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest("[data-countpop]")) onClose(); };
     setTimeout(() => addEventListener("mousedown", f), 0);
     return () => removeEventListener("mousedown", f);
   }, [onClose]);

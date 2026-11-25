@@ -10,6 +10,22 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/* ---------------- 运行命令行工具 ---------------- */
+
+/// 运行 Pandoc、Typst 这类命令行工具。Windows 上默认会给每个子进程弹一个黑色的控制台窗口，
+/// 发布版的应用本身没有控制台，所以每次查版本、导出都会闪出终端；加上 CREATE_NO_WINDOW 就不会了。
+pub fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    #[allow(unused_mut)]
+    let mut c = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        c.creation_flags(CREATE_NO_WINDOW);
+    }
+    c
+}
+
 /* ---------------- 找到 Pandoc 和 Typst ---------------- */
 
 /// 先找应用里内置的，再找 Homebrew 和 PATH。从 Finder 启动的应用拿不到终端里的 PATH，所以常见目录单独列出来。
@@ -45,7 +61,7 @@ pub struct Tool {
 
 pub fn tool_info(name: &str) -> Option<Tool> {
     let p = find_tool(name)?;
-    let out = Command::new(&p).arg("--version").output().ok()?;
+    let out = command(&p).arg("--version").output().ok()?;
     let version = String::from_utf8_lossy(&out.stdout).lines().next().unwrap_or("").to_string();
     let bundled = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| p.starts_with(d))).unwrap_or(false);
     Some(Tool { path: p.to_string_lossy().to_string(), version, bundled })
@@ -495,21 +511,68 @@ fn num(v: f64) -> String {
     s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
-fn read_rpr(rpr: Option<&El>, fonts: &mut (Option<String>, Option<String>), size: &mut Option<String>, bold: &mut Option<bool>) {
+/// 主题字体：样式里常写 w:eastAsiaTheme="minorEastAsia" 而不是具体字体名，真正的名字在 theme1.xml 里
+#[derive(Default, Debug)]
+pub struct ThemeFonts {
+    major_latin: Option<String>,
+    major_ea: Option<String>,
+    minor_latin: Option<String>,
+    minor_ea: Option<String>,
+}
+
+pub fn read_theme(theme: &str) -> ThemeFonts {
+    let Ok(doc) = xml::parse(theme) else { return ThemeFonts::default() };
+    let scheme = doc.root.find(&|e| e.name == "a:fontScheme");
+    let pick = |kind: &str| -> (Option<String>, Option<String>) {
+        let Some(f) = scheme.and_then(|s| s.child(kind)) else { return (None, None) };
+        let tf = |e: Option<&El>| e.and_then(|x| x.attr("typeface")).map(xml::unescape).filter(|v| !v.is_empty());
+        let latin = tf(f.child("a:latin"));
+        // a:ea 常常是空的，简体中文的字体写在 <a:font script="Hans"> 里
+        let ea = tf(f.child("a:ea")).or_else(|| tf(f.elements().find(|e| e.name == "a:font" && e.attr("script") == Some("Hans"))));
+        (latin, ea)
+    };
+    let (major_latin, major_ea) = pick("a:majorFont");
+    let (minor_latin, minor_ea) = pick("a:minorFont");
+    ThemeFonts { major_latin, major_ea, minor_latin, minor_ea }
+}
+
+impl ThemeFonts {
+    fn resolve(&self, theme: &str) -> Option<String> {
+        match theme {
+            "majorEastAsia" => self.major_ea.clone(),
+            "minorEastAsia" => self.minor_ea.clone(),
+            "majorHAnsi" | "majorAscii" => self.major_latin.clone(),
+            "minorHAnsi" | "minorAscii" => self.minor_latin.clone(),
+            _ => None,
+        }
+    }
+}
+
+/// 一个样式自己写明的字符格式；后读到的覆盖先读到的，所以要从最底层的样式往上读
+#[derive(Default, Clone, Debug)]
+struct Run {
+    latin: Option<String>,
+    cjk: Option<String>,
+    size: Option<String>,
+    bold: Option<bool>,
+}
+
+fn read_rpr(rpr: Option<&El>, theme: &ThemeFonts, r: &mut Run) {
     let Some(rpr) = rpr else { return };
     if let Some(f) = rpr.child("w:rFonts") {
-        if let Some(v) = f.attr("w:eastAsia") {
-            fonts.1 = Some(xml::unescape(v));
+        // Word 里主题字体优先于直接写的字体名
+        if let Some(v) = f.attr("w:eastAsiaTheme").and_then(|t| theme.resolve(t)).or_else(|| f.attr("w:eastAsia").map(xml::unescape)) {
+            r.cjk = Some(v);
         }
-        if let Some(v) = f.attr("w:ascii") {
-            fonts.0 = Some(xml::unescape(v));
+        if let Some(v) = f.attr("w:asciiTheme").and_then(|t| theme.resolve(t)).or_else(|| f.attr("w:ascii").map(xml::unescape)) {
+            r.latin = Some(v);
         }
     }
     if let Some(v) = rpr.child("w:sz").and_then(|e| e.attr("w:val")).and_then(|v| v.parse::<f64>().ok()) {
-        *size = Some(num(v / 2.0));
+        r.size = Some(num(v / 2.0));
     }
     if let Some(b) = rpr.child("w:b") {
-        *bold = Some(!matches!(b.attr("w:val"), Some("0") | Some("false")));
+        r.bold = Some(!matches!(b.attr("w:val"), Some("0") | Some("false")));
     }
 }
 
@@ -534,25 +597,45 @@ fn jc_to_ui(v: &str) -> Option<String> {
     .to_string())
 }
 
+/// 从最底层的基础样式到这个样式本身（沿 w:basedOn 往上找，最多 12 层，防止循环）
+fn style_chain<'a>(root: &'a El, s: &'a El) -> Vec<&'a El> {
+    let by_id = |id: &str| root.elements().find(|e| e.name == "w:style" && e.attr("w:styleId") == Some(id));
+    let mut out = vec![s];
+    let mut cur = s;
+    while out.len() < 12 {
+        let Some(base) = cur.child("w:basedOn").and_then(|b| b.attr("w:val")).and_then(by_id) else { break };
+        if out.iter().any(|x| std::ptr::eq(*x, base)) {
+            break;
+        }
+        out.push(base);
+        cur = base;
+    }
+    out.reverse();
+    out
+}
+
 pub fn read_styles(styles: &str, document: Option<&str>) -> Result<RefStyles, String> {
+    read_styles_with_theme(styles, document, &ThemeFonts::default())
+}
+
+pub fn read_styles_with_theme(styles: &str, document: Option<&str>, theme: &ThemeFonts) -> Result<RefStyles, String> {
     let doc = xml::parse(styles)?;
     let root = &doc.root;
     let mut r = RefStyles::default();
-    let mut fonts = (None, None);
-    let mut size = None;
-    let mut bold = None;
     let by = |id: &str, name: &str| {
         root.elements().find(|e| e.name == "w:style" && e.attr("w:styleId") == Some(id)).or_else(|| {
             root.elements().find(|e| e.name == "w:style" && e.child("w:name").and_then(|n| n.attr("w:val")).map_or(false, |v| v.eq_ignore_ascii_case(name)))
         })
     };
+    // 全文默认 → Normal → Body Text（Pandoc 正文段落用 Body Text，它通常基于 Normal）
+    let mut base = Run::default();
     if let Some(dd) = root.child("w:docDefaults") {
-        read_rpr(dd.child("w:rPrDefault").and_then(|x| x.child("w:rPr")), &mut fonts, &mut size, &mut bold);
+        read_rpr(dd.child("w:rPrDefault").and_then(|x| x.child("w:rPr")), theme, &mut base);
     }
-    let normal = by("Normal", "Normal");
-    let body = by("BodyText", "Body Text");
-    for s in [normal, body].into_iter().flatten() {
-        read_rpr(s.child("w:rPr"), &mut fonts, &mut size, &mut bold);
+    let body_chain = by("BodyText", "Body Text").or_else(|| by("Normal", "Normal")).map(|s| style_chain(root, s)).unwrap_or_default();
+    let mut body = base.clone();
+    for s in &body_chain {
+        read_rpr(s.child("w:rPr"), theme, &mut body);
         let ppr = s.child("w:pPr");
         read_spacing(ppr, &mut r.before, &mut r.after);
         if let Some(sp) = ppr.and_then(|p| p.child("w:spacing")) {
@@ -566,25 +649,34 @@ pub fn read_styles(styles: &str, document: Option<&str>) -> Result<RefStyles, St
         if let Some(ind) = ppr.and_then(|p| p.child("w:ind")) {
             if let Some(v) = ind.attr("w:firstLineChars").and_then(|v| v.parse::<f64>().ok()) {
                 r.indent = Some(num(v / 100.0));
+            } else if ind.attr("w:hanging").is_some() || ind.attr("w:hangingChars").is_some() {
+                r.indent = Some("0".into());
             }
         }
         if let Some(j) = ppr.and_then(|p| p.child("w:jc")).and_then(|j| j.attr("w:val")) {
             r.align = jc_to_ui(j);
         }
     }
-    r.latin = fonts.0;
-    r.cjk = fonts.1;
-    r.size = size;
+    r.latin = body.latin.clone();
+    r.cjk = body.cjk.clone();
+    r.size = body.size.clone();
+    // 标题：各级标题常常是「标题 2 基于 标题 1」，没写的属性要从上一级继承过来才是 Word 里看到的样子
     for lv in 1..=3 {
         let mut h = RefHeading::default();
         if let Some(s) = by(&format!("Heading{lv}"), &format!("heading {lv}")) {
-            let mut f = (None, None);
-            read_rpr(s.child("w:rPr"), &mut f, &mut h.size, &mut h.bold);
-            h.font = f.1.or(f.0);
-            read_spacing(s.child("w:pPr"), &mut h.before, &mut h.after);
-            if let Some(j) = s.child("w:pPr").and_then(|p| p.child("w:jc")).and_then(|j| j.attr("w:val")) {
-                h.align = jc_to_ui(j);
+            let mut run = base.clone();
+            for st in style_chain(root, s) {
+                read_rpr(st.child("w:rPr"), theme, &mut run);
+                read_spacing(st.child("w:pPr"), &mut h.before, &mut h.after);
+                if let Some(j) = st.child("w:pPr").and_then(|p| p.child("w:jc")).and_then(|j| j.attr("w:val")) {
+                    h.align = jc_to_ui(j);
+                }
             }
+            // 和正文一样的字体不算标题自己的设置（界面上显示「同正文」）
+            let font = run.cjk.clone().or(run.latin.clone());
+            h.font = if font.is_some() && font == body.cjk.clone().or(body.latin.clone()) { None } else { font };
+            h.size = run.size;
+            h.bold = run.bold;
         }
         r.headings.push(h);
     }
@@ -617,7 +709,8 @@ pub fn read_reference(path: &Path) -> Result<RefStyles, String> {
     };
     let styles = read("word/styles.xml").ok_or("这个文件里没有样式表")?;
     let document = read("word/document.xml");
-    read_styles(&styles, document.as_deref())
+    let theme = read("word/theme/theme1.xml").map(|t| read_theme(&t)).unwrap_or_default();
+    read_styles_with_theme(&styles, document.as_deref(), &theme)
 }
 
 /* ---------------- 导出 ---------------- */
@@ -695,7 +788,7 @@ fn utf8_env(cmd: &mut Command) {
 /// Pandoc 自带的默认参考文档
 fn pandoc_default_reference(pandoc: &Path, dir: &Path) -> Result<Vec<u8>, String> {
     let p = dir.join("pandoc-default.docx");
-    let mut cmd = Command::new(pandoc);
+    let mut cmd = command(pandoc);
     utf8_env(&mut cmd);
     let out = cmd.args(["-o"]).arg(&p).args(["--print-default-data-file", "reference.docx"]).output().map_err(|e| e.to_string())?;
     if !out.status.success() {
@@ -704,7 +797,8 @@ fn pandoc_default_reference(pandoc: &Path, dir: &Path) -> Result<Vec<u8>, String
     std::fs::read(&p).map_err(|e| e.to_string())
 }
 
-pub fn run(job: ExportJob) -> Result<ExportResult, String> {
+/// 导出的几个阶段，前端据此显示进度：style（写版式与配置）→ pandoc（转换）→ typst（PDF 排版）→ write（写入目标文件）
+pub fn run(job: ExportJob, progress: &dyn Fn(&str)) -> Result<ExportResult, String> {
     use base64::Engine;
     let pandoc = find_tool("pandoc").ok_or("没有找到 Pandoc")?;
     let ddir = PathBuf::from(&job.defaults_dir);
@@ -712,6 +806,7 @@ pub fn run(job: ExportJob) -> Result<ExportResult, String> {
     let tmp = temp_dir()?;
     let result = (|| -> Result<ExportResult, String> {
         // 1. 参考文档或模板，和 defaults 文件放在一起
+        progress("style");
         if job.format == "docx" {
             let src = match &job.reference_doc {
                 Some(p) if !p.is_empty() => std::fs::read(p).map_err(|e| format!("读不到参考文档 {p}：{e}"))?,
@@ -742,8 +837,9 @@ pub fn run(job: ExportJob) -> Result<ExportResult, String> {
         // PDF 分两步：Pandoc 生成 Typst 源文件，再由 Typst 排版。
         // 让 Pandoc 自己调 Typst 时，给它完整路径它会误判输出格式；两步走报错也更清楚
         let pdf = job.format == "pdf";
+        progress("pandoc");
         let pandoc_out = if pdf { tmp.join("output.typ") } else { staged.clone() };
-        let mut cmd = Command::new(&pandoc);
+        let mut cmd = command(&pandoc);
         utf8_env(&mut cmd);
         cmd.arg("-d").arg(&defaults).arg(&input).arg("-o").arg(&pandoc_out);
         cmd.args(&job.extra_args);
@@ -755,8 +851,9 @@ pub fn run(job: ExportJob) -> Result<ExportResult, String> {
             return Err(if warnings.is_empty() { "Pandoc 导出失败".into() } else { warnings });
         }
         if pdf {
+            progress("typst");
             let typst = find_tool("typst").ok_or("没有找到 Typst")?;
-            let mut t = Command::new(&typst);
+            let mut t = command(&typst);
             utf8_env(&mut t);
             // 图片都在临时目录里（相对路径），Typst 默认以输入文件所在的目录为根，正好
             t.arg("compile").arg(&pandoc_out).arg(&staged).current_dir(&tmp);
@@ -769,6 +866,7 @@ pub fn run(job: ExportJob) -> Result<ExportResult, String> {
                 warnings = [warnings, err].iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join("\n");
             }
         }
+        progress("write");
         std::fs::copy(&staged, &job.output).map_err(|e| format!("无法写入 {}：{e}", job.output))?;
         Ok(ExportResult { output: job.output.clone(), warnings })
     })();
@@ -805,6 +903,18 @@ fn localize_images(md: &str, tmp: &Path) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// 用系统默认的程序打开（导出完成后「打开文件」）
+pub fn open_path(path: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let r = Command::new("open").arg(path).spawn();
+    // explorer 打开文件时交给默认程序；它本身是图形程序，不会弹控制台
+    #[cfg(target_os = "windows")]
+    let r = Command::new("explorer").arg(path.replace('/', "\\")).spawn();
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let r = Command::new("xdg-open").arg(path).spawn();
+    r.map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// 在 Finder 里显示
@@ -871,6 +981,32 @@ mod tests {
     }
 
     #[test]
+    fn reads_inherited_heading_styles_and_theme_fonts() {
+        let styles = r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:eastAsiaTheme="minorEastAsia" w:hAnsiTheme="minorHAnsi"/><w:sz w:val="21"/></w:rPr></w:rPrDefault></w:docDefaults>
+  <w:style w:type="paragraph" w:default="1" w:styleId="a"><w:name w:val="Normal"/><w:pPr><w:spacing w:line="360" w:lineRule="auto"/><w:ind w:firstLineChars="200"/></w:pPr><w:rPr><w:sz w:val="24"/></w:rPr></w:style>
+  <w:style w:type="paragraph" w:styleId="1"><w:name w:val="heading 1"/><w:basedOn w:val="a"/><w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:rFonts w:eastAsia="黑体"/><w:b/><w:sz w:val="32"/></w:rPr></w:style>
+  <w:style w:type="paragraph" w:styleId="2"><w:name w:val="heading 2"/><w:basedOn w:val="1"/><w:pPr><w:jc w:val="left"/></w:pPr><w:rPr><w:sz w:val="28"/></w:rPr></w:style>
+</w:styles>"#;
+        let theme = read_theme(r#"<a:theme xmlns:a="x"><a:themeElements><a:fontScheme name="Office"><a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface=""/><a:font script="Hans" typeface="等线 Light"/></a:majorFont><a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:font script="Jpan" typeface="游明朝"/><a:font script="Hans" typeface="等线"/></a:minorFont></a:fontScheme></a:themeElements></a:theme>"#);
+        let r = read_styles_with_theme(styles, None, &theme).unwrap();
+        // 正文：没有 Body Text 时读 Normal；字体来自主题
+        assert_eq!(r.cjk.as_deref(), Some("等线"));
+        assert_eq!(r.latin.as_deref(), Some("Calibri"));
+        assert_eq!(r.size.as_deref(), Some("12"));
+        assert_eq!(r.line, Some(("multi".into(), "1.5".into())));
+        assert_eq!(r.indent.as_deref(), Some("2"));
+        // 二级标题基于一级：字体、加粗继承，字号和对齐用自己的
+        assert_eq!(r.headings[0].font.as_deref(), Some("黑体"));
+        assert_eq!(r.headings[1].font.as_deref(), Some("黑体"));
+        assert_eq!(r.headings[1].bold, Some(true));
+        assert_eq!(r.headings[1].size.as_deref(), Some("14"));
+        assert_eq!(r.headings[1].align.as_deref(), Some("left"));
+        assert_eq!(r.headings[2], RefHeading::default());
+    }
+
+    #[test]
     fn empty_style_changes_nothing_but_language() {
         let out = patch_styles(STYLES, &DocxStyle::default()).unwrap();
         assert!(out.contains(r#"<w:rFonts w:asciiTheme="minorHAnsi" w:eastAsiaTheme="minorEastAsia" w:hAnsiTheme="minorHAnsi"/><w:sz w:val="24"/><w:szCs w:val="24"/><w:lang w:eastAsia="zh-CN"/>"#), "{out}");
@@ -907,7 +1043,7 @@ mod tests {
     fn e2e_from_env() {
         let Ok(p) = std::env::var("HM_EXPORT_JOB") else { return };
         let job: ExportJob = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();
-        let r = run(job).unwrap();
+        let r = run(job, &|s| println!("stage {s}")).unwrap();
         println!("written {} warnings:\n{}", r.output, r.warnings);
     }
 }

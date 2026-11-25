@@ -39,6 +39,9 @@ const P: Record<string, JSX.Element> = {
   up: <path d="m4.5 10 3.5-3.5 3.5 3.5" />,
   cmd: <path d="m4 5 3 3-3 3M8.5 11H12" />,
   go: <path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" />,
+  reset: <><path d="M3 4v3.2h3.2" /><path d="M3.4 7A5 5 0 1 1 4.3 11" /></>,
+  open: <><path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5" /><path d="M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3" /></>,
+  warn: <><path d="M8 2.5 14 13H2z" /><path d="M8 6.5v3M8 11.3v.2" /></>,
 };
 
 export function Icon({ name, size = 16 }: { name: keyof typeof P | string; size?: number }) {

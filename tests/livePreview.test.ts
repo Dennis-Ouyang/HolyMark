@@ -71,3 +71,25 @@ describe("topBlocks 识别属性区与公式块", () => {
     expect(kinds("段落\n\n$$\n没闭合\n\n$$ b $$\n")).toEqual([["math", "$$ b $$"]]);
   });
 });
+
+describe("段间空行", () => {
+  const gapLines = (state: EditorState) => {
+    const out: number[] = [];
+    decoSet(state)[0].between(0, state.doc.length, (from, _to, v) => { if ((v.spec as { class?: string }).class === "hm-gap") out.push(state.doc.lineAt(from).number); });
+    return out;
+  };
+  it("光标停在空行上时按正常行高显示，离开后再收窄", () => {
+    const doc = "第一段\n\n第二段\n\n第三段";
+    let state = EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage }), livePreview(opts("active"))] });
+    state = state.update({ effects: setFocus.of(true) }).state;
+    expect(gapLines(state)).toEqual([2, 4]);
+    state = state.update({ selection: { anchor: doc.indexOf("\n\n") + 1 } }).state; // 第 2 行
+    expect(gapLines(state)).toEqual([4]);
+    expect(RangeSet.eq([decoSet(state)[0]], [build(state, opts("active"), newMemo())])).toBe(true);
+    state = state.update({ selection: { anchor: doc.length } }).state;
+    expect(gapLines(state)).toEqual([2, 4]);
+    // 编辑器没有焦点时不显示光标，空行保持收窄
+    state = state.update({ selection: { anchor: doc.indexOf("\n\n") + 1 }, effects: setFocus.of(false) }).state;
+    expect(gapLines(state)).toEqual([2, 4]);
+  });
+});

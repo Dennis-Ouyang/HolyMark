@@ -279,7 +279,7 @@ const focusField = StateField.define<boolean>({
  * 这样长稿里每次按键的开销基本与全文长度无关。改动太多（比如整篇替换）时退回整篇重建。
  */
 type Local = { from: number; to: number; deco: Decoration }[];
-interface Zone { zone: number; base: number; end: number; sig: string; block: Block; active: boolean; gap: number }
+interface Zone { zone: number; base: number; end: number; sig: string; block: Block; active: boolean; gap: number; gapLine: number }
 interface Memo {
   cache: Map<string, Local>;
   /** 文档和语法树都没变时（只挪了光标），块列表直接沿用 */
@@ -303,6 +303,8 @@ export function build(state: EditorState, opts: PreviewOptions, memo: Memo = new
   if (memo.doc === doc && memo.tree === tree) blocks = memo.blocks;
   else { blocks = topBlocks(state); memo.doc = doc; memo.tree = tree; memo.blocks = blocks; }
   const isActive = (b: Block) => always || (focused && sel.some((r) => r.from <= b.to && r.to >= b.from));
+  /** 段间空行上有光标时按正常行高显示，光标才有完整的高度；光标离开后再收窄成段距 */
+  const gapShown = (line: number) => line >= 0 && !(focused && sel.some((r) => r.empty && r.head === line));
 
   /** 第 j 块的区段信息（要查行号，只对变了的块调用） */
   const zoneOf = (j: number, active: boolean): Zone => {
@@ -310,15 +312,16 @@ export function build(state: EditorState, opts: PreviewOptions, memo: Memo = new
     const startLine = doc.lineAt(b.from), endLine = doc.lineAt(b.to);
     const prevEnd = j ? doc.lineAt(blocks[j - 1].to).number : 0; // 上一块最后一行的行号
     const zone = prevEnd ? doc.line(prevEnd + 1).from : 0;
-    // 段落之间只隔一个空行时，这个空行收窄成段距；连续多个空行按正常行高显示，光标进出也不变
-    let gap = -1;
+    // 段落之间只隔一个空行时，这个空行收窄成段距（光标停在这一行上时除外）；连续多个空行按正常行高显示
+    let gapLine = -1;
     if (prevEnd && startLine.number - prevEnd === 2) {
       const g = doc.line(prevEnd + 1);
-      if (!g.text.trim() && doc.line(prevEnd).text.trim() && startLine.text.trim()) gap = g.from;
+      if (!g.text.trim() && doc.line(prevEnd).text.trim() && startLine.text.trim()) gapLine = g.from;
     }
+    const gap = gapShown(gapLine) ? gapLine : -1;
     const base = startLine.from;
     const sig = `${b.kind}|${active ? 1 : 0}|${gap < 0 ? 0 : 1}|${base - zone}|${b.from - base}|${b.to - base}|${endLine.to - base}`;
-    return { zone, base, end: endLine.to, sig, block: b, active, gap };
+    return { zone, base, end: endLine.to, sig, block: b, active, gap, gapLine };
   };
 
   const decosOf = (z: Zone, next: Map<string, Local>): Range<Decoration>[] => {
@@ -352,9 +355,10 @@ export function build(state: EditorState, opts: PreviewOptions, memo: Memo = new
         if (o.block.kind === b.kind && map(o.block.from) === b.from && map(o.block.to) === b.to && (ch.empty || !ch.touchesRange(o.zone, o.end))) matched = i;
       }
       const active = isActive(b);
-      if (matched >= 0 && (j === 0 ? matched === 0 : prevMatched === matched - 1) && old[matched].active === active) {
-        const o = old[matched];
-        zones[j] = ch.empty ? { ...o, block: b } : { ...o, block: b, zone: map(o.zone), base: map(o.base), end: map(o.end), gap: o.gap < 0 ? -1 : map(o.gap) };
+      const o = matched >= 0 ? old[matched] : null;
+      const gapLine = o && o.gapLine >= 0 ? map(o.gapLine) : -1;
+      if (o && (j === 0 ? matched === 0 : prevMatched === matched - 1) && o.active === active && gapShown(gapLine) === o.gap >= 0) {
+        zones[j] = ch.empty ? { ...o, block: b } : { ...o, block: b, zone: map(o.zone), base: map(o.base), end: map(o.end), gap: o.gap < 0 ? -1 : map(o.gap), gapLine };
       } else {
         zones[j] = zoneOf(j, active);
         dirty.push(zones[j]);

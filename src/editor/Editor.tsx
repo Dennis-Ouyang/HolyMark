@@ -10,6 +10,7 @@ import { tags as t } from "@lezer/highlight";
 import { flash, livePreview, PreviewOptions } from "./livePreview";
 import { continueList, toggleInline } from "./commands";
 import { autoPair } from "./autoPair";
+import { cjkEmphasis } from "./cjkEmphasis";
 
 export interface EditorHandle {
   view: () => EditorView | null;
@@ -59,7 +60,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial,
           drawSelection(),
           highlightActiveLine(),
           EditorView.lineWrapping,
-          markdown({ base: markdownLanguage, codeLanguages: languages }),
+          markdown({ base: markdownLanguage, codeLanguages: languages, extensions: [cjkEmphasis] }),
           syntaxHighlighting(codeHighlight),
           previewCompartment.current.of(livePreview(preview)),
           autoPair(),

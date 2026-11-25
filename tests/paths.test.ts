@@ -59,7 +59,8 @@ describe("菜单快捷键", async () => {
     const fs = await import("node:fs" as string); // 测试在 Node 里跑
     const rs = fs.readFileSync(new URL("../src-tauri/src/menu.rs", import.meta.url), "utf8");
     const native = [...rs.matchAll(/item\("(\w+)", "[^"]*", Some\("CmdOrCtrl\+([^"]+)"\)\)/g)].map((m) => [`Mod+${m[2].replace(/\\\\/g, "\\")}`, m[1]]);
-    const skip = new Set(["undo", "redo"]);
+    // 撤销重做交给编辑器；退出只在 Mac 菜单里（Windows 用 Alt+F4 和窗口按钮）
+    const skip = new Set(["undo", "redo", "quit"]);
     expect(native.filter(([, id]) => !skip.has(id)).sort()).toEqual([...SHORTCUTS].sort());
   });
 });

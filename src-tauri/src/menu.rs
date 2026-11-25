@@ -22,7 +22,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&PredefinedMenuItem::hide_others(app, Some("隐藏其他"))?)
         .item(&PredefinedMenuItem::show_all(app, Some("全部显示"))?)
         .separator()
-        .item(&PredefinedMenuItem::quit(app, Some("退出 HolyMark"))?)
+        // 退出交给前端：有没保存的修改时先问一声，再关窗口（最后一个窗口关掉应用就退出）
+        .item(&item("quit", "退出 HolyMark", Some("CmdOrCtrl+Q"))?)
         .build()?;
 
     let file = SubmenuBuilder::new(app, "文件")

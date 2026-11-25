@@ -4,14 +4,14 @@ import { Editor, EditorHandle } from "./editor/Editor";
 import { esc } from "./editor/livePreview";
 import { Backend, demoImages, demoStartFile, FontFamily, getBackend, isTauri, TreeNode, VersionMeta } from "./lib/backend";
 import { alignBlocks, changedLines, countWords, docLayout, headings, Note, parseNotes, plainText, setDocLayout, wordCounter } from "./lib/markdown";
-import { loadSettings, saveSettings, Settings, fontStack } from "./lib/settings";
+import { applyAccent, loadSettings, saveSettings, Settings, fontStack } from "./lib/settings";
 import { BibEntry, parseBib, shortAuthor } from "./lib/bib";
 import { FileTree } from "./components/FileTree";
 import { FloatingToolbar, Ribbon } from "./components/Toolbars";
-import { BlockKind, insertBlock, insertLink, insertNote, setBlock, tableMarkdown, toggleInline } from "./editor/commands";
+import { activeStyles, BlockKind, currentBlock, InlineKind, insertBlock, insertLink, insertNote, setBlock, tableMarkdown, toggleInline } from "./editor/commands";
 import { PanelTab, SidePanel, fmtTime, versionTitle } from "./components/SidePanel";
 import { Compare } from "./components/Compare";
-import { CountPop, HelpDialog, Palette, PaletteItem, SaveVersionDialog, SettingsDialog } from "./components/Dialogs";
+import { CountPop, HelpDialog, Palette, PaletteItem, SaveVersionDialog, SettingsDialog, UnsavedDialog } from "./components/Dialogs";
 import { Icon } from "./components/Icons";
 import { WindowControls } from "./components/WindowControls";
 import { baseName, dirOf, isInside, join, normalize, relative, toPosix } from "./lib/paths";
@@ -25,6 +25,8 @@ const nativeMenu = isTauri && isMac;
 /** Windows 上不用系统标题栏，窗口按钮自己画 */
 const customFrame = isTauri && isWindows;
 function flatten(nodes: TreeNode[]): TreeNode[] { return nodes.flatMap((n) => (n.dir ? flatten(n.children) : [n])); }
+/** 侧栏里显示的路径：太长时只留后半段 */
+function shortPath(p: string) { return p.length > 38 ? "…" + p.slice(-37) : p; }
 
 export default function App() {
   const [s, setS] = useState<Settings>(loadSettings);
@@ -41,23 +43,26 @@ export default function App() {
   const [showSide, setShowSide] = useState(true);
   const [showPanel, setShowPanel] = useState(true);
   const [focus, setFocus] = useState(false);
-  const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "cite" | "help_syntax" | "help_keys" | "export">(null);
+  const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "cite" | "help_syntax" | "help_keys" | "export" | "unsaved">(null);
   const [fonts, setFonts] = useState<FontFamily[]>([]);
   const [scrollHeading, setScrollHeading] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
   const [tick, setTick] = useState(0);
   const [selText, setSelText] = useState("");
+  /** 光标处的行内格式和段落类型，工具栏按钮显示按下状态 */
+  const [fmt, setFmt] = useState<{ active: Set<InlineKind>; block: BlockKind }>({ active: new Set(), block: "p" });
   const [cursor, setCursor] = useState(0);
   const [bib, setBib] = useState<BibEntry[]>([]);
   const [countPop, setCountPop] = useState<{ title: string; text: string; rect: DOMRect } | null>(null);
   const [toast, setToast] = useState<{ msg: string; action?: { label: string; run: () => void } } | null>(null);
   const ed = useRef<EditorHandle>(null);
-  const live = useRef({ path: "", text: "", lastWritten: "", lastVersionAt: 0 });
+  // base：上一次“保存”时的内容（打开文件、保存版本、外部修改之后）。和 text 不同就是有没保存的修改，关闭应用时会问
+  const live = useRef({ path: "", text: "", base: "", lastWritten: "", lastVersionAt: 0 });
   const saveTimer = useRef<number>();
 
   const view = (): EditorView | null => ed.current?.view() ?? null;
   // 方便自动化测试读取编辑器状态
-  (window as unknown as { __hm: unknown }).__hm = { view };
+  (window as unknown as { __hm: unknown }).__hm = { view, menu: (id: string) => menuRef.current(id) };
   const say = useCallback((m: string, action?: { label: string; run: () => void }) => {
     setToast({ msg: m, action });
     window.clearTimeout((say as unknown as { t: number }).t);
@@ -70,6 +75,14 @@ export default function App() {
     const r = document.documentElement;
     if (s.theme === "system") delete r.dataset.theme; else r.dataset.theme = s.theme;
   }, [s.theme]);
+  // 主题色：浅色、深色界面各用一套，跟随系统时系统切换也要跟着换
+  useEffect(() => {
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    const f = () => applyAccent(s.accent, s.theme === "dark" || (s.theme === "system" && mq.matches));
+    f();
+    mq.addEventListener("change", f);
+    return () => mq.removeEventListener("change", f);
+  }, [s.accent, s.theme]);
 
   /* ---------- folder & files ---------- */
   useEffect(() => { getBackend().then(setBe); }, []);
@@ -137,7 +150,7 @@ export default function App() {
     if (!be) return;
     await flush();
     const content = await be.readText(p);
-    live.current = { path: p, text: content, lastWritten: content, lastVersionAt: Date.now() };
+    live.current = { path: p, text: content, base: content, lastWritten: content, lastVersionAt: Date.now() };
     setPath(p); setText(content); setCmp(null); setFresh(null);
     ed.current?.load(content);
     if (scroller.current) scroller.current.scrollTop = 0;
@@ -181,7 +194,7 @@ export default function App() {
       const content = await be.readText(p);
       if (content === live.current.text) return;
       const before = live.current.text;
-      live.current.text = content; live.current.lastWritten = content;
+      live.current.text = content; live.current.lastWritten = content; live.current.base = content;
       ed.current?.replace(content);
       ed.current?.flash(changedLines(before, content));
       setText(content);
@@ -196,15 +209,49 @@ export default function App() {
     addEventListener("beforeunload", f);
     return () => removeEventListener("beforeunload", f);
   });
-  // 关窗口（标题栏按钮、Alt+F4、⌘Q、任务栏）之前把还没写盘的内容存下来；最多等 2 秒，存不了也不拦着关
-  const flushRef = useRef(flush);
-  flushRef.current = flush;
+
+  /* ---------- 关闭应用：有修改时问一声要不要保存 ---------- */
+  const closing = useRef(false);
+  async function reallyClose() {
+    closing.current = true;
+    setDlg(null);
+    if (!isTauri) { closing.current = false; say("浏览器预览里不会真的关闭窗口"); return; }
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().destroy();
+  }
+  /** 关窗口（标题栏按钮、Alt+F4、⌘W、⌘Q）：先把没写盘的内容存下来，再看要不要问 */
+  async function requestClose() {
+    await Promise.race([flush().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
+    const l = live.current;
+    if (s.askOnClose && l.path && l.text !== l.base) { setDlg("unsaved"); return; }
+    await reallyClose();
+  }
+  /** 保存：文件已经是现在的内容，记一个版本作为保存点 */
+  async function closeSaving() {
+    const l = live.current;
+    if (be && l.path) await be.saveVersion(l.path, l.text, "auto", undefined, "关闭前保存").catch(() => null);
+    await reallyClose();
+  }
+  /** 不保存：现在的内容先存成版本（找得回来），文件写回上次保存时的样子 */
+  async function closeDiscarding() {
+    const l = live.current;
+    if (be && l.path) {
+      await be.saveVersion(l.path, l.text, "auto", undefined, "关闭时没有保存的修改").catch(() => null);
+      await be.writeText(l.path, l.base).catch(() => null);
+      l.text = l.lastWritten = l.base;
+    }
+    await reallyClose();
+  }
+  const closeRef = useRef(requestClose);
+  closeRef.current = requestClose;
   useEffect(() => {
     if (!isTauri) return;
     let un: (() => void) | undefined, alive = true;
     import("@tauri-apps/api/window").then(async ({ getCurrentWindow }) => {
-      const u = await getCurrentWindow().onCloseRequested(async () => {
-        await Promise.race([flushRef.current().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
+      const u = await getCurrentWindow().onCloseRequested((e) => {
+        if (closing.current) return;
+        e.preventDefault();
+        closeRef.current();
       });
       if (alive) un = u; else u();
     });
@@ -276,6 +323,7 @@ export default function App() {
       const r = v.state.selection.main;
       setCursor(r.head);
       setSelText(r.empty ? "" : v.state.sliceDoc(r.from, r.to));
+      setFmt({ active: activeStyles(v.state, r.from, r.to), block: currentBlock(v) });
       setTick((t) => t + 1);
     });
   }, []);
@@ -339,6 +387,7 @@ export default function App() {
       case "help_syntax": setDlg("help_syntax"); break;
       case "help_keys": setDlg("help_keys"); break;
       case "export": openExport(); break;
+      case "quit": requestClose(); break;
     }
   }
   const menuRef = useRef(onMenu);
@@ -383,6 +432,7 @@ export default function App() {
     await flush();
     await be.saveVersion(path, live.current.text, "saved", name, note || undefined);
     live.current.lastVersionAt = Date.now();
+    live.current.base = live.current.text;
     setVersions(await be.listVersions(path));
     setDlg(null);
     say(`已保存版本「${name}」`);
@@ -554,6 +604,12 @@ export default function App() {
   useEffect(() => { if (dlg === "save" && be && versions[0]) be.readVersion(path, versions[0].id).then(setLastVersionText); }, [dlg, be, versions, path]);
   const saveChanges = useMemo(() => (dlg === "save" ? alignBlocks(lastVersionText, text).filter((r) => r.ops).length : changesSinceLast), [dlg, lastVersionText, text, changesSinceLast]);
 
+  /** 状态栏的字数：点一下打开浮窗，再点一下关上 */
+  function toggleCount(title: string, t: string, el: HTMLElement) {
+    setCountPop((p) => (p?.title === title ? null : { title, text: t, rect: el.getBoundingClientRect() }));
+  }
+  const dirty = !!path && text !== live.current.base;
+
   const appCls = ["app", showSide ? "" : "no-side", showPanel ? "" : "no-panel", focus ? "focus" : "", isTauri && isMac ? "mac" : "", customFrame ? "framed" : ""].join(" ");
   const fileName = baseName(path);
   const crumbs = path && root ? relative(root, path).split("/") : [];
@@ -565,6 +621,7 @@ export default function App() {
         <div className="crumbs" data-tauri-drag-region>
           {root && <span>{baseName(root)}</span>}
           {crumbs.map((c, i) => <span key={i} className="crumb"><span className="sep">/</span>{i === crumbs.length - 1 ? <b>{c}</b> : c}</span>)}
+          {dirty && <span className="dirty" title={kbd("这次打开后有修改（已自动写入文件）。按 ⌘S 保存版本，关闭时也会询问")} aria-label="有修改" />}
         </div>
         <div className="spacer" data-tauri-drag-region />
         {path && saveState === "error" && <div className="savestate" role="alert" title="自动保存没有成功，继续编辑会再次尝试"><i />保存失败</div>}
@@ -578,27 +635,28 @@ export default function App() {
       <aside className="side" aria-label="文件夹">
         <div className="side-in">
           <div className="side-scroll">
-            <button className="folder" onClick={chooseFolder} title="打开其他文件夹">
-              <span className="fi"><Icon name="folder" size={14} /></span>
-              <span><b>{root ? baseName(root) : "打开文件夹"}</b><small>{root || "选择一个放稿件的文件夹"}</small></span>
+            <button className={"folder" + (root ? "" : " none")} onClick={chooseFolder} title={root ? `${root}\n点击打开其他文件夹` : "选择一个放稿件的文件夹"}>
+              <span className="fname">{root ? baseName(root) : "打开文件夹"}</span>
+              <span className="fpath">{root ? shortPath(root) : "选择一个放稿件的文件夹"}</span>
             </button>
             <FileTree nodes={tree} current={path} onOpen={openFile} showAll={s.showAllFiles} />
           </div>
-          <div className="side-foot"><button className="tn" onClick={() => setDlg("settings")}><span className="ico"><Icon name="gear" size={14} /></span><span className="nm">设置</span><span className="ext">{kbd("⌘,")}</span></button></div>
+          {/* Mac 上设置在菜单栏「HolyMark → 设置…」里，左下角不再放 */}
+          {!nativeMenu && <div className="side-foot"><button className="tn" onClick={() => setDlg("settings")}><span className="ico"><Icon name="gear" size={14} /></span><span className="nm">设置</span><span className="ext">{kbd("⌘,")}</span></button></div>}
         </div>
       </aside>
 
       <main className="main">
         <Ribbon view={ed.current?.view() ?? null} author={AUTHOR} settings={s} fonts={fonts} layout={layout} onLayout={applyLayout}
           collapsed={s.ribbonCollapsed} setCollapsed={(c) => update({ ribbonCollapsed: c })}
-          onSaveVersion={() => setDlg("save")} onPickImage={pickImage} onCite={() => setDlg("cite")} />
+          onPickImage={pickImage} onCite={() => setDlg("cite")} active={fmt.active} block={fmt.block} />
         <div className="scroller" ref={scroller} onScroll={() => window.requestAnimationFrame(syncScrollHeading)} onMouseDown={clickBelow}>
           <div className="doc">
             {!path && <div className="welcome"><h2>HolyMark</h2><p>打开一个放稿件的文件夹开始写作。文件就是普通的 Markdown，换任何编辑器都能打开。</p><button className="btn acc" onClick={chooseFolder}>打开文件夹</button></div>}
             <div hidden={!path}><Editor ref={ed} initial="" preview={preview} previewKey={previewKey} onChange={onChange} onSelection={onSelection} onImages={insertImages} /></div>
           </div>
         </div>
-        <FloatingToolbar view={ed.current?.view() ?? null} tick={tick} author={AUTHOR} />
+        <FloatingToolbar view={ed.current?.view() ?? null} tick={tick} author={AUTHOR} active={fmt.active} />
         {cmp && (
           <Compare version={cmp.v} oldText={cmp.oldText} newText={cmp.newText} against={cmp.against}
             hasPrev={versions.findIndex((x) => x.id === cmp.v.id) < versions.length - 1}
@@ -615,8 +673,8 @@ export default function App() {
 
       <footer className="statusbar">
         <span className="sb">本节 <b>{stats.sec.toLocaleString()}</b></span>
-        <button className="sb" onClick={(e) => setCountPop({ title: "全文", text: plainText(text), rect: e.currentTarget.getBoundingClientRect() })}>全文 <b>{stats.total.toLocaleString()}</b></button>
-        {selText && <button className="sb sel" onMouseDown={(e) => e.preventDefault()} onClick={(e) => setCountPop({ title: "选中的文字", text: plainText(selText), rect: e.currentTarget.getBoundingClientRect() })}>选中 <b>{countWords(plainText(selText), s.countPunct).toLocaleString()}</b></button>}
+        <button className={"sb" + (countPop?.title === "全文" ? " on" : "")} data-countpop aria-expanded={countPop?.title === "全文"} onClick={(e) => toggleCount("全文", plainText(text), e.currentTarget)}>全文 <b>{stats.total.toLocaleString()}</b></button>
+        {selText && <button className={"sb sel" + (countPop?.title === "选中的文字" ? " on" : "")} data-countpop aria-expanded={countPop?.title === "选中的文字"} onMouseDown={(e) => e.preventDefault()} onClick={(e) => toggleCount("选中的文字", plainText(selText), e.currentTarget)}>选中 <b>{countWords(plainText(selText), s.countPunct).toLocaleString()}</b></button>}
         {s.goalOn && <div className="r"><div className="goalbar"><i style={{ width: `${Math.min(100, (stats.total / s.goal) * 100)}%` }} /></div><span className="sb"><b>{stats.total.toLocaleString()} / {s.goal.toLocaleString()}</b></span></div>}
         {be?.isDemo && <span className="sb demo-tag">浏览器预览 · 演示文件夹</span>}
       </footer>
@@ -627,8 +685,8 @@ export default function App() {
       {(dlg === "help_syntax" || dlg === "help_keys") && <HelpDialog kind={dlg === "help_syntax" ? "syntax" : "keys"} onClose={() => setDlg(null)} />}
       {dlg === "palette" && <Palette items={commands} search={search} onClose={() => setDlg(null)} placeholder="搜索全文、文件夹，或输入命令" />}
       {dlg === "cite" && <Palette items={citeItems} search={citeSearch} pinned={pickOther} onClose={() => setDlg(null)} placeholder="搜索文献或文件，回车插入" />}
-      {dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage}
-        onClose={() => setDlg(null)} onDone={(m, out) => { setDlg(null); say(m, out ? { label: isWindows ? "在资源管理器中显示" : "在访达中显示", run: () => be.reveal(out) } : undefined); }} />}
+      {dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => setDlg(null)} />}
+      {dlg === "unsaved" && <UnsavedDialog fileName={fileName} onSave={closeSaving} onDiscard={closeDiscarding} onCancel={() => setDlg(null)} />}
       {toast && <div className="toast" role="status"><i />{toast.msg}{toast.action && <button className="lnk" onClick={() => { toast.action!.run(); setToast(null); }}>{toast.action.label}</button>}</div>}
     </div>
   );

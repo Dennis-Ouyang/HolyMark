@@ -3,6 +3,7 @@ import { alignBlocks, countWords, Op } from "../lib/markdown";
 import type { VersionMeta } from "../lib/backend";
 import { fmtTime, versionTitle } from "./SidePanel";
 import { Icon } from "./Icons";
+import { Segmented } from "./Segmented";
 
 interface Props {
   version: VersionMeta;
@@ -38,8 +39,8 @@ export function Compare({ version, oldText, newText, against, hasPrev, prevLabel
       <div className="cmp-h">
         <button className="ib" onClick={onClose} title="返回编辑 Esc"><Icon name="back" />返回编辑</button>
         <div className="ttl"><b>{title}</b><small>{against === "prev" ? "与上一个版本相比" : "与现在相比"}：{stats.changed} 处改动 · <span className="p">+{stats.plus}</span> <span className="m">−{stats.minus}</span> 字{version.note ? ` · ${version.note}` : ""}</small></div>
-        <div className="seg"><button className={mode === "side" ? "on" : ""} onClick={() => setMode("side")}>并排</button><button className={mode === "merge" ? "on" : ""} onClick={() => setMode("merge")}>合并</button></div>
-        <div className="seg"><button className={against === "current" ? "on" : ""} onClick={() => onAgainst("current")}>对比现在</button><button className={against === "prev" ? "on" : ""} disabled={!hasPrev} onClick={() => onAgainst("prev")}>对比上一版</button></div>
+        <Segmented label="显示方式" value={mode} options={[["side", "并排"], ["merge", "合并"]]} onChange={setMode} />
+        {hasPrev && <Segmented label="对比对象" value={against} options={[["current", "对比现在"], ["prev", "对比上一版"]]} onChange={onAgainst} />}
         <button className="btn" onClick={onRestore}>恢复到这个版本</button>
       </div>
       <div className="cmp-b">

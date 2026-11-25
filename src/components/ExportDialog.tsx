@@ -15,6 +15,8 @@ import { FontSelect, Option, Select } from "./Select";
 import { NumberField } from "./NumberField";
 import { Icon } from "./Icons";
 import { baseName, dirOf, join } from "../lib/paths";
+import { Segmented } from "./Segmented";
+import { isWindows } from "../lib/platform";
 
 interface Props {
   be: Backend;
@@ -26,7 +28,6 @@ interface Props {
   fonts: FontFamily[];
   resolveImage: (src: string) => string;
   onClose: () => void;
-  onDone: (msg: string, output?: string) => void;
 }
 
 const flatten = (ns: TreeNode[]): TreeNode[] => ns.flatMap((x) => (x.dir ? flatten(x.children) : [x]));
@@ -34,17 +35,27 @@ const rel = (root: string, p: string) => (p.startsWith(root + "/") ? p.slice(roo
 
 const FMTS: [Fmt, string][] = [["docx", "Word"], ["pdf", "PDF"], ["md", "Markdown"]];
 const EXT: Record<Fmt, string> = { docx: "docx", pdf: "pdf", md: "md" };
-const LEVELS: [Level, string][] = [["1", "章"], ["2", "节"], ["3", "小节"]];
+const LEVELS: [Level, string][] = [["1", "一级标题"], ["2", "二级标题"], ["3", "三级标题"]];
+const Seg = Segmented;
 
-function Seg<T extends string>({ value, options, onChange, label }: { value: T; options: [T, string][]; onChange: (v: T) => void; label: string }) {
-  return (
-    <div className="seg" role="radiogroup" aria-label={label}>
-      {options.map(([v, l]) => <button key={v} type="button" role="radio" aria-checked={value === v} className={value === v ? "on" : ""} onClick={() => onChange(v)}>{l}</button>)}
-    </div>
-  );
-}
+/** 页边距预设（厘米，上 下 左 右），和 Word「布局 → 页边距」里的一样 */
+const MARGINS: [string, string, [string, string, string, string]][] = [
+  ["normal", "常规", ["2.54", "2.54", "3.18", "3.18"]],
+  ["narrow", "窄", ["1.27", "1.27", "1.27", "1.27"]],
+  ["moderate", "适中", ["2.54", "2.54", "1.91", "1.91"]],
+  ["wide", "宽", ["2.54", "2.54", "5.08", "5.08"]],
+];
 
-export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveImage, onClose, onDone }: Props) {
+/** 导出进行到的阶段，后端每进入一个阶段发一次事件 */
+type Stage = "prepare" | "style" | "pandoc" | "typst" | "write";
+const STAGES: Record<Fmt, [Stage, string][]> = {
+  docx: [["prepare", "整理文稿、把图表转成图片"], ["style", "写入 Word 样式"], ["pandoc", "Pandoc 生成 Word 文档"], ["write", "保存文件"]],
+  pdf: [["prepare", "整理文稿、把图表转成图片"], ["style", "写入版式模板"], ["pandoc", "Pandoc 转换"], ["typst", "Typst 排版"], ["write", "保存文件"]],
+  md: [["write", "保存文件"]],
+};
+type Job = { state: "running"; stage: Stage } | { state: "done"; out: string; warnings: string } | { state: "error"; error: string };
+
+export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveImage, onClose }: Props) {
   const saved = useMemo(loadSaved, []);
   const [o, setO] = useState<ExportOptions>(() => saved.last || cloneOpts(EMPTY));
   const [presets, setPresets] = useState(saved.presets);
@@ -55,6 +66,7 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [naming, setNaming] = useState<string | null>(null);
+  const [job, setJob] = useState<Job | null>(null);
   const [mermaid, setMermaid] = useState<Map<string, string>>(new Map());
 
   const docDir = dirOf(path);
@@ -68,12 +80,17 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
   // 记住上次的选项
   useEffect(() => { save({ last: o, presets }); }, [o, presets]);
 
-  // Escape 关闭
+  // Escape 关闭；正在导出时不关，出错时回到选项
   useEffect(() => {
-    const f = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.querySelector(".select-pop")) { e.stopPropagation(); onClose(); } };
+    const f = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || document.querySelector(".select-pop")) return;
+      e.stopPropagation();
+      if (job?.state === "running") return;
+      if (job?.state === "error") setJob(null); else onClose();
+    };
     addEventListener("keydown", f, true);
     return () => removeEventListener("keydown", f, true);
-  }, [onClose]);
+  }, [onClose, job]);
 
   // 预览里的图表：按代码缓存
   useEffect(() => {
@@ -151,10 +168,12 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
     if (!out) return;
     if (isMd && out === path) { setErr("不能覆盖正在编辑的文件，换个文件名吧。"); return; }
     setBusy(true);
+    setJob({ state: "running", stage: isMd ? "write" : "prepare" });
+    const un = be.onExportProgress((st) => setJob((j) => (j?.state === "running" ? { state: "running", stage: st as Stage } : j)));
     try {
       if (isMd) {
         await be.writeText(out, markdownOut(text, o, bibMap));
-        onDone(`已导出 ${baseName(out)}`, be.isDemo ? undefined : out);
+        setJob({ state: "done", out, warnings: "" });
         return;
       }
       const assets: { name: string; data: string }[] = [];
@@ -170,11 +189,10 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
         typstTemplate: o.fmt === "pdf" ? template : null,
         assets, extraArgs: splitArgs(o.extra),
       });
-      onDone(`已导出 ${baseName(r.output)}${r.warnings ? "（有提示，见导出窗口）" : ""}`, r.output);
-      if (r.warnings) console.warn(r.warnings);
+      setJob({ state: "done", out: r.output, warnings: r.warnings });
     } catch (e) {
-      setErr(String(e));
-    } finally { setBusy(false); }
+      setJob({ state: "error", error: String(e) });
+    } finally { un(); setBusy(false); }
   }
 
   const pvImage = useCallback((src: string) => {
@@ -212,6 +230,7 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
     { value: "__pick", label: "选择 .csl 文件…", group: "其他位置" },
   ];
   const H = o.H[lv];
+  const marginPreset = [o.mt, o.mb, o.ml, o.mr].every((x) => !x) ? "" : MARGINS.find(([, , m]) => m.every((x, i) => parseFloat(x) === parseFloat([o.mt, o.mb, o.ml, o.mr][i])))?.[0] ?? "custom";
   const hk = (k: string) => `H.${lv}.${k}`;
 
   const pages = (
@@ -225,8 +244,12 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
         <div className="orow"><span>纸张</span>{xf("paper", <Select value={o.paper} ariaLabel="纸张" onChange={(v) => set({ paper: v as ExportOptions["paper"] })}
           options={[{ value: "", label: `默认（${D.paper}）` }, ...Object.keys(PAPERS).map((k) => ({ value: k, label: k === "16K" ? "16 开" : k, hint: `${PAPERS[k][0]}×${PAPERS[k][1]} mm` })), { value: "custom", label: "自定义尺寸" }]} />)}</div>
         {o.paper === "custom" && <div className="orow"><span>宽 × 高</span><div className="pair">{numf("pw", "宽", { min: 50, max: 1000 }, "mm", "210")}{numf("ph", "高", { min: 50, max: 1000 }, "mm", "297")}</div></div>}
-        <div className="orow top"><span>页边距<small>厘米</small></span><div className="quad">
-          {(["mt", "mb", "ml", "mr"] as const).map((k, i) => <label key={k}><small>{"上下左右"[i]}</small>{numf(k, `${"上下左右"[i]}边距`, { min: 0, max: 10, step: 0.1 })}</label>)}
+        <div className="orow"><span>页边距<small>厘米</small></span><div className="pair">
+          <Seg label="页边距预设" value={marginPreset} options={[["", "默认"], ...MARGINS.map(([k, l]) => [k, l] as [string, string])]}
+            onChange={(k) => { const m = MARGINS.find(([x]) => x === k)?.[2] ?? ["", "", "", ""]; set({ mt: m[0], mb: m[1], ml: m[2], mr: m[3] }); }} />
+          {marginPreset === "custom" && <span className="dnote">自定义</span>}</div></div>
+        <div className="orow"><span /><div className="quad">
+          {(["mt", "mb", "ml", "mr"] as const).map((k, i) => <label key={k}><span>{"上下左右"[i]}</span>{numf(k, `${"上下左右"[i]}边距`, { min: 0, max: 10, step: 0.1 })}</label>)}
         </div></div>
         <div className="orow"><span>页眉</span><div className="pair"><input className="tin" value={o.header} placeholder="不显示" aria-label="页眉" onChange={(e) => set({ header: e.target.value })} />
           <Seg label="页眉对齐" value={o.headerAlign} options={[["left", "左"], ["center", "中"], ["right", "右"]]} onChange={(v) => set({ headerAlign: v })} /></div></div>
@@ -244,7 +267,9 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
         <div className="orow"><span>段前 / 段后</span><div className="pair">{numf("before", "段前", { min: 0, max: 72, step: 0.5 }, "pt")}{numf("after", "段后", { min: 0, max: 72, step: 0.5 }, "pt")}</div></div>
         <div className="orow"><span>对齐</span>{xf("align", <Seg label="对齐" value={o.align} options={[["", "默认"], ["left", "左对齐"], ["justify", "两端对齐"], ["center", "居中"]]} onChange={(v) => set({ align: v })} />)}</div>
       </div>
-      <div className="og"><h5>标题 <Seg label="标题级别" value={lv} options={LEVELS} onChange={setLv} /></h5>
+      <div className="og"><h5>标题</h5>
+        <div className="lvtabs"><Seg full label="标题级别" value={lv} options={LEVELS} onChange={setLv} /></div>
+        <p className="dnote flush">每一级标题分别设置，切换上面的级别即可；空着的项沿用{o.fmt === "docx" ? (o.ref ? "参考文档" : "Word 默认样式") : "默认值"}。</p>
         <div className="orow"><span>字体</span>{xf(hk("font"), <FontSelect value={H.font} fonts={fonts} allowDefault defaultLabel="同正文" ariaLabel="标题字体" onChange={(v) => setH({ font: v })} />)}</div>
         <div className="orow"><span>字号</span>{xf(hk("size"), <Select value={H.size} options={withCustom(sizeOpts(D.H[lv].size), H.size)} ariaLabel="标题字号" onChange={(v) => setH({ size: v })} />)}</div>
         <div className="orow"><span>加粗</span>{xf(hk("bold"), <Seg label="加粗" value={H.bold} options={[["", "默认"], ["1", "加粗"], ["0", "不加粗"]]} onChange={(v) => setH({ bold: v })} />)}</div>
@@ -256,14 +281,17 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
         <div className="orow"><span>编号</span><input className="tin" value={H.num} placeholder="保留原文编号" aria-label="标题编号" onChange={(e) => setH({ num: e.target.value })} /></div>
         <p className="dnote">例如 第{"{一}"}章、{"{1}.{2}"}。{"{1}{2}{3}"} 是各级的阿拉伯数字，{"{一}{二}{三}"} 是中文数字；填了以后，原文里写的编号会被替换。</p>
       </div>
-      <div className="og"><h5>引用、批注与目录</h5>
-        <div className="orow"><span>引用样式</span><Select value={o.csl} options={cslOptions} ariaLabel="引用样式" width={300} onChange={(v) => (v === "__pick" ? pickCsl() : set({ csl: v }))} /></div>
-        <p className="dnote">国标 GB/T 7714 等样式可以从 Zotero 样式库下载 .csl 文件放进文件夹。{bibFiles.length ? `文献库：${bibFiles.map((b) => baseName(b)).join("、")}` : "文件夹里没有 .bib 文献库，[@key] 引用不会被处理。"}</p>
-        {o.fmt === "docx" && <div className="orow"><span>批注</span><Seg label="批注" value={o.notes} options={[["comment", "转为 Word 批注"], ["drop", "不导出"]]} onChange={(v) => set({ notes: v })} /></div>}
-        <div className="orow"><span>目录</span><div className="pair"><button type="button" className={"switch" + (o.toc ? " on" : "")} role="switch" aria-checked={o.toc} aria-label="生成目录" onClick={() => set({ toc: !o.toc })} /><span className="dnote">在正文前生成目录</span></div></div>
+      <div className="og"><h5>参考文献</h5>
+        <div className="orow"><span>文献格式</span><Select value={o.csl} options={cslOptions} ariaLabel="参考文献格式" width={300} onChange={(v) => (v === "__pick" ? pickCsl() : set({ csl: v }))} /></div>
+        <p className="dnote">正文里的 [@key] 按这个格式排成引注和文末的参考文献表。国标 GB/T 7714 等格式可以从 Zotero 样式库下载 .csl 文件放进文件夹。{bibFiles.length ? `文献库：${bibFiles.map((b) => baseName(b)).join("、")}` : "文件夹里没有 .bib 文献库，[@key] 不会被处理。"}</p>
       </div>
-      <div className="og"><h5>高级</h5>
-        <textarea className="xa" value={o.extra} placeholder="额外的 Pandoc 参数，例如 --number-sections" aria-label="额外的 Pandoc 参数" onChange={(e) => set({ extra: e.target.value })} />
+      {o.fmt === "docx" && <div className="og"><h5>批注</h5>
+        <div className="orow"><span>文中批注</span><Seg label="文中批注" value={o.notes} options={[["comment", "变成 Word 批注"], ["drop", "不导出"]]} onChange={(v) => set({ notes: v })} /></div>
+        <p className="dnote">指你用「批注」功能加在正文里的批注（右栏「批注」里能看到）。可以变成 Word 页面右侧的批注气泡，方便别人在 Word 里继续审阅；选「不导出」只留原文。</p>
+      </div>}
+      <div className="og"><h5>其他</h5>
+        <div className="orow"><span>目录</span><label className="pair">{/* 开关 */}<button type="button" className={"switch" + (o.toc ? " on" : "")} role="switch" aria-checked={o.toc} aria-label="生成目录" onClick={() => set({ toc: !o.toc })} /><span className="dnote">在正文前生成目录</span></label></div>
+        <div className="orow top"><span>Pandoc 参数</span><textarea className="xa" value={o.extra} placeholder="额外的参数，例如 --number-sections" aria-label="额外的 Pandoc 参数" onChange={(e) => set({ extra: e.target.value })} /></div>
       </div>
     </>
   );
@@ -285,13 +313,14 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
           <Seg label="格式" value={o.fmt} options={FMTS} onChange={(f) => { setErr(""); setO((x) => ({ ...x, fmt: f })); }} />
           <div className="xpre">
             {naming === null ? <>
-              <Select value="" placeholder="预设" ariaLabel="预设" width={200}
-                options={[{ value: "", label: presets.length ? "选择预设…" : "还没有预设" }, ...presets.map((p, i) => ({ value: String(i), label: p.name }))]}
-                onChange={(v) => { const p = presets[+v]; if (v && p) { setO(normalizeOpts({ ...p.opts, fmt: o.fmt })); setFromRef(new Set()); } }} />
-              <button type="button" className="btn sm" onClick={() => setNaming("")}>存为预设</button>
+              {/* 还没有预设时不显示下拉，只留「存为预设」 */}
+              {presets.length > 0 && <Select value="" placeholder="套用预设…" ariaLabel="预设" width={200}
+                options={presets.map((p, i) => ({ value: String(i), label: p.name }))}
+                onChange={(v) => { const p = presets[+v]; if (p) { setO(normalizeOpts({ ...p.opts, fmt: o.fmt })); setFromRef(new Set()); } }} />}
+              <button type="button" className="btn" onClick={() => setNaming("")}>存为预设</button>
             </> : <form className="pair" onSubmit={(e) => { e.preventDefault(); const nm = naming.trim(); if (!nm) return; setPresets([...presets.filter((p) => p.name !== nm), { name: nm, opts: cloneOpts(o) }]); setNaming(null); }}>
               <input className="tin" autoFocus placeholder="预设名称" aria-label="预设名称" value={naming} onChange={(e) => setNaming(e.target.value)} />
-              <button type="submit" className="btn sm acc">保存</button><button type="button" className="btn sm" onClick={() => setNaming(null)}>取消</button>
+              <button type="submit" className="btn acc">保存</button><button type="button" className="btn" onClick={() => setNaming(null)}>取消</button>
             </form>}
           </div>
           <button className="ib" onClick={onClose} aria-label="关闭"><Icon name="close" /></button>
@@ -321,6 +350,45 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
           <button type="button" className="btn" onClick={onClose}>取消</button>
           <button type="button" className="btn acc" disabled={busy || missing.length > 0 || (be.isDemo && !isMd)} onClick={run}>{busy ? "正在导出…" : `导出 .${EXT[o.fmt]}`}</button>
         </div>
+        {job && <JobView job={job} fmt={o.fmt} be={be} onBack={() => setJob(null)} onClose={onClose} />}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- 导出进度与完成 ---------------- */
+function JobView({ job, fmt, be, onBack, onClose }: { job: Job; fmt: Fmt; be: Backend; onBack: () => void; onClose: () => void }) {
+  const steps = STAGES[fmt];
+  const cur = job.state === "running" ? Math.max(0, steps.findIndex(([k]) => k === job.stage)) : steps.length;
+  const pct = job.state === "running" ? Math.round(((cur + 0.5) / steps.length) * 100) : 100;
+  const warnCount = job.state === "done" && job.warnings ? job.warnings.split("\n").filter((l) => l.trim()).length : 0;
+  return (
+    <div className="xjob" role={job.state === "error" ? "alert" : "status"} aria-live="polite">
+      <div className={"xjob-card " + job.state}>
+        {job.state === "running" && <>
+          <div className="xjob-h"><span className="spin" aria-hidden="true" />正在导出 {fmt === "docx" ? "Word" : fmt === "pdf" ? "PDF" : "Markdown"}</div>
+          <div className="xbar" aria-hidden="true"><i style={{ width: `${pct}%` }} /></div>
+          <ol className="xsteps">
+            {steps.map(([k, l], i) => <li key={k} className={i < cur ? "done" : i === cur ? "cur" : ""}><span className="mk">{i < cur ? <Icon name="check" size={12} /> : null}</span>{l}</li>)}
+          </ol>
+        </>}
+        {job.state === "done" && <>
+          <div className="xjob-badge ok"><Icon name="check" size={22} /></div>
+          <h4>导出完成</h4>
+          <div className="xjob-file"><b>{baseName(job.out)}</b><small>{dirOf(job.out)}</small></div>
+          {warnCount > 0 && <details className="xwarn"><summary>Pandoc 有 {warnCount} 条提示，文件已经生成</summary><pre>{job.warnings}</pre></details>}
+          <div className="xjob-acts">
+            {!be.isDemo && <button type="button" className="btn" onClick={() => be.openPath(job.out)}><Icon name="open" size={14} />打开</button>}
+            {!be.isDemo && <button type="button" className="btn" onClick={() => be.reveal(job.out)}>{isWindows ? "在资源管理器中显示" : "在访达中显示"}</button>}
+            <button type="button" className="btn acc" autoFocus onClick={onClose}>完成</button>
+          </div>
+        </>}
+        {job.state === "error" && <>
+          <div className="xjob-badge bad"><Icon name="warn" size={22} /></div>
+          <h4>导出没有成功</h4>
+          <pre className="xjob-err">{job.error}</pre>
+          <div className="xjob-acts"><button type="button" className="btn acc" autoFocus onClick={onBack}>返回修改</button></div>
+        </>}
       </div>
     </div>
   );

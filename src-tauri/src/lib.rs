@@ -267,9 +267,14 @@ async fn export_tools() -> ExportTools {
     ExportTools { pandoc: export::tool_info("pandoc"), typst: export::tool_info("typst") }
 }
 
+/// 导出过程中每进入一个阶段发一次 "export-progress"，前端据此显示进度
 #[tauri::command]
-async fn export_run(job: export::ExportJob) -> Result<export::ExportResult, String> {
-    tauri::async_runtime::spawn_blocking(move || export::run(job)).await.map_err(err)?
+async fn export_run(app: tauri::AppHandle, job: export::ExportJob) -> Result<export::ExportResult, String> {
+    tauri::async_runtime::spawn_blocking(move || export::run(job, &|stage| {
+        let _ = app.emit("export-progress", stage.to_string());
+    }))
+    .await
+    .map_err(err)?
 }
 
 /// 读参考文档（.docx / .dotx）里的样式，填进导出选项
@@ -281,6 +286,12 @@ fn read_reference(path: String) -> Result<export::RefStyles, String> {
 #[tauri::command]
 fn reveal(path: String) -> Result<(), String> {
     export::reveal(&path)
+}
+
+/// 用默认程序打开（导出完成后的「打开」）
+#[tauri::command]
+fn open_path(path: String) -> Result<(), String> {
+    export::open_path(&path)
 }
 
 #[tauri::command]
@@ -360,7 +371,8 @@ pub fn run() {
             export_tools,
             export_run,
             read_reference,
-            reveal
+            reveal,
+            open_path
         ])
         .build(tauri::generate_context!())
         .expect("HolyMark 启动失败");
