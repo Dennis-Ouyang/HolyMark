@@ -2,8 +2,7 @@ name: 构建 Windows 安装包
 
 on:
   push:
-    # 第二个分支是合并进 main 之前试构建用的，合并后删掉
-    branches: [main, claude/web-interface-performance-ampyrf]
+    branches: [main]
   workflow_dispatch:
 
 env:
