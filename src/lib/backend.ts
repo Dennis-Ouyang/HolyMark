@@ -2,7 +2,8 @@
  * 后端接口。在 Tauri 里调用 Rust 命令；在普通浏览器里（开发预览、测试）使用内置的演示文件夹，
  * 版本存在 localStorage 里，行为与 Rust 版本库一致。
  */
-import { DEMO_FILES, DEMO_ROOT } from "./demo";
+import { DEMO_FILES, DEMO_ROOT, DEMO_START } from "./demo";
+import { longManuscript } from "./stress";
 import { splitBlocks } from "./markdown";
 
 export interface TreeNode { name: string; path: string; dir: boolean; children: TreeNode[] }
@@ -83,8 +84,18 @@ async function tauriBackend(): Promise<Backend> {
 /* ---------------- 浏览器里的演示后端 ---------------- */
 interface DemoRecord extends VersionMeta { blocks: string[] }
 
+/** 浏览器预览加上 ?stress（或 ?stress=字数）时，演示文件夹里多一篇长稿，并直接打开它 */
+const stressChars = (() => {
+  if (typeof location === "undefined") return 0;
+  const v = new URLSearchParams(location.search).get("stress");
+  return v === null ? 0 : +v || 200_000;
+})();
+const STRESS_PATH = DEMO_ROOT + "/正文/长稿压力测试.md";
+export const demoStartFile = stressChars ? STRESS_PATH : DEMO_START;
+
 function demoBackend(): Backend {
   const files = new Map<string, string>(Object.entries(DEMO_FILES));
+  if (stressChars) files.set(STRESS_PATH, longManuscript(stressChars));
   const listeners = new Set<(p: string) => void>();
   const key = (p: string) => "holymark-demo-versions:" + p;
   const objKey = "holymark-demo-objects";

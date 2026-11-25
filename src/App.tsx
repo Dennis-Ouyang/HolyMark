@@ -2,11 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorView } from "@codemirror/view";
 import { Editor, EditorHandle } from "./editor/Editor";
 import { esc } from "./editor/livePreview";
-import { Backend, demoImages, FontFamily, getBackend, isTauri, TreeNode, VersionMeta } from "./lib/backend";
-import { alignBlocks, changedLines, countWords, docLayout, headings, Note, parseNotes, plainText, setDocLayout } from "./lib/markdown";
+import { Backend, demoImages, demoStartFile, FontFamily, getBackend, isTauri, TreeNode, VersionMeta } from "./lib/backend";
+import { alignBlocks, changedLines, countWords, docLayout, headings, Note, parseNotes, plainText, setDocLayout, wordCounter } from "./lib/markdown";
 import { loadSettings, saveSettings, Settings, fontStack } from "./lib/settings";
 import { BibEntry, parseBib, shortAuthor } from "./lib/bib";
-import { DEMO_START } from "./lib/demo";
 import { FileTree } from "./components/FileTree";
 import { FloatingToolbar, Ribbon } from "./components/Toolbars";
 import { BlockKind, insertBlock, insertLink, insertNote, setBlock, tableMarkdown, toggleInline } from "./editor/commands";
@@ -83,8 +82,8 @@ export default function App() {
     (async () => {
       const pending = await be.takePendingOpen().catch(() => [] as string[]);
       if (pending.length) { await openExternalFile(pending[pending.length - 1]); return; }
-      const start = be.isDemo ? dirOf(dirOf(DEMO_START)) : s.lastFolder;
-      if (start) await openFolder(start, be.isDemo ? DEMO_START : undefined).catch(() => update({ lastFolder: "" }));
+      const start = be.isDemo ? dirOf(dirOf(demoStartFile)) : s.lastFolder;
+      if (start) await openFolder(start, be.isDemo ? demoStartFile : undefined).catch(() => update({ lastFolder: "" }));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [be]);
@@ -152,9 +151,11 @@ export default function App() {
   }
 
   /* ---------- editing, autosave, auto versions ---------- */
+  // 字数、大纲、批注这些全文统计不必每个按键都算：最多每 250ms 跟一次正文，长稿打字不卡
+  const textTimer = useRef(0);
   const onChange = useCallback((t: string) => {
     live.current.text = t;
-    setText(t);
+    if (!textTimer.current) textTimer.current = window.setTimeout(() => { textTimer.current = 0; setText(live.current.text); }, 250);
     setSaveState("saving");
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => { flush().catch(() => setSaveState("error")); }, 600);
@@ -221,14 +222,15 @@ export default function App() {
   useEffect(() => { syncScrollHeading(); }, [syncScrollHeading]);
   const currentHeading = scrollHeading;
   const count = useCallback((t: string, p: boolean) => countWords(t, p), []);
+  const totalCounter = useMemo(wordCounter, []);
+  const total = useMemo(() => totalCounter(text, s.countPunct), [totalCounter, text, s.countPunct]);
   const stats = useMemo(() => {
-    const total = countWords(plainText(text), s.countPunct);
     const secs = hs.filter((h) => h.level <= 2);
     let sec = 0;
     const cur = [...secs].reverse().find((h) => h.pos <= cursor);
     if (cur) { const next = secs.find((h) => h.pos > cur.pos); sec = countWords(plainText(text.slice(cur.pos, next ? next.pos : undefined)), s.countPunct); }
     return { total, sec };
-  }, [text, hs, cursor, s.countPunct]);
+  }, [total, text, hs, cursor, s.countPunct]);
 
   const bibMap = useMemo(() => new Map(bib.map((b) => [b.key, b])), [bib]);
   const preview = useMemo(() => ({
@@ -252,11 +254,17 @@ export default function App() {
     "--measure": `${+layout["measure"] || s.measure}em`,
   } as React.CSSProperties;
 
+  // 光标和选区的变化合并到每帧最多一次界面更新
+  const selFrame = useRef(0);
   const onSelection = useCallback((v: EditorView) => {
-    const r = v.state.selection.main;
-    setCursor(r.head);
-    setSelText(r.empty ? "" : v.state.sliceDoc(r.from, r.to));
-    setTick((t) => t + 1);
+    if (selFrame.current) return;
+    selFrame.current = requestAnimationFrame(() => {
+      selFrame.current = 0;
+      const r = v.state.selection.main;
+      setCursor(r.head);
+      setSelText(r.empty ? "" : v.state.sliceDoc(r.from, r.to));
+      setTick((t) => t + 1);
+    });
   }, []);
 
   /** 点正文下方的空白：光标放到文末；最后一行有字就新起一段 */

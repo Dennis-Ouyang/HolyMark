@@ -92,3 +92,16 @@ describe("table model", () => {
     expect(serializeTable(m)).toBe("| 名 | 值 |\n| :--- | ---: |\n| a\\|b | 1 |\n| c |   |");
   });
 });
+
+describe("wordCounter", () => {
+  it("按块增量计数，结果与整篇计数一致", async () => {
+    const { wordCounter } = await import("../src/lib/markdown");
+    const { longManuscript } = await import("../src/lib/stress");
+    const count = wordCounter();
+    let t = longManuscript(30_000, 5);
+    for (const p of [false, true]) expect(count(t, p)).toBe(countWords(plainText(t), p));
+    t = t.slice(0, 15_000) + "新增的一段话，共十个字。\n\n" + t.slice(15_000);
+    expect(count(t, false)).toBe(countWords(plainText(t), false));
+    expect(count("---\ntitle: 不算\n---\n正文四字", false)).toBe(4);
+  });
+});

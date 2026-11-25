@@ -36,12 +36,12 @@ export function countWords(text: string, withPunct: boolean): number {
 }
 
 /** 去掉 Markdown 语法后的正文，用于字数统计和搜索。代码、公式、属性区、图表不计入。 */
-export function plainText(md: string): string {
+export function plainText(md: string, frontMatter = true): string {
   const out: string[] = [];
   let skip: string | null = null;
   const lines = md.split("\n");
   let i = 0;
-  if (lines[0] === "---") { i = lines.findIndex((l, k) => k > 0 && /^(---|\.\.\.)\s*$/.test(l)) + 1; if (i <= 0) i = 0; }
+  if (frontMatter && lines[0] === "---") { i = lines.findIndex((l, k) => k > 0 && /^(---|\.\.\.)\s*$/.test(l)) + 1; if (i <= 0) i = 0; }
   for (; i < lines.length; i++) {
     const l = lines[i];
     const t = l.trim();
@@ -53,6 +53,27 @@ export function plainText(md: string): string {
     out.push(stripInline(l.replace(/^\s*(#{1,6} |> ?|[-*+] \[[ xX]\] |[-*+] |\d+\. )/, "").replace(/\|/g, " ")));
   }
   return out.join("\n");
+}
+
+/**
+ * 全文字数的增量版本：按块（空行分隔）计数并记住每块的结果，再次调用时只重数改过的块。
+ * 每个计数器自带缓存，一个编辑器用一个。
+ */
+export function wordCounter() {
+  let cache = new Map<string, number>();
+  return (md: string, withPunct: boolean): number => {
+    const next = new Map<string, number>();
+    let total = 0;
+    splitBlocks(md).forEach((b, i) => {
+      const k = (i === 0 ? "F" : "B") + (withPunct ? 1 : 0) + b;
+      let n = next.get(k) ?? cache.get(k);
+      if (n === undefined) n = countWords(plainText(b, i === 0), withPunct);
+      next.set(k, n);
+      total += n;
+    });
+    cache = next;
+    return total;
+  };
 }
 
 export function stripInline(s: string): string {
