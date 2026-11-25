@@ -14,6 +14,7 @@ import { PanelTab, SidePanel, fmtTime, versionTitle } from "./components/SidePan
 import { Compare } from "./components/Compare";
 import { CountPop, HelpDialog, Palette, PaletteItem, SaveVersionDialog, SettingsDialog } from "./components/Dialogs";
 import { Icon } from "./components/Icons";
+import { ExportDialog } from "./components/ExportDialog";
 
 const AUTHOR = "我";
 const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent);
@@ -49,7 +50,7 @@ export default function App() {
   const [showSide, setShowSide] = useState(true);
   const [showPanel, setShowPanel] = useState(true);
   const [focus, setFocus] = useState(false);
-  const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "cite" | "help_syntax" | "help_keys">(null);
+  const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "cite" | "help_syntax" | "help_keys" | "export">(null);
   const [fonts, setFonts] = useState<FontFamily[]>([]);
   const [scrollHeading, setScrollHeading] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
@@ -58,7 +59,7 @@ export default function App() {
   const [cursor, setCursor] = useState(0);
   const [bib, setBib] = useState<BibEntry[]>([]);
   const [countPop, setCountPop] = useState<{ title: string; text: string; rect: DOMRect } | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; action?: { label: string; run: () => void } } | null>(null);
   const ed = useRef<EditorHandle>(null);
   const live = useRef({ path: "", text: "", lastWritten: "", lastVersionAt: 0 });
   const saveTimer = useRef<number>();
@@ -66,7 +67,11 @@ export default function App() {
   const view = (): EditorView | null => ed.current?.view() ?? null;
   // 方便自动化测试读取编辑器状态
   (window as unknown as { __hm: unknown }).__hm = { view };
-  const say = useCallback((m: string) => { setToast(m); window.clearTimeout((say as unknown as { t: number }).t); (say as unknown as { t: number }).t = window.setTimeout(() => setToast(null), 2600); }, []);
+  const say = useCallback((m: string, action?: { label: string; run: () => void }) => {
+    setToast({ msg: m, action });
+    window.clearTimeout((say as unknown as { t: number }).t);
+    (say as unknown as { t: number }).t = window.setTimeout(() => setToast(null), action ? 6000 : 2600);
+  }, []);
 
   /* ---------- settings & theme ---------- */
   const update = (p: Partial<Settings>) => setS((old) => { const n = { ...old, ...p }; saveSettings(n); return n; });
@@ -236,7 +241,9 @@ export default function App() {
     citeLabel: (k: string) => { const b = bibMap.get(k); return b ? `${shortAuthor(b.author)}, ${b.year}` : "@" + k; },
     resolveImage: (src: string) => {
       if (/^(https?:|data:)/.test(src)) return src;
-      const abs = normalize(dirOf(live.current.path) + "/" + decodeURI(src));
+      let p = src;
+      try { p = decodeURI(src); } catch { /* 原样使用 */ }
+      const abs = p.startsWith("/") ? p : normalize(dirOf(live.current.path) + "/" + p);
       if (!isTauri && demoImages.has(abs)) return demoImages.get(abs)!;
       if (isTauri) return (window as unknown as { __TAURI_INTERNALS__: { convertFileSrc: (p: string) => string } }).__TAURI_INTERNALS__.convertFileSrc(abs);
       return abs;
@@ -317,6 +324,7 @@ export default function App() {
       case "toggle_syntax": update({ syntax: s.syntax === "always" ? "active" : "always" }); break;
       case "help_syntax": setDlg("help_syntax"); break;
       case "help_keys": setDlg("help_keys"); break;
+      case "export": openExport(); break;
     }
   }
   const menuRef = useRef(onMenu);
@@ -430,6 +438,13 @@ export default function App() {
     v.focus();
   }
 
+  async function openExport() {
+    if (!path) return;
+    await flush().catch(() => null);
+    setDlg("export");
+  }
+  const resolveImage = useCallback((src: string) => preview.resolveImage(src), [preview]);
+
   /* ---------- search ---------- */
   const folderCache = useRef<Map<string, string>>(new Map());
   useEffect(() => { folderCache.current.clear(); }, [root]);
@@ -474,18 +489,29 @@ export default function App() {
 
   const commands: PaletteItem[] = [
     { group: "命令", icon: "cmd", title: "保存版本", keys: ["⌘", "S"], run: () => setDlg("save") },
-    { group: "命令", icon: "cmd", title: "插入引用（文献或文件）", run: () => setTimeout(() => setDlg("cite"), 0) },
+    { group: "命令", icon: "cmd", title: "引用文献或文件", run: () => setTimeout(() => setDlg("cite"), 0) },
     { group: "命令", icon: "cmd", title: "打开文件夹…", keys: ["⌘", "O"], run: chooseFolder },
     { group: "命令", icon: "cmd", title: "新建文稿", keys: ["⌘", "N"], run: newFile },
     { group: "命令", icon: "cmd", title: "Markdown 语法速查", run: () => setTimeout(() => setDlg("help_syntax"), 0) },
+    { group: "命令", icon: "cmd", title: "导出 Word / PDF / Markdown…", keys: ["⌘", "⇧", "E"], run: () => setTimeout(openExport, 0) },
     { group: "命令", icon: "cmd", title: "设置", keys: ["⌘", ","], run: () => setDlg("settings") },
     { group: "命令", icon: "cmd", title: "专注模式", keys: ["⌘", "⇧", "F"], run: () => setFocus((f) => !f) },
     ...hs.filter((h) => h.level >= 2).map((h) => ({ group: "跳转", icon: "go", title: h.text, run: () => jump(h.pos) })),
   ];
+  /** 引用文件夹以外的文件：用系统的文件选择窗口，插入相对路径链接 */
+  async function citeOtherFile() {
+    if (!be || !path) return;
+    if (be.isDemo) { say("浏览器预览里不能选择本机文件"); return; }
+    const f = await be.pickFile("选择要引用的文件");
+    if (f) insertAtCursor(`[${baseName(f)}](${encodeURI(relative(dirOf(path), f))})`);
+  }
+  const pickOther: PaletteItem = { group: "其他位置", icon: "folder", title: "选择其他文件…", sub: "不在当前文件夹里的文件，插入相对路径链接", run: () => { setTimeout(citeOtherFile, 0); } };
   const citeItems: PaletteItem[] = [
     ...bib.map((b) => ({ group: "文献", icon: "cite", title: `${shortAuthor(b.author)}, ${b.year}`, sub: esc(`@${b.key} · ${b.title}`), run: () => insertAtCursor(`[@${b.key}]`) })),
-    ...flatten(tree).filter((f) => f.path !== path).map((f) => ({ group: "文件", icon: "file", title: relative(root, f.path), run: () => insertAtCursor(`[${f.name}](${encodeURI(relative(dirOf(path), f.path))})`) })),
+    ...flatten(tree).filter((f) => f.path !== path).map((f) => ({ group: "文件夹里的文件", icon: "file", title: relative(root, f.path), run: () => insertAtCursor(`[${f.name}](${encodeURI(relative(dirOf(path), f.path))})`) })),
+    pickOther,
   ];
+  const citeSearch = useCallback(() => [] as PaletteItem[], []);
 
   /* ---------- keyboard ---------- */
   useEffect(() => {
@@ -499,6 +525,7 @@ export default function App() {
       else if (mod && e.key === "/") { e.preventDefault(); setShowPanel((x) => !x); }
       else if (mod && k === "n") { e.preventDefault(); newFile(); }
       else if (mod && k === "o") { e.preventDefault(); chooseFolder(); }
+      else if (mod && e.shiftKey && k === "e" && !isTauri) { e.preventDefault(); openExport(); }
       else if (e.key === "Escape" && !dlg) { if (cmp) setCmp(null); else if (focus) setFocus(false); }
     };
     addEventListener("keydown", f);
@@ -523,10 +550,10 @@ export default function App() {
           {crumbs.map((c, i) => <span key={i} className="crumb"><span className="sep">/</span>{i === crumbs.length - 1 ? <b>{c}</b> : c}</span>)}
         </div>
         <div className="spacer" data-tauri-drag-region />
-        {path && <div className={"savestate " + saveState}><i />{saveState === "saving" ? "保存中" : saveState === "error" ? "保存失败" : "已保存"}</div>}
+        {path && saveState === "error" && <div className="savestate" role="alert" title="自动保存没有成功，继续编辑会再次尝试"><i />保存失败</div>}
         <button className="searchbtn" onClick={() => setDlg("palette")} aria-label="搜索或执行命令"><Icon name="search" size={14} /><span className="lbl">搜索</span><kbd>⌘K</kbd></button>
         <button className={"ib" + (focus ? " on" : "")} title="专注 ⌘⇧F" aria-label="专注模式" onClick={() => setFocus(!focus)}><Icon name="focus" /></button>
-        <button className="ib primary" title="导出功能在下一阶段实现" disabled>导出</button>
+        <button className="ib primary" title="导出 ⌘⇧E" disabled={!path} onClick={openExport}>导出</button>
         <button className="ib" title="切换右栏 ⌘/" aria-label="切换右栏" onClick={() => setShowPanel(!showPanel)}><Icon name="panel" /></button>
       </header>
 
@@ -581,8 +608,10 @@ export default function App() {
       {dlg === "settings" && <SettingsDialog s={s} fonts={fonts} onChange={update} onClose={() => setDlg(null)} />}
       {(dlg === "help_syntax" || dlg === "help_keys") && <HelpDialog kind={dlg === "help_syntax" ? "syntax" : "keys"} onClose={() => setDlg(null)} />}
       {dlg === "palette" && <Palette items={commands} search={search} onClose={() => setDlg(null)} placeholder="搜索全文、文件夹，或输入命令" />}
-      {dlg === "cite" && <Palette items={citeItems} search={() => []} onClose={() => setDlg(null)} placeholder="搜索文献或文件，回车插入" />}
-      {toast && <div className="toast" role="status"><i />{toast}</div>}
+      {dlg === "cite" && <Palette items={citeItems} search={citeSearch} pinned={pickOther} onClose={() => setDlg(null)} placeholder="搜索文献或文件，回车插入" />}
+      {dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage}
+        onClose={() => setDlg(null)} onDone={(m, out) => { setDlg(null); say(m, out ? { label: "在 Finder 中显示", run: () => be.reveal(out) } : undefined); }} />}
+      {toast && <div className="toast" role="status"><i />{toast.msg}{toast.action && <button className="lnk" onClick={() => { toast.action!.run(); setToast(null); }}>{toast.action.label}</button>}</div>}
     </div>
   );
 }

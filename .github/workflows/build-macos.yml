@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+env:
+  # 内置进应用的导出工具，升级时改这里
+  PANDOC_VERSION: "3.9"
+  TYPST_VERSION: "v0.15.1"
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -19,21 +24,60 @@ jobs:
   macos:
     needs: test
     runs-on: macos-latest
+    # 内置了 Pandoc 和 Typst 以后体积较大，Apple 芯片和 Intel 分开打包，各自只带自己架构的版本
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Apple芯片, target: aarch64-apple-darwin, pandoc: arm64 }
+          - { name: Intel, target: x86_64-apple-darwin, pandoc: x86_64 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: npm }
       - uses: dtolnay/rust-toolchain@stable
-        with: { targets: "aarch64-apple-darwin,x86_64-apple-darwin" }
+        with: { targets: "${{ matrix.target }}" }
       - uses: Swatinem/rust-cache@v2
-        with: { workspaces: src-tauri }
+        with: { workspaces: src-tauri, key: "${{ matrix.target }}" }
       - run: npm ci
       - name: Rust 单元测试
+        if: matrix.target == 'aarch64-apple-darwin'
         run: cargo test --lib
         working-directory: src-tauri
-      - name: 打包（同时支持 Apple 芯片和 Intel）
-        run: npm run tauri build -- --target universal-apple-darwin --bundles dmg
+      - name: 下载 Pandoc 和 Typst
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/binaries "$RUNNER_TEMP/tools"
+          cd "$RUNNER_TEMP/tools"
+          gh release download "$PANDOC_VERSION" -R jgm/pandoc -p "pandoc-*-${{ matrix.pandoc }}-macOS.zip"
+          unzip -q pandoc-*.zip
+          cp "$(find . -path '*/bin/pandoc' -type f | head -1)" "$GITHUB_WORKSPACE/src-tauri/binaries/pandoc-${{ matrix.target }}"
+          gh release download "$TYPST_VERSION" -R typst/typst -p "typst-${{ matrix.target }}.tar.xz"
+          tar xf "typst-${{ matrix.target }}.tar.xz"
+          cp "typst-${{ matrix.target }}/typst" "$GITHUB_WORKSPACE/src-tauri/binaries/typst-${{ matrix.target }}"
+          chmod +x "$GITHUB_WORKSPACE"/src-tauri/binaries/*
+          file "$GITHUB_WORKSPACE"/src-tauri/binaries/*
+          ls -lh "$GITHUB_WORKSPACE"/src-tauri/binaries
+      - name: 端到端导出测试（真的调用 Pandoc 和 Typst）
+        if: matrix.target == 'aarch64-apple-darwin'
+        run: |
+          set -euo pipefail
+          npx vite-node scripts/export-smoke.ts "$RUNNER_TEMP/smoke"
+          cd src-tauri
+          mkdir -p binaries-plain
+          ln -sf "$PWD/binaries/pandoc-${{ matrix.target }}" binaries-plain/pandoc
+          ln -sf "$PWD/binaries/typst-${{ matrix.target }}" binaries-plain/typst
+          for f in docx pdf; do
+            HOLYMARK_TOOLS_DIR="$PWD/binaries-plain" HM_EXPORT_JOB="$RUNNER_TEMP/smoke/job-$f.json" cargo test --lib e2e_from_env -- --ignored --nocapture
+            test -s "$RUNNER_TEMP/smoke/out.$f"
+          done
+        env:
+          SMOKE_FONT_CJK: "Songti SC"
+      - name: 打包
+        run: npm run tauri build -- --target ${{ matrix.target }} --bundles dmg --config src-tauri/tauri.tools.conf.json
       - uses: actions/upload-artifact@v4
         with:
-          name: HolyMark-macOS
-          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          name: HolyMark-macOS-${{ matrix.name }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
