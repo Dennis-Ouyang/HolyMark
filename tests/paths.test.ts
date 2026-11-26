@@ -75,3 +75,13 @@ describe("fontStack", async () => {
     expect(fontStack("")).toBe('-apple-system,"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif');
   });
 });
+
+import { isMarkdown, stripMd } from "../src/lib/paths";
+describe("Markdown 扩展名（B17）", () => {
+  it("md、markdown，不分大小写", () => {
+    for (const n of ["a.md", "a.MD", "a.markdown", "a.Markdown"]) expect(isMarkdown(n)).toBe(true);
+    for (const n of ["a.mdx", "a.txt", "md"]) expect(isMarkdown(n)).toBe(false);
+    expect(stripMd("第一章.Markdown")).toBe("第一章");
+  });
+});
+

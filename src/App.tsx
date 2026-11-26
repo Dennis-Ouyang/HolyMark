@@ -17,7 +17,7 @@ import { WindowControls } from "./components/WindowControls";
 import { Menu, MenuEntry } from "./components/Menu";
 import { SearchPanel } from "./components/Search";
 import { InsertFile, InsertPick, linkFor } from "./components/InsertFile";
-import { baseName, dirOf, isInside, join, normalize, relative, toPosix } from "./lib/paths";
+import { baseName, dirOf, isInside, isMarkdown, join, normalize, relative, toPosix } from "./lib/paths";
 import { isMac, isWindows, kbd, keyName } from "./lib/platform";
 import { menuIdFor } from "./lib/shortcuts";
 import { ExportDialog } from "./components/ExportDialog";
@@ -141,7 +141,7 @@ export default function App() {
     const bibs = files.filter((f) => f.name.endsWith(".bib"));
     const entries = (await Promise.all(bibs.map((b) => be.readText(b.path).catch(() => "")))).flatMap(parseBib);
     setBib(entries);
-    const first = file || files.find((f) => f.name.endsWith(".md"))?.path;
+    const first = file || files.find((f) => isMarkdown(f.name))?.path;
     if (first) await openFile(first);
   }
   /** 从访达或资源管理器打开的文件：在当前文件夹里就直接打开，否则把它所在的文件夹作为工作区 */
@@ -741,7 +741,7 @@ export default function App() {
   useEffect(() => {
     if (dlg !== "palette" || !be) return;
     (async () => {
-      const files = flatten(tree).filter((f) => f.name.endsWith(".md") && f.path !== path);
+      const files = flatten(tree).filter((f) => isMarkdown(f.name) && f.path !== path);
       for (const f of files) if (!folderCache.current.has(f.path)) folderCache.current.set(f.path, await be.readText(f.path).catch(() => ""));
       setFolderTexts(new Map(folderCache.current));
     })();

@@ -124,6 +124,19 @@ fn guard_staged(state: &State<AppState>, p: &Path) -> Result<(), String> {
     }
 }
 
+/// 文件监听关心的文件类型。以后要监听文献库（.bib）变化，在这里加一种，再在 open_folder 的回调里分支处理
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum Watched {
+    Markdown,
+}
+
+fn watched(p: &Path) -> Option<Watched> {
+    match p.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "md" | "markdown" => Some(Watched::Markdown),
+        _ => None,
+    }
+}
+
 fn rel(root: &Path, p: &Path) -> String {
     p.strip_prefix(root).unwrap_or(p).to_string_lossy().replace('\\', "/")
 }
@@ -170,7 +183,7 @@ fn open_folder(app: tauri::AppHandle, state: State<AppState>, root: String) -> R
             return;
         }
         for p in ev.paths {
-            if p.extension().and_then(|e| e.to_str()) != Some("md") || p.components().any(|c| c.as_os_str() == ".holymark") {
+            if watched(&p).is_none() || p.components().any(|c| c.as_os_str() == ".holymark") {
                 continue;
             }
             let Ok(now) = std::fs::read_to_string(&p) else { continue };
@@ -734,4 +747,19 @@ pub fn run() {
         }
         let _ = (&handle, &event, &pending);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn watches_markdown_in_any_case() {
+        assert_eq!(watched(Path::new("/a/稿件.md")), Some(Watched::Markdown));
+        assert_eq!(watched(Path::new("/a/稿件.MD")), Some(Watched::Markdown));
+        assert_eq!(watched(Path::new("/a/稿件.markdown")), Some(Watched::Markdown));
+        assert_eq!(watched(Path::new("/a/稿件.Markdown")), Some(Watched::Markdown));
+        assert_eq!(watched(Path::new("/a/图.png")), None);
+        assert_eq!(watched(Path::new("/a/README")), None);
+    }
 }
