@@ -59,7 +59,7 @@ export const cjkEmphasis: MarkdownConfig = {
 
 /**
  * 高亮 ==文字==（Pandoc 的 mark 扩展，导出 Word 是黄色高亮）。
- * 批注 {==原文==} 里的 == 紧挨着花括号，不算高亮。
+ * 批注 {==原文==} 里紧挨着花括号的 == 不算高亮定界符（见 tests/cjkEmphasis.test.ts）。
  */
 export const highlight: MarkdownConfig = {
   defineNodes: [{ name: "Highlight" }, { name: "HighlightMark" }],
@@ -68,8 +68,11 @@ export const highlight: MarkdownConfig = {
     parse(cx: InlineContext, next: number, pos: number) {
       if (next != 61 || cx.char(pos + 1) != 61 || cx.char(pos + 2) == 61) return -1;
       const before = cx.slice(pos - 1, pos), after = cx.slice(pos + 2, pos + 3);
+      // 批注的 {== 和 ==} 整个不是高亮定界符：只让它「不能开始 / 不能结束」不够，
+      // {== 还会被当成结束符、==} 被当成开始符，和后面真正的 ==高亮== 配上对（「丙丁」被染黄）
+      if (before === "{" || after === "}") return -1;
       const f = flank(before, after);
-      return cx.addDelimiter(HighlightDelim, pos, pos + 2, f.left && before !== "{", f.right && after !== "}");
+      return cx.addDelimiter(HighlightDelim, pos, pos + 2, f.left, f.right);
     },
     after: "Emphasis",
   }],

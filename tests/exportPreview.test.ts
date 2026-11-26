@@ -63,4 +63,11 @@ describe("previewHTML 不执行文稿里的脚本", () => {
     const h2 = previewHTML("![](a.png)", o, { ...ctx, resolveImage: () => "data:image/png;base64,AAAA" }).html;
     expect(h2).toContain('src="data:image/png;base64,AAAA"');
   });
+  it("批注和高亮不抢 ==（Word 批注、PDF 去掉批注两种）", () => {
+    const md = "甲{==乙==}{>>@我 2026-01-01：一<<}丙丁==戊==己。";
+    const d = html(md, "docx");
+    expect(d).toContain('<mark class="pv-anno">乙</mark>丙丁<mark>戊</mark>己');
+    expect(html(md, "pdf")).toContain("甲乙丙丁<mark>戊</mark>己");
+    expect(html("甲{==乙==}{>>@我 2026-01-01：一<<}丙丁戊{==己==}{>>@我 2026-01-01：二<<}庚。", "docx")).not.toMatch(/<mark>/);
+  });
 });
