@@ -5,7 +5,7 @@
   --line:#E6E7EC; --line-2:#D8DAE1;
   --fg:#16171B; --fg-2:#5A5D68; --fg-3:#8B8E99;
   --accent:#5A62DE; --accent-fg:#4148C4; --accent-soft:rgba(90,98,222,.10); --accent-line:rgba(90,98,222,.40);
-  --ins:#1B9A60; --ins-bg:rgba(27,154,96,.12); --del:#D23F4C; --del-bg:rgba(210,63,76,.10);
+  --ins:#1B9A60; --ins-bg:rgba(27,154,96,.12); --del:#D23F4C; --del-bg:rgba(210,63,76,.10); --warn:#B7791F;
   --anno:rgba(232,180,40,.22); --anno-line:#C8901A;
   --tk:#A0A4B0; --code-bg:#F6F7F9;
   --hl-kw:#8E3BC9; --hl-str:#3F8A2E; --hl-num:#B5541A; --hl-com:#9AA0A6; --hl-fn:#2F62C9;
@@ -31,7 +31,7 @@
     --line:#22242C; --line-2:#2D3039;
     --fg:#E7E8EC; --fg-2:#A2A5B0; --fg-3:#6A6E7A;
     --accent:#7D84F4; --accent-fg:#B9BDFA; --accent-soft:rgba(125,132,244,.14); --accent-line:rgba(125,132,244,.45);
-    --ins:#4CC38A; --ins-bg:rgba(76,195,138,.16); --del:#F0646E; --del-bg:rgba(240,100,110,.15);
+    --ins:#4CC38A; --ins-bg:rgba(76,195,138,.16); --del:#F0646E; --del-bg:rgba(240,100,110,.15); --warn:#E0A33A;
     --anno:rgba(229,178,61,.20); --anno-line:#D9A53A;
     --tk:#5E6272; --code-bg:#121318;
     --hl-kw:#C792EA; --hl-str:#9ECE6A; --hl-num:#F5A97F; --hl-com:#5C6370; --hl-fn:#7AA2F7;
@@ -46,7 +46,7 @@
   --line:#22242C; --line-2:#2D3039;
   --fg:#E7E8EC; --fg-2:#A2A5B0; --fg-3:#6A6E7A;
   --accent:#7D84F4; --accent-fg:#B9BDFA; --accent-soft:rgba(125,132,244,.14); --accent-line:rgba(125,132,244,.45);
-  --ins:#4CC38A; --ins-bg:rgba(76,195,138,.16); --del:#F0646E; --del-bg:rgba(240,100,110,.15);
+  --ins:#4CC38A; --ins-bg:rgba(76,195,138,.16); --del:#F0646E; --del-bg:rgba(240,100,110,.15); --warn:#E0A33A;
   --anno:rgba(229,178,61,.20); --anno-line:#D9A53A;
   --tk:#5E6272; --code-bg:#121318;
   --hl-kw:#C792EA; --hl-str:#9ECE6A; --hl-num:#F5A97F; --hl-com:#5C6370; --hl-fn:#7AA2F7;
@@ -551,7 +551,11 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .kt td { padding: 8px 0; border-bottom: 1px solid var(--line); color: var(--fg-2); }
 .kt td:last-child { text-align: right; }
 .toast { position: fixed; left: 0; right: 0; width: fit-content; max-width: calc(100% - 32px); margin: 0 auto; bottom: 44px; z-index: 70; display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-radius: 9px; background: var(--raised); box-shadow: var(--pop); font-size: 13px; animation: toastIn 240ms var(--ease); }
-.toast i { width: 6px; height: 6px; border-radius: 50%; background: var(--ins); }
+.toast i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+/* 小圆点按语义着色；普通提示不带点 */
+.toast.success i { background: var(--ins); }
+.toast.warn i { background: var(--warn); }
+.toast.error i { background: var(--del); }
 @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 /* 退场（配合 Presence 组件）：比进场短，往进来的方向退回去 */
 .presence { display: contents; }

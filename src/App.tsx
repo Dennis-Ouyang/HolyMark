@@ -21,7 +21,7 @@ import { baseName, dirOf, isInside, join, normalize, relative, toPosix } from ".
 import { isMac, isWindows, kbd, keyName } from "./lib/platform";
 import { menuIdFor } from "./lib/shortcuts";
 import { ExportDialog } from "./components/ExportDialog";
-import { setNotifier } from "./editor/notice";
+import { NoticeAction, NoticeKind, setNotifier } from "./editor/notice";
 
 const AUTHOR = "我";
 /** macOS 有原生菜单负责快捷键；Windows 和浏览器预览里由前端处理 */
@@ -86,7 +86,7 @@ export default function App() {
   const [cursor, setCursor] = useState(0);
   const [bib, setBib] = useState<BibEntry[]>([]);
   const [countPop, setCountPop] = useState<{ title: string; text: string; rect: DOMRect } | null>(null);
-  const [toast, setToast] = useState<{ msg: string; action?: { label: string; run: () => void } } | null>(null);
+  const [toast, setToast] = useState<{ msg: string; kind: NoticeKind; action?: NoticeAction } | null>(null);
   const ed = useRef<EditorHandle>(null);
   // base：上一次“保存”时的内容（打开文件、保存版本、外部修改之后）。和 text 不同就是有没保存的修改，关闭应用时会问
   const live = useRef({ path: "", text: "", base: "", lastWritten: "", lastVersionAt: 0 });
@@ -95,13 +95,14 @@ export default function App() {
   const view = (): EditorView | null => ed.current?.view() ?? null;
   // 方便自动化测试读取编辑器状态
   (window as unknown as { __hm: unknown }).__hm = { view, menu: (id: string) => menuRef.current(id) };
-  const say = useCallback((m: string, action?: { label: string; run: () => void }) => {
-    setToast({ msg: m, action });
+  /** 提示条。kind 决定前面小圆点的颜色：success 绿、warn 琥珀、error 红，info 不带点 */
+  const say = useCallback((m: string, kind: NoticeKind = "info", action?: NoticeAction) => {
+    setToast({ msg: m, kind, action });
     window.clearTimeout((say as unknown as { t: number }).t);
     (say as unknown as { t: number }).t = window.setTimeout(() => setToast(null), action ? 6000 : 2600);
   }, []);
 
-  useEffect(() => { setNotifier((m, _kind, action) => say(m, action)); }, [say]);
+  useEffect(() => { setNotifier(say); }, [say]);
 
   /* ---------- settings & theme ---------- */
   const update = (p: Partial<Settings>) => setS((old) => { const n = { ...old, ...p }; saveSettings(n); return n; });
@@ -344,7 +345,7 @@ export default function App() {
   // 文件卡片要用到的操作，经由 ref 调用，免得每次重新渲染都重建编辑器装饰
   const fileHooksRef = useRef<{ open: (abs: string) => void; reveal: (abs: string) => void }>({ open: () => {}, reveal: () => {} });
   fileHooksRef.current = {
-    open: (abs) => { if (/\.(md|markdown)$/i.test(abs)) openExternalFile(abs); else be?.openPath(abs).catch(() => say("没能打开这个文件")); },
+    open: (abs) => { if (/\.(md|markdown)$/i.test(abs)) openExternalFile(abs); else be?.openPath(abs).catch(() => say("没能打开这个文件", "error")); },
     reveal: (abs) => { be?.reveal(abs).catch(() => {}); },
   };
   const preview = useMemo(() => ({
@@ -437,7 +438,7 @@ export default function App() {
       case "search": setDlg((d) => (d === "palette" ? null : "palette")); break;
       case "link": if (v) insertLink(v); break;
       case "cite": openInsert(); break;
-      case "note": if (v && !insertNote(v, AUTHOR)) say("先选中要批注的文字"); break;
+      case "note": if (v && !insertNote(v, AUTHOR)) say("先选中要批注的文字", "warn"); break;
       case "insert_table": if (v) insertBlock(v, tableMarkdown(2, 3), 2); break;
       case "insert_code": if (v) insertBlock(v, "```\n\n```", 4); break;
       case "insert_math": if (v) insertBlock(v, "$$\n\n$$", 3); break;
@@ -491,13 +492,13 @@ export default function App() {
   function resolveNote(n: Note) {
     const v = view(); if (!v) return;
     v.dispatch({ changes: { from: n.at, to: n.at + n.length, insert: n.quote } });
-    say("批注已解决，文件里的批注标记已移除");
+    say("批注已解决，文件里的批注标记已移除", "success");
   }
   function applyLayout(l: Record<string, string>) {
     const v = view(); if (!v) return;
     const next = setDocLayout(v.state.doc.toString(), l);
     v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: next } });
-    say(Object.keys(l).some((k) => l[k]) ? "已写入本文属性区" : "已清除本文版式");
+    say(Object.keys(l).some((k) => l[k]) ? "已写入本文属性区" : "已清除本文版式", "success");
   }
   async function saveVersion(name: string, note: string) {
     if (!be || !path) return;
@@ -507,7 +508,7 @@ export default function App() {
     live.current.base = live.current.text;
     setVersions(await be.listVersions(path));
     setDlg(null);
-    say(`已保存版本「${name}」`);
+    say(`已保存版本「${name}」`, "success");
   }
   async function openVersion(id: string, against: "current" | "prev" = "current") {
     if (!be) return;
@@ -533,7 +534,7 @@ export default function App() {
     setCmp(null);
     // 直接恢复、不先问“确定吗”，但给几秒撤销：撤销就是把恢复前的内容放回来（它也已经存成了版本）
     const at = path;
-    say(`已恢复到「${versionTitle(cmp.v)}」，恢复前的内容已存为版本`, { label: "撤销", run: () => {
+    say(`已恢复到「${versionTitle(cmp.v)}」，恢复前的内容已存为版本`, "success", { label: "撤销", run: () => {
       if (live.current.path !== at) return;
       const now = live.current.text;
       ed.current?.replace(before);
@@ -565,14 +566,14 @@ export default function App() {
       try {
         const dest = await be.saveImage(join(dirOf(path), "assets"), name, await toB64(f));
         parts.push(linkFor(dest, path).text);
-      } catch (e) { say(`图片保存失败：${e}`); }
+      } catch (e) { say(`图片保存失败：${e}`, "error"); }
     }
     if (!parts.length) return;
     // 图片自成一段，光标放到图片后面：图片马上按大图显示，点一下就有缩放控制条
     const ins = blockInsertSpec(v.state.doc.toString(), pos, parts.join("\n\n"));
     v.dispatch({ changes: { from: ins.from, insert: ins.insert }, selection: { anchor: ins.cursor }, scrollIntoView: true });
     v.focus();
-    say(parts.length > 1 ? `已插入 ${parts.length} 张图片，保存在 assets/` : "图片已保存到 assets/");
+    say(parts.length > 1 ? `已插入 ${parts.length} 张图片，保存在 assets/` : "图片已保存到 assets/", "success");
   }
   function insertAtCursor(t: string, block = false) {
     const v = view(); if (!v) return;
@@ -595,8 +596,8 @@ export default function App() {
   /* ---------- 文件管理（右键菜单）---------- */
   const refreshTree = async () => { if (be && root) setTree(await be.listTree(root)); };
   /** 先做后撤销：提示条右边带「撤销」 */
-  const undoable = (msg: string, undo: () => Promise<unknown>) => say(msg, { label: "撤销", run: async () => {
-    try { await undo(); await refreshTree(); } catch (e) { say(String(e).replace(/^Error:\s*/, "")); }
+  const undoable = (msg: string, undo: () => Promise<unknown>) => say(msg, "success", { label: "撤销", run: async () => {
+    try { await undo(); await refreshTree(); } catch (e) { say(String(e).replace(/^Error:\s*/, ""), "error"); }
   } });
   /** 删除后还没真正移到废纸篓的（提示条消失、或者关窗口时才移） */
   const staged = useRef(new Map<string, number>());
@@ -625,7 +626,7 @@ export default function App() {
       await followMove(p, to);
       if (justCreated.current === p) { justCreated.current = ""; newFolderToast(to); return; }
       undoable(`已改名为「${baseName(to)}」`, async () => { await be.renamePath(to, baseName(p)); await followMove(to, p); });
-    } catch (e) { say(String(e).replace(/^Error:\s*/, "")); }
+    } catch (e) { say(String(e).replace(/^Error:\s*/, ""), "error"); }
   }
   const newFolderToast = (p: string) => undoable(`已新建文件夹「${baseName(p)}」`, () => be!.trashPath(p));
   async function moveTo(node: TreeNode, dir: string) {
@@ -637,7 +638,7 @@ export default function App() {
       await followMove(node.path, to);
       const from = dirOf(node.path);
       undoable(`已把「${node.name}」移到「${dir === root ? baseName(root) : relative(root, dir)}」`, async () => { await be.movePath(to, from); await followMove(to, node.path); });
-    } catch (e) { say(String(e).replace(/^Error:\s*/, "")); }
+    } catch (e) { say(String(e).replace(/^Error:\s*/, ""), "error"); }
   }
   async function trash(node: TreeNode) {
     if (!be) return;
@@ -659,7 +660,7 @@ export default function App() {
         await be.restoreStaged(hold, node.path);
         if (inside) { await refreshTree(); await openFile(cur); }
       });
-    } catch (e) { say(String(e).replace(/^Error:\s*/, "")); }
+    } catch (e) { say(String(e).replace(/^Error:\s*/, ""), "error"); }
   }
   async function newFolder(dir: string) {
     if (!be) return;
@@ -671,7 +672,7 @@ export default function App() {
   async function compareWith(p: string) {
     if (!be) return;
     const t = await be.readText(p).catch(() => null);
-    if (t === null) { say("读不到这个文件"); return; }
+    if (t === null) { say("读不到这个文件", "error"); return; }
     setCmp(null);
     setFileCmp({ name: root && isInside(root, p) ? relative(root, p) : baseName(p), text: t });
   }
@@ -706,13 +707,13 @@ export default function App() {
       { label: "移到…", icon: "folder", run: () => { setMoving(node); setDlg("move"); } },
       { sep: true },
       { label: reveal, icon: "open", run: () => be?.reveal(node.path) },
-      { label: "拷贝路径", icon: "link", run: () => { navigator.clipboard?.writeText(node.path).then(() => say("已拷贝路径")).catch(() => {}); } },
+      { label: "拷贝路径", icon: "link", run: () => { navigator.clipboard?.writeText(node.path).then(() => say("已拷贝路径", "success")).catch(() => {}); } },
       { sep: true },
       { label: `移到${trashName}`, icon: "trash", danger: true, run: () => trash(node) },
     ];
   }
   const folderMenuItems = (): MenuEntry[] => [
-    ...(s.recentFolders.filter((f) => f !== root).length ? [{ head: "最近打开" } as MenuEntry, ...s.recentFolders.filter((f) => f !== root).map((f) => ({ label: baseName(f), hint: shortPath(dirOf(f)), icon: "folder", run: () => openFolder(f).catch((e) => say(String(e).includes("重新选择") ? String(e) : "这个文件夹已经不在了")) }))] : []),
+    ...(s.recentFolders.filter((f) => f !== root).length ? [{ head: "最近打开" } as MenuEntry, ...s.recentFolders.filter((f) => f !== root).map((f) => ({ label: baseName(f), hint: shortPath(dirOf(f)), icon: "folder", run: () => openFolder(f).catch((e) => say(String(e).includes("重新选择") ? String(e) : "这个文件夹已经不在了", "warn")) }))] : []),
     ...(s.recentFolders.filter((f) => f !== root).length ? [{ sep: true } as MenuEntry] : []),
     { label: "打开其他文件夹…", icon: "folder", hint: "⌘O", run: chooseFolder },
     ...(root ? [{ label: isWindows ? "在资源管理器中显示" : "在访达中显示", icon: "open", run: () => be?.reveal(root) }, { sep: true } as MenuEntry, { label: "关闭文件夹", icon: "close", run: closeFolder }] : []),
@@ -822,7 +823,7 @@ export default function App() {
       if (/\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(p)) {
         let src = p;
         if (!(root && isInside(root, p))) {
-          try { src = await be.copyIntoFolder(p, join(dirOf(path), "assets")); copied++; } catch (e) { say(`图片复制失败：${e}`); continue; }
+          try { src = await be.copyIntoFolder(p, join(dirOf(path), "assets")); copied++; } catch (e) { say(`图片复制失败：${e}`, "error"); continue; }
         }
         imgs.push(linkFor(src, path).text);
       } else {
@@ -841,7 +842,7 @@ export default function App() {
     }
     v.focus();
     const n = imgs.length + links.length;
-    if (n) say(copied ? `已插入 ${n} 个文件，其中 ${copied} 张图片复制到了 assets/` : imgs.length && !links.length ? `已插入 ${imgs.length} 张图片` : `已插入 ${n} 个文件链接`);
+    if (n) say(copied ? `已插入 ${n} 个文件，其中 ${copied} 张图片复制到了 assets/` : imgs.length && !links.length ? `已插入 ${imgs.length} 张图片` : `已插入 ${n} 个文件链接`, "success");
   }
   const dropRef = useRef({ dragOver, dropFiles });
   dropRef.current = { dragOver, dropFiles };
@@ -940,7 +941,7 @@ export default function App() {
           onPickImage={pickImage} onCite={openInsert} active={fmt.active} block={fmt.block} />}
         <div className="scroller" ref={scroller} onScroll={() => window.requestAnimationFrame(syncScrollHeading)} onMouseDown={clickBelow}>
           <div className="doc">
-            {!path && <Welcome hasRoot={!!root} recent={s.recentFolders} onOpen={chooseFolder} onNew={() => newFile()} onRecent={(f) => openFolder(f).catch((e) => { if (String(e).includes("重新选择")) { say(String(e)); return; } say("这个文件夹已经不在了"); update({ recentFolders: s.recentFolders.filter((x) => x !== f) }); })} />}
+            {!path && <Welcome hasRoot={!!root} recent={s.recentFolders} onOpen={chooseFolder} onNew={() => newFile()} onRecent={(f) => openFolder(f).catch((e) => { if (String(e).includes("重新选择")) { say(String(e), "warn"); return; } say("这个文件夹已经不在了", "warn"); update({ recentFolders: s.recentFolders.filter((x) => x !== f) }); })} />}
             <div hidden={!path}><Editor ref={ed} initial="" preview={preview} previewKey={previewKey} onChange={onChange} onSelection={onSelection} onImages={insertImages} /></div>
           </div>
         </div>
@@ -984,7 +985,7 @@ export default function App() {
       {folderMenu && <Menu x={folderMenu.x} y={folderMenu.y} items={folderMenuItems()} onClose={() => setFolderMenu(null)} minWidth={232} />}
       <Presence>{dlg === "unsaved" && <UnsavedDialog fileName={fileName} onSave={closeSaving} onDiscard={closeDiscarding} onCancel={() => setDlg(null)} />}</Presence>
       {dropCaret && <div className="dropcaret" style={{ left: dropCaret.left, top: dropCaret.top, height: dropCaret.height }} aria-hidden="true" />}
-      <Presence>{toast && <div className="toast" role="status"><i />{toast.msg}{toast.action && <button className="lnk" onClick={() => { toast.action!.run(); setToast(null); }}>{toast.action.label}</button>}</div>}</Presence>
+      <Presence>{toast && <div className={"toast " + toast.kind} role="status">{toast.kind !== "info" && <i aria-hidden="true" />}{toast.msg}{toast.action && <button className="lnk" onClick={() => { toast.action!.run(); setToast(null); }}>{toast.action.label}</button>}</div>}</Presence>
     </div>
   );
 }
