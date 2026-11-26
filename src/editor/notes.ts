@@ -161,10 +161,14 @@ const atoms = ViewPlugin.fromClass(class {
   build(view: EditorView) {
     const b = new RangeSetBuilder<Decoration>();
     const mark = Decoration.mark({});
+    // 几段可见区间扩成整行后可能重叠，已经加过的位置跳过，免得顺序乱掉
+    let done = -1;
     for (const { from, to } of view.visibleRanges) {
-      const a = view.state.doc.lineAt(from).from, z = view.state.doc.lineAt(to).to;
+      const a = Math.max(view.state.doc.lineAt(from).from, done), z = view.state.doc.lineAt(to).to;
+      if (a >= z) continue;
       for (const m of view.state.sliceDoc(a, z).matchAll(NOTE_RE)) {
         const s = a + m.index!, qe = s + 3 + m[1].length;
+        done = s + m[0].length;
         b.add(s, s + 3, mark);
         b.add(qe, s + m[0].length, mark);
       }
