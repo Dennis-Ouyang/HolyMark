@@ -4,7 +4,7 @@ import { Editor, EditorHandle } from "./editor/Editor";
 import { Backend, demoImages, demoStartFile, FontFamily, getBackend, isTauri, TreeNode, VersionMeta } from "./lib/backend";
 import { alignBlocks, changedLines, countWords, docLayout, headings, Note, parseNotes, plainText, setDocLayout, wordCounter } from "./lib/markdown";
 import { applyAccent, loadSettings, saveSettings, Settings, fontStack } from "./lib/settings";
-import { BibEntry, parseBib, shortAuthor } from "./lib/bib";
+import { BibEntry, citeText, parseBib } from "./lib/bib";
 import { FileTree } from "./components/FileTree";
 import { FloatingToolbar, Ribbon } from "./components/Toolbars";
 import { activeStyles, BlockKind, blockInsertSpec, currentBlock, indentList, InlineKind, shiftHeading, insertBlock, insertLink, insertNote, setBlock, tableMarkdown, toggleInline } from "./editor/commands";
@@ -370,7 +370,8 @@ export default function App() {
   };
   const preview = useMemo(() => ({
     syntax: () => s.syntax,
-    citeLabel: (k: string) => { const b = bibMap.get(k); return b ? `${shortAuthor(b.author)}, ${b.year}` : "@" + k; },
+    citeLabel: (keys: string[]) => citeText(keys, bibMap),
+    citeInfo: (k: string) => bibMap.get(k),
     resolveImage: (src: string) => {
       if (/^(https?:|data:)/.test(src)) return src;
       let raw = src.replace(/^<(.*)>$/, "$1");

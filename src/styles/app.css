@@ -350,7 +350,13 @@ body.hm-dragging, body.hm-dragging * { cursor: grabbing !important; user-select:
 .hm-glow { animation: glow 1s var(--ease); }
 @keyframes glow { 0% { box-shadow: 0 0 0 0 var(--accent-line); background-color: transparent; } 30% { box-shadow: 0 0 0 4px var(--accent-soft); background-color: var(--accent-soft); } 100% { box-shadow: 0 0 0 10px transparent; background-color: transparent; } }
 .hm-hr { display: inline-block; width: 100%; border-top: 1px solid var(--line-2); vertical-align: middle; }
-.hm-cite { display: inline-block; font: 500 .72em/1.6 var(--f-ui); border-radius: 4px; padding: 0 5px; margin: 0 2px; color: var(--accent-fg); background: var(--accent-soft); cursor: pointer; vertical-align: .08em; }
+/* 文献引用：显示成导出后的样子「（张伟，2021）」，主题色字 + 一条淡下划线，悬停出文献信息（F8） */
+.hm-cite { color: var(--accent-fg); text-decoration: underline dotted var(--accent-line); text-underline-offset: 3px; cursor: pointer; }
+.hm-citetip { position: fixed; z-index: 70; max-width: 360px; padding: 8px 12px; border-radius: 10px; background: var(--raised); box-shadow: var(--float); font-family: var(--f-ui); pointer-events: none; animation: tipIn 120ms var(--ease); }
+.hm-citetip .ct-r + .ct-r { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.hm-citetip .ct-t { font-size: 13px; line-height: 1.5; color: var(--fg); }
+.hm-citetip .ct-b { display: flex; gap: 10px; margin-top: 2px; font-size: 12px; color: var(--fg-2); }
+.hm-citetip .ct-b .y { color: var(--fg-3); font-variant-numeric: tabular-nums; }
 .hm-cite-src, .hm-math-src { color: var(--accent-fg); }
 .hm-note { background: var(--note-bg); border-radius: 2px; transition: background-color 120ms; }
 .hm-note:hover { background: var(--note-bg-hover); }

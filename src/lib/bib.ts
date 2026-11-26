@@ -20,3 +20,12 @@ export function shortAuthor(author: string): string {
   const parts = first.split(/\s+/);
   return parts[parts.length - 1];
 }
+
+/** 一条引用在正文里怎么写：「张伟，2021」。编辑器和导出预览共用，两边写法一致 */
+export function citeOne(b: BibEntry | undefined, key: string): string {
+  return b ? `${shortAuthor(b.author)}，${b.year}` : `@${key}`;
+}
+/** [@a; @b] → 「（张伟，2021；李四，2019）」 */
+export function citeText(keys: string[], bib: Map<string, BibEntry>): string {
+  return "（" + keys.map((k) => citeOne(bib.get(k), k)).join("；") + "）";
+}

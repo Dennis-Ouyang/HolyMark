@@ -6,7 +6,7 @@ import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { build, livePreview, newMemo, PreviewOptions, setFocus, topBlocks } from "../src/editor/livePreview";
 import { longManuscript } from "../src/lib/stress";
 
-const opts = (syntax: "active" | "always"): PreviewOptions => ({ resolveImage: (s) => s, citeLabel: (k) => k, syntax: () => syntax });
+const opts = (syntax: "active" | "always"): PreviewOptions => ({ resolveImage: (s) => s, citeLabel: (k) => k.join(";"), syntax: () => syntax });
 
 function decoSet(state: EditorState) {
   const sets = state.facet(EditorView.decorations).filter((d) => typeof d !== "function");

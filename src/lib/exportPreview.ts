@@ -2,7 +2,7 @@
 import { marked } from "marked";
 import katex from "katex";
 import type { BibEntry } from "./bib";
-import { shortAuthor } from "./bib";
+import { citeText } from "./bib";
 import { citedKeys, DOCX_HINTS, dropNotes, ExportOptions, fmField, Level, numberHeadings, PAPERS, pageSize, PDF_DEFAULTS, prepareAssets, splitFrontMatter } from "./exporting";
 import { fontStack } from "./settings";
 import { sanitizeHTML } from "./sanitize";
@@ -52,7 +52,7 @@ export function previewHTML(src: string, o: ExportOptions, ctx: PreviewCtx): { h
     .replace(/(^|[^\\$])\$([^$\n]+?)\$/g, (_m, a: string, t: string) => a + tex(t, false))
     .replace(/\[(@[\w:.-]+(?:\s*;\s*@[\w:.-]+)*)\]/g, (_m, inner: string) => {
       const keys = inner.split(";").map((k) => k.trim().slice(1));
-      return "（" + keys.map((k) => { const b = ctx.bib.get(k); return b ? `${esc(shortAuthor(b.author))}，${esc(b.year)}` : `@${esc(k)}?`; }).join("；") + "）";
+      return esc(citeText(keys, ctx.bib));
     }));
   // marked 不认 ==高亮==、^上标^、~下标~，先换成 HTML（Pandoc 导出时自己处理）
   body = outsideCode(body, (s) => s

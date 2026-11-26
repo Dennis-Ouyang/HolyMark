@@ -20,8 +20,10 @@ import { listFolds, listRendered, lists, renderList } from "./lists";
 export interface PreviewOptions {
   /** 把文档里的图片路径解析成可显示的地址 */
   resolveImage: (src: string) => string;
-  /** 把 [@key] 显示成什么，例如 “张伟, 2021” */
-  citeLabel: (key: string) => string;
+  /** 把 [@key; @key2] 显示成什么，例如「（张伟，2021）」（和导出预览一致） */
+  citeLabel: (keys: string[]) => string;
+  /** 悬停引用时显示的文献信息 */
+  citeInfo?: (key: string) => { author: string; year: string; title: string } | undefined;
   /** 语法显示方式：只在光标所在块显示，或始终显示 */
   syntax: () => "active" | "always";
   /** 单独成段的文件链接显示成预览卡片（不给就按普通链接显示） */
@@ -312,19 +314,54 @@ class NoteMarkWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
+/** 文献引用小标签：显示成导出后的样子「（张伟，2021）」；悬停浮出作者、年份、题名（F8） */
+let citeTip: HTMLElement | null = null;
 class CiteWidget extends WidgetType {
-  constructor(readonly key: string, readonly label: string) { super(); }
-  eq(o: CiteWidget) { return o.key === this.key && o.label === this.label; }
+  constructor(readonly keys: string[], readonly label: string, readonly info?: PreviewOptions["citeInfo"]) { super(); }
+  eq(o: CiteWidget) { return o.keys.join(";") === this.keys.join(";") && o.label === this.label; }
   toDOM(view: EditorView) {
     const el = document.createElement("span");
     el.className = "hm-cite";
     el.textContent = this.label;
-    el.title = "@" + this.key;
     el.addEventListener("mousedown", (e) => focusAt(view, el, e, 1));
+    let t = 0;
+    el.addEventListener("mouseenter", () => { t = window.setTimeout(() => showCiteTip(el, this.keys, this.info), 400); });
+    el.addEventListener("mouseleave", () => { clearTimeout(t); hideCiteTip(); });
     return el;
   }
+  destroy() { hideCiteTip(); }
   ignoreEvent() { return false; }
 }
+function showCiteTip(anchor: HTMLElement, keys: string[], info?: PreviewOptions["citeInfo"]) {
+  hideCiteTip();
+  const box = document.createElement("div");
+  box.className = "hm-citetip";
+  for (const k of keys) {
+    const b = info?.(k);
+    const row = document.createElement("div");
+    row.className = "ct-r";
+    const ti = document.createElement("div");
+    ti.className = "ct-t";
+    ti.textContent = b?.title || `文献库里没有「${k}」`;
+    row.append(ti);
+    if (b) {
+      const by = document.createElement("div");
+      by.className = "ct-b";
+      const au = document.createElement("span"); au.textContent = b.author.replace(/\s+and\s+/g, "，");
+      const yr = document.createElement("span"); yr.className = "y"; yr.textContent = b.year;
+      by.append(au, yr);
+      row.append(by);
+    }
+    box.append(row);
+  }
+  document.body.append(box);
+  const r = anchor.getBoundingClientRect(), br = box.getBoundingClientRect();
+  const below = r.bottom + 6 + br.height < innerHeight - 8;
+  box.style.left = Math.round(Math.max(8, Math.min(r.left, innerWidth - br.width - 8))) + "px";
+  box.style.top = Math.round(below ? r.bottom + 6 : r.top - 6 - br.height) + "px";
+  citeTip = box;
+}
+function hideCiteTip() { citeTip?.remove(); citeTip = null; }
 
 /** 勾掉最后一个子项时，父项闪亮一下 */
 function glowParentIfDone(view: EditorView, pos: number) {
@@ -390,7 +427,7 @@ export function renderInlineHTML(s: string, opts: PreviewOptions) {
   h = h.replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>");
   h = h.replace(/`([^`]+)`/g, '<code class="hm-icode">$1</code>');
   h = h.replace(/~~([^~]+)~~/g, "<s>$1</s>");
-  h = h.replace(/\[@([\w:-]+)\]/g, (_m, k) => `<span class="hm-cite">${esc(opts.citeLabel(k))}</span>`);
+  h = h.replace(/\[(@[\w:.-]+(?:\s*;\s*@[\w:.-]+)*)\]/g, (_m, inner: string) => `<span class="hm-cite">${esc(opts.citeLabel(inner.split(";").map((k) => k.trim().slice(1))))}</span>`);
   h = h.replace(/\$([^$\n]+)\$/g, (_m, t) => {
     try { return katex.renderToString(t.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"), { throwOnError: false }); } catch { return t; }
   });
@@ -842,10 +879,11 @@ function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range
   };
 
   // 文献引用 [@key]
-  scan(/\[@([\w:-]+)\]/g, (m, from) => {
+  scan(/\[(@[\w:.-]+(?:\s*;\s*@[\w:.-]+)*)\]/g, (m, from) => {
     const to = from + m[0].length;
+    const keys = m[1].split(";").map((k) => k.trim().slice(1));
     if (active) decos.push(markCls("hm-cite-src").range(from, to));
-    else if (free(from, to)) { decos.push(Decoration.replace({ widget: new CiteWidget(m[1], opts.citeLabel(m[1])) }).range(from, to)); taken.push([from, to]); }
+    else if (free(from, to)) { decos.push(Decoration.replace({ widget: new CiteWidget(keys, opts.citeLabel(keys), opts.citeInfo) }).range(from, to)); taken.push([from, to]); }
   });
   // 行内公式 $...$
   scan(/(^|[^\\$])\$([^$\n]+?)\$(?!\$)/g, (m, from0) => {
