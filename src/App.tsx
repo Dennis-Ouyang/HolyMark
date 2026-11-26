@@ -22,9 +22,9 @@ import { isMac, isWindows, kbd, keyName } from "./lib/platform";
 import { menuIdFor } from "./lib/shortcuts";
 import { ExportDialog } from "./components/ExportDialog";
 import { merge3 } from "./lib/merge";
+import { noteAuthor, setNoteAuthor } from "./editor/notes";
 import { NoticeAction, NoticeKind, setNotifier } from "./editor/notice";
 
-const AUTHOR = "我";
 /** macOS 有原生菜单负责快捷键；Windows 和浏览器预览里由前端处理 */
 const nativeMenu = isTauri && isMac;
 /** Windows 上不用系统标题栏，窗口按钮自己画 */
@@ -105,6 +105,13 @@ export default function App() {
   }, []);
 
   useEffect(() => { setNotifier(say); }, [say]);
+  // 批注署名：设置里填的；第一次启动时还空着，用系统用户名填上（浏览器预览里拿不到，留空，显示成「我」）
+  setNoteAuthor(s.noteAuthor);
+  useEffect(() => {
+    if (!be || s.noteAuthor) return;
+    be.userName().then((n) => { if (n) update({ noteAuthor: n }); }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [be]);
 
   /* ---------- settings & theme ---------- */
   const update = (p: Partial<Settings>) => setS((old) => { const n = { ...old, ...p }; saveSettings(n); return n; });
@@ -456,7 +463,7 @@ export default function App() {
       case "search": setDlg((d) => (d === "palette" ? null : "palette")); break;
       case "link": if (v) insertLink(v); break;
       case "cite": openInsert(); break;
-      case "note": if (v && !insertNote(v, AUTHOR)) say("先选中要批注的文字", "warn"); break;
+      case "note": if (v && !insertNote(v)) say("先选中要批注的文字", "warn"); break;
       case "insert_table": if (v) insertBlock(v, tableMarkdown(2, 3), 2); break;
       case "insert_code": if (v) insertBlock(v, "```\n\n```", 4); break;
       case "insert_math": if (v) insertBlock(v, "$$\n\n$$", 3); break;
@@ -510,7 +517,7 @@ export default function App() {
   function resolveNote(n: Note) {
     const v = view(); if (!v) return;
     v.dispatch({ changes: { from: n.at, to: n.at + n.length, insert: n.quote } });
-    say("批注已解决，文件里的批注标记已移除", "success");
+    say("批注已解决", "success", { label: "撤销", run: () => ed.current?.undo() });
   }
   function applyLayout(l: Record<string, string>) {
     const v = view(); if (!v) return;
@@ -959,7 +966,7 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {path && <Ribbon view={ed.current?.view() ?? null} author={AUTHOR} settings={s} fonts={fonts} layout={layout} onLayout={applyLayout}
+        {path && <Ribbon view={ed.current?.view() ?? null} author={noteAuthor()} settings={s} fonts={fonts} layout={layout} onLayout={applyLayout}
           collapsed={s.ribbonCollapsed} setCollapsed={(c) => update({ ribbonCollapsed: c })}
           onPickImage={pickImage} onCite={openInsert} active={fmt.active} block={fmt.block} />}
         <div className="scroller" ref={scroller} onScroll={() => window.requestAnimationFrame(syncScrollHeading)} onMouseDown={clickBelow}>
@@ -968,7 +975,7 @@ export default function App() {
             <div hidden={!path}><Editor ref={ed} initial="" preview={preview} previewKey={previewKey} onChange={onChange} onSelection={onSelection} onImages={insertImages} /></div>
           </div>
         </div>
-        <FloatingToolbar view={ed.current?.view() ?? null} tick={tick} author={AUTHOR} active={fmt.active} />
+        <FloatingToolbar view={ed.current?.view() ?? null} tick={tick} author={noteAuthor()} active={fmt.active} />
         {fileCmp && <Compare fileLabel={fileCmp.name} oldText={fileCmp.text} newText={live.current.text} against="current" hasPrev={false} prevLabel=""
           onAgainst={() => {}} onClose={() => setFileCmp(null)} onRestore={() => {}} onPick={() => setDlg("cmpfile")} />}
         {cmp && (
@@ -981,7 +988,7 @@ export default function App() {
 
       <aside className="panel" aria-label="当前文件">
         <SidePanel tab={tab} setTab={setTab} headings={hs} currentHeading={currentHeading} notes={notes} versions={versions} freshVersion={fresh}
-          selectedVersion={cmp?.v.id ?? null} fileName={fileName} onJump={jump} onResolve={resolveNote}
+          selectedVersion={cmp?.v.id ?? null} fileName={fileName} onJump={jump} onResolve={resolveNote} cursorPos={cursor}
           onOpenVersion={(id) => openVersion(id)} onSaveVersion={() => setDlg("save")} onCompareFile={() => setDlg("cmpfile")} />
       </aside>
 

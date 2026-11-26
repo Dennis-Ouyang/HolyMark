@@ -54,6 +54,8 @@ export interface Backend {
   reveal(path: string): Promise<void>;
   /** 用系统默认的程序打开 */
   openPath(path: string): Promise<void>;
+  /** 系统用户名（批注署名的默认值），拿不到时是空字符串 */
+  userName(): Promise<string>;
   /** 用系统浏览器打开网页链接（http、https、mailto） */
   openUrl(url: string): Promise<void>;
   /** 导出进行到哪一步：style → pandoc → typst → write */
@@ -123,6 +125,7 @@ async function tauriBackend(): Promise<Backend> {
     reveal: (path) => invoke("reveal", { path }),
     openPath: (path) => invoke("open_path", { path }),
     openUrl: (url) => invoke("open_url", { url }),
+    userName: () => invoke("user_name"),
     onExportProgress(cb) {
       let un: (() => void) | null = null, alive = true;
       listen<string>("export-progress", (e) => cb(e.payload)).then((u) => { if (alive) un = u; else u(); });
@@ -239,6 +242,7 @@ function demoBackend(): Backend {
     async reveal() { /* 浏览器里没有 Finder */ },
     async openPath() { /* 浏览器里打不开本机文件 */ },
     async openUrl(url) { window.open(url, "_blank", "noopener,noreferrer"); },
+    async userName() { return ""; },
     onExportProgress() { return () => {}; },
     async openFolder() { return tree(); },
     async closeFolder() { /* 演示文件夹没有监听 */ },

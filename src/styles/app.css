@@ -10,6 +10,10 @@
   --tk:#A0A4B0; --code-bg:#F6F7F9;
   --hl-kw:#8E3BC9; --hl-str:#3F8A2E; --hl-num:#B5541A; --hl-com:#9AA0A6; --hl-fn:#2F62C9;
   --pop:0 0 0 1px var(--line-2), 0 16px 40px -10px rgba(20,22,40,.22);
+  /* 叠层阴影：发丝描边 + 1/3/6/12px 四层淡影（浮层：批注、插入文件、菜单） */
+  --float:0 0 0 .5px rgba(20,22,40,.14), 0 1px 1px rgba(20,22,40,.05), 0 3px 3px rgba(20,22,40,.05), 0 6px 6px rgba(20,22,40,.05), 0 12px 12px rgba(20,22,40,.05);
+  /* 批注：原文一层很浅的主题色底，悬停稍深；页边圆点用主题色深字 */
+  --note-bg:color-mix(in srgb, var(--accent) 9%, transparent); --note-bg-hover:color-mix(in srgb, var(--accent) 16%, transparent); --note-fg:var(--accent-fg);
   --seg-track:#EEEFF3; --seg-thumb:#FFFFFF;
   --scrim:rgba(8,10,18,.28);
   --f-ui:-apple-system,BlinkMacSystemFont,"Segoe UI Variable Text","Segoe UI","Inter","PingFang SC","Hiragino Sans GB","Microsoft YaHei UI","Microsoft YaHei",sans-serif;
@@ -36,6 +40,10 @@
     --tk:#5E6272; --code-bg:#121318;
     --hl-kw:#C792EA; --hl-str:#9ECE6A; --hl-num:#F5A97F; --hl-com:#5C6370; --hl-fn:#7AA2F7;
     --pop:0 0 0 1px var(--line-2), 0 16px 40px -8px rgba(0,0,0,.55);
+  --float:0 0 0 .5px rgba(255,255,255,.12), 0 1px 1px rgba(0,0,0,.2), 0 3px 3px rgba(0,0,0,.2), 0 6px 6px rgba(0,0,0,.2), 0 12px 12px rgba(0,0,0,.2);
+  --note-bg:color-mix(in srgb, var(--accent) 16%, transparent); --note-bg-hover:color-mix(in srgb, var(--accent) 26%, transparent);
+    --float:0 0 0 .5px rgba(255,255,255,.12), 0 1px 1px rgba(0,0,0,.2), 0 3px 3px rgba(0,0,0,.2), 0 6px 6px rgba(0,0,0,.2), 0 12px 12px rgba(0,0,0,.2);
+    --note-bg:color-mix(in srgb, var(--accent) 16%, transparent); --note-bg-hover:color-mix(in srgb, var(--accent) 26%, transparent);
     --seg-track:#16171C; --seg-thumb:#2A2D36;
     --scrim:rgba(0,0,0,.5);
   }
@@ -274,7 +282,7 @@ kbd { font: 500 11px var(--f-ui); padding: 1px 5px; border-radius: 4px; border: 
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .hm-hl { background: rgba(250,204,21,.24); } }
 .hm-gap { line-height: calc(var(--ed-lh) * .45) !important; }
 /* 所有 Markdown 控制符用同一种等宽字体，和正文字体分开 */
-.hm-mark, .hm-anno-mark, .hm-cite-src, .hm-math-src, .hm-code-lang { font-family: var(--mono) !important; font-size: .78rem; font-weight: 400 !important; font-style: normal !important; letter-spacing: 0; }
+.hm-mark, .hm-cite-src, .hm-math-src, .hm-code-lang { font-family: var(--mono) !important; font-size: .78rem; font-weight: 400 !important; font-style: normal !important; letter-spacing: 0; }
 .hm-mark { color: var(--tk); }
 .hm-h .hm-mark { vertical-align: .12em; }
 .hm-flash { animation: flash 1.4s ease-out; }
@@ -344,8 +352,19 @@ body.hm-dragging, body.hm-dragging * { cursor: grabbing !important; user-select:
 .hm-hr { display: inline-block; width: 100%; border-top: 1px solid var(--line-2); vertical-align: middle; }
 .hm-cite { display: inline-block; font: 500 .72em/1.6 var(--f-ui); border-radius: 4px; padding: 0 5px; margin: 0 2px; color: var(--accent-fg); background: var(--accent-soft); cursor: pointer; vertical-align: .08em; }
 .hm-cite-src, .hm-math-src { color: var(--accent-fg); }
-.hm-anno { background: var(--anno); border-bottom: 1.5px solid var(--anno-line); border-radius: 2px; }
-.hm-anno-mark { color: var(--anno-line); font-family: var(--f-ui); font-size: .85em; }
+.hm-note { background: var(--note-bg); border-radius: 2px; transition: background-color 120ms; }
+.hm-note:hover { background: var(--note-bg-hover); }
+/* 页边圆点：零宽的占位，圆点绝对定位到这一行右侧的页边，纵向停在原文那一行 */
+.hm-noteline { position: relative; }
+.hm-notemark { display: inline; }
+.hm-notemark i { position: absolute; right: -22px; width: 6px; height: 6px; margin-top: calc(var(--ed-lh) * .5em - 3px); border-radius: 50%; background: var(--note-fg); opacity: .75; cursor: pointer; transition: opacity 120ms, scale 120ms; }
+.hm-notemark i:hover { opacity: 1; scale: 1.3; }
+.hm-notemark i.empty { background: transparent; box-shadow: inset 0 0 0 1.5px var(--note-fg); }
+.hm-notemark i.dup { display: none; }
+/* 同一行有几条批注：一个小圆角块里写数字 */
+.hm-notemark i[data-n] { right: -26px; width: auto; min-width: 14px; height: 14px; padding: 0 3px; margin-top: calc(var(--ed-lh) * .5em - 7px); border-radius: 7px; background: var(--accent-soft); color: var(--accent-fg); opacity: 1; font: 600 10px/14px var(--f-ui); font-style: normal; text-align: center; }
+.hm-notemark i[data-n]::after { content: attr(data-n); }
+.hm-notemark i[data-n]:hover { scale: 1.1; }
 .hm-math-inline { cursor: pointer; }
 .hm-math-block, .hm-mermaid, .hm-table, .hm-props, .hm-figure { cursor: pointer; border: 1px solid transparent; border-radius: 8px; transition: border-color 120ms; }
 .hm-math-block:hover, .hm-mermaid:hover, .hm-table:hover, .hm-props:hover, .hm-figure:hover { border-color: var(--line-2); }
@@ -476,19 +495,26 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .oi.cur { color: var(--accent-fg); }
 .oi.cur::before { content: ""; position: absolute; left: -8px; top: 7px; bottom: 7px; width: 3px; border-radius: 2px; background: var(--accent); }
 .oi .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
-.oi .cm { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--anno-line); }
-.cc { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 10px 12px; margin-bottom: 8px; cursor: pointer; transition: border-color 120ms; }
-.cc:hover { border-color: var(--anno-line); }
-.cc { animation: paneIn 200ms var(--ease) both; }
-/* 错峰出场：只在打开这一栏时，一条接一条进来；第 8 条以后一起进，免得等太久 */
-.cc.stg, .ver.stg { animation: paneIn 220ms var(--ease) both; animation-delay: calc(min(var(--i), 8) * 40ms); }
-.cc .who { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg-3); }
-.cc .who b { color: var(--fg); font-weight: 500; }
-.av { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font: 500 11px var(--f-ui); color: #fff; flex: none; }
-.cc .q { margin: 8px 0 6px; padding-left: 8px; border-left: 2px solid var(--anno-line); font-size: 13px; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cc .tx { font-size: 13px; line-height: 1.6; }
-.cc .tx.ph2 { color: var(--fg-3); font-style: italic; }
-.cc .acts { display: flex; justify-content: flex-end; margin-top: 8px; }
+/* 目录里每节的批注数：中性的小数字，0 时不显示 */
+.oi .cm { flex: none; font-size: 11px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+/* 右栏批注列表：不用卡片，条目之间留白加一条发丝线 */
+.nl { margin: -4px -4px 0; }
+.ni { position: relative; padding: 12px 10px; border-radius: 8px; cursor: pointer; transition: background-color 120ms; }
+.ni + .ni::before { content: ""; position: absolute; left: 10px; right: 10px; top: 0; height: 1px; background: var(--line); }
+.ni:hover { background: var(--hover); }
+.ni.cur { background: var(--accent-soft); }
+.ni:hover + .ni::before, .ni.cur + .ni::before, .ni:hover::before, .ni.cur::before { opacity: 0; }
+.ni .q { font-size: 12px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ni .tx { margin-top: 3px; font-size: 13px; line-height: 1.6; color: var(--fg); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ni .tx.ph2 { color: var(--fg-3); }
+.ni .by { display: flex; align-items: center; gap: 10px; margin-top: 4px; height: 22px; font-size: 12px; }
+.ni .who { color: var(--fg-2); }
+.ni .dt { color: var(--fg-3); font-variant-numeric: tabular-nums; }
+/* 「解决」悬停才出现 */
+.ni .ok { margin-left: auto; height: 22px; padding: 0 8px; border-radius: 5px; font-size: 12px; color: var(--accent-fg); opacity: 0; transition: opacity 120ms, background-color 120ms; }
+.ni:hover .ok, .ni .ok:focus-visible { opacity: 1; }
+.ni .ok:hover { background: var(--accent-soft); }
+.ni.stg { animation: paneIn 220ms var(--ease) both; animation-delay: calc(min(var(--i), 8) * 40ms); }
 .vgrp { font-size: 11px; color: var(--fg-3); padding: 10px 8px 4px; }
 .ver { position: relative; display: grid; grid-template-columns: 16px 1fr auto; gap: 10px; align-items: start; padding: 8px; border-radius: 7px; text-align: left; width: 100%; }
 .ver { transition: background 120ms; }
@@ -812,7 +838,7 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .win .hm-editor .cm-scroller { letter-spacing: 0; }
 .win .hm-h2 { font-size: 1.375em; }
 .win .hm-h3 { font-size: 1.125em; }
-.win .hm-mark, .win .hm-anno-mark, .win .hm-cite-src, .win .hm-math-src, .win .hm-code-lang { font-size: 12px; }
+.win .hm-mark, .win .hm-cite-src, .win .hm-math-src, .win .hm-code-lang { font-size: 12px; }
 .win .hm-code, .win .hm-src-mono { font-size: 13px; }
 
 /* Windows 的滚动条默认又宽又灰，换成细的、和 macOS 接近的样子 */
@@ -999,15 +1025,18 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .xwarn li .n { margin-left: 6px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
 
 /* ---------- 批注：正文里只显示高亮的原文和一个小图标，卡片里看和改 ---------- */
-.hm-notedot { display: inline-grid; place-items: center; width: 16px; height: 16px; margin: 0 1px 0 2px; border-radius: 4px; vertical-align: .2em; color: var(--anno-line); cursor: pointer; transition: background 120ms; text-indent: 0; }
-.hm-notedot:hover { background: var(--anno); }
-.hm-notedot.empty { opacity: .6; }
-.cm-tooltip:has(> .hm-notebub) { border: 0; background: transparent; }
-.hm-notebub { width: 300px; padding: 10px 12px 10px; border-radius: 10px; background: var(--raised); box-shadow: var(--pop); font: 13px/1.5 var(--f-ui); color: var(--fg); animation: tipIn 120ms var(--ease); transform-origin: 0 0; }
-.nb-h { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; color: var(--fg-3); }
-.nb-h b { color: var(--fg); font-weight: 500; }
-.nb-h .av { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font: 500 11px var(--f-ui); color: #fff; flex: none; }
-.nb-ok { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; color: var(--fg-2); transition: background 120ms, color 120ms; }
-.nb-ok:hover { background: var(--ins-bg); color: var(--ins); }
-.hm-notebub textarea { display: block; width: 100%; min-height: 32px; resize: none; padding: 6px 8px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--bg); font: 13px/1.6 var(--f-ui); color: var(--fg); outline: none; transition: border-color 120ms; }
-.hm-notebub textarea:focus { border-color: var(--accent-line); }
+.hm-editor .cm-tooltip.hm-notebub { border: 0; background: var(--raised); color: var(--fg); }
+/* 批注浮层：和插入文件、菜单同一套外观（--raised、叠层阴影、12px 圆角） */
+.hm-notebub { width: 300px; max-width: calc(100vw - 32px); padding: 12px 14px 8px; border-radius: 12px; background: var(--raised); box-shadow: var(--float); font-family: var(--f-ui); color: var(--fg); animation: tipIn 120ms var(--ease); transform-origin: 0 0; }
+.nb-h { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.nb-h b { font-size: 13px; font-weight: 600; color: var(--fg); }
+.nb-d { font-size: 12px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+/* 内容：就是一段文字；自己的批注点一下就能改，只有聚焦时才出现细的聚焦框 */
+.nb-tx { display: block; width: 100%; margin: 0 -6px; padding: 2px 6px; box-sizing: content-box; border: 0; border-radius: 6px; background: transparent; font: 14px/1.6 var(--f-ui); color: var(--fg); resize: none; outline: none; white-space: pre-wrap; word-break: break-word; transition: box-shadow 120ms; }
+textarea.nb-tx:focus { box-shadow: 0 0 0 1px var(--accent-line); }
+textarea.nb-tx::placeholder { color: var(--fg-3); }
+.nb-f { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+.nb-ok { margin-left: auto; height: 26px; padding: 0 8px; border-radius: 6px; font-size: 13px; color: var(--accent-fg); transition: background-color 120ms; }
+.nb-ok:hover { background: var(--accent-soft); }
+.nb-more { display: grid; place-items: center; width: 26px; height: 26px; margin-left: -6px; border-radius: 6px; color: var(--fg-3); transition: background-color 120ms, color 120ms; }
+.nb-more:hover, .nb-more.open { background: var(--hover); color: var(--fg); }

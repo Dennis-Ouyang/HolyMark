@@ -217,20 +217,26 @@ class ImageWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
-/** 批注原文后面的小图标：点一下打开批注卡片；还没写内容的批注用虚线 */
-class NoteDotWidget extends WidgetType {
+/**
+ * 批注的页边圆点：替换掉藏起来的 ==}{>>…<<}，本身零宽、不占行内位置（不会把后面的「。」挤到行首），
+ * 里面的小圆点绝对定位到这一行右侧的页边、纵向停在原文所在的那一行。点圆点打开批注浮层。
+ */
+class NoteMarkWidget extends WidgetType {
   constructor(readonly empty: boolean) { super(); }
-  eq(o: NoteDotWidget) { return o.empty === this.empty; }
+  eq(o: NoteMarkWidget) { return o.empty === this.empty; }
   toDOM(view: EditorView) {
     const el = document.createElement("span");
-    el.className = "hm-notedot" + (this.empty ? " empty" : "");
-    el.title = "查看批注";
-    el.innerHTML = iconSvg("note", 13);
-    el.addEventListener("mousedown", (e) => {
+    el.className = "hm-notemark";
+    const dot = document.createElement("i");
+    dot.className = this.empty ? "empty" : "";
+    dot.title = "查看批注";
+    dot.addEventListener("mousedown", (e) => {
       e.preventDefault();
-      const pos = view.posAtDOM(el); // 小图标替换的是 ==}{>>…<<}，它的起点就是原文的末尾
-      view.dispatch({ selection: { anchor: pos }, effects: openNote.of({ pos, focus: true }) });
+      const pos = view.posAtDOM(el); // 替换的是 ==}{>>…<<}，起点就是原文的末尾
+      view.dispatch({ selection: { anchor: pos }, effects: openNote.of({ pos, focus: false }) });
+      view.focus();
     });
+    el.append(dot);
     return el;
   }
   ignoreEvent() { return true; }
@@ -669,8 +675,9 @@ function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range
     if (code0.some(([a, z]) => from >= a && from < z)) continue;
     const quoteFrom = from + 3, quoteTo = quoteFrom + m[1].length, end = from + m[0].length;
     decos.push(hide.range(from, quoteFrom));
-    decos.push(Decoration.mark({ class: "hm-anno", attributes: { "data-note-at": String(from) } }).range(quoteFrom, quoteTo));
-    decos.push(Decoration.replace({ widget: new NoteDotWidget(!parseBody(m[2]).text.trim()) }).range(quoteTo, end));
+    decos.push(Decoration.mark({ class: "hm-note", attributes: { "data-note-at": String(from) } }).range(quoteFrom, quoteTo));
+    decos.push(Decoration.replace({ widget: new NoteMarkWidget(!parseBody(m[2]).text.trim()) }).range(quoteTo, end));
+    decos.push(lineCls("hm-noteline").range(doc.lineAt(quoteTo).from));
     hidden.push([from, quoteFrom], [quoteTo, end]);
     taken.push([from, quoteFrom], [quoteTo, end]);
   }

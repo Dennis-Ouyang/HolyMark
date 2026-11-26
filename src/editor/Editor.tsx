@@ -16,7 +16,6 @@ import { notes } from "./notes";
 import { tabKeymap } from "./keys";
 import { emptyPairs } from "./emptyPairs";
 import { zhPhrases } from "./phrases";
-import { avatarColor } from "../components/SidePanel";
 import { Subscript, Superscript } from "@lezer/markdown";
 
 export interface EditorHandle {
@@ -72,7 +71,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial,
           previewCompartment.current.of(livePreview(preview)),
           autoPair(),
           mathTools(),
-          notes(avatarColor),
+          notes(),
           keymap.of([
             { key: "Enter", run: continueList },
             ...tabKeymap,

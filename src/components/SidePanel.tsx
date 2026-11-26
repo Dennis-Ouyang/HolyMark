@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import type { Heading, Note } from "../lib/markdown";
 import type { VersionMeta } from "../lib/backend";
-import { Icon } from "./Icons";
+import { fmtNoteDate } from "../editor/notes";
 import { kbd } from "../lib/platform";
 
 export type PanelTab = "outline" | "notes" | "versions";
@@ -30,6 +30,8 @@ interface Props {
   onOpenVersion: (id: string) => void;
   onSaveVersion: () => void;
   onCompareFile: () => void;
+  /** 光标位置：光标落在哪条批注里，那条在列表里标出来 */
+  cursorPos?: number;
 }
 
 /**
@@ -76,7 +78,7 @@ export function SidePanel(p: Props) {
               {p.headings.map((h, i) => (
                 <button key={i} className={"oi" + (h.level === 1 ? " l1" : "") + (i === p.currentHeading ? " cur" : "")} style={{ "--lv": Math.max(0, h.level - 2) } as React.CSSProperties} onClick={() => p.onJump(h.pos)}>
                   <span className="t">{h.text}</span>
-                  {noteCounts[i] > 0 && <span className="cm"><Icon name="note" size={12} />{noteCounts[i]}</span>}
+                  {noteCounts[i] > 0 && <span className="cm" title={`${noteCounts[i]} 条批注`}>{noteCounts[i]}</span>}
                 </button>
               ))}
             </div>
@@ -86,14 +88,18 @@ export function SidePanel(p: Props) {
 
       {p.tab === "notes" && (
         <div className="pane">
-          {p.notes.length ? p.notes.map((n) => { const st = stagger(String(n.at)); return (
-            <div key={n.at} className={"cc" + st.cls} style={st.style} onClick={() => p.onJump(n.at + 3)}>
-              <div className="who"><span className="av" style={{ background: avatarColor(n.who) }}>{(n.who || "?").slice(0, 1)}</span><b>{n.who || "未署名"}</b><span>{n.date}</span></div>
-              <div className="q">{n.quote}</div>
-              <div className={"tx" + (n.text ? "" : " ph2")}>{n.text || "还没有写内容"}</div>
-              <div className="acts"><button className="btn sm" onClick={(e) => { e.stopPropagation(); p.onResolve(n); }}>解决</button></div>
-            </div>
-          ); }) : <div className="empty">这个文档还没有批注<br />选择一段文字来添加批注</div>}
+          {p.notes.length ? <div className="nl">{p.notes.map((n) => {
+            const st = stagger(String(n.at));
+            const cur = p.cursorPos !== undefined && p.cursorPos >= n.at && p.cursorPos <= n.at + n.length;
+            return (
+              <div key={n.at} className={"ni" + (cur ? " cur" : "") + st.cls} style={st.style} onClick={() => p.onJump(n.at + 3)}>
+                <div className="q">{n.quote}</div>
+                <div className={"tx" + (n.text ? "" : " ph2")}>{n.text || "还没有写内容"}</div>
+                <div className="by"><span className="who">{n.who || "未署名"}</span><span className="dt">{fmtNoteDate(n.date)}</span>
+                  <button className="ok" onClick={(e) => { e.stopPropagation(); p.onResolve(n); }}>解决</button></div>
+              </div>
+            );
+          })}</div> : <div className="empty">这个文档还没有批注<br />选择一段文字来添加批注</div>}
         </div>
       )}
 
@@ -139,13 +145,6 @@ function countNotesPerHeading(hs: Heading[], notes: Note[]) {
     const start = h.pos;
     return h.level === 1 ? 0 : notes.filter((n) => n.at >= start && n.at < end).length;
   });
-}
-
-export function avatarColor(who: string) {
-  if (who === "我") return "#5A62DE";
-  let h = 0;
-  for (const c of who) h = (h * 31 + c.charCodeAt(0)) % 360;
-  return `hsl(${h} 55% 45%)`;
 }
 
 /** 让外层可以监听 ESC 等按键时把焦点还给编辑器 */

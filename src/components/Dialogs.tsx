@@ -76,6 +76,10 @@ export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; f
                 <span className="swname">{ACCENTS[s.accent].name}</span>
               </div>
             </Row>
+            <Row label="批注署名" hint="加批注时写在作者处，导出到 Word 后对方看到的就是这个名字">
+              <input className="tin" style={{ width: 200 }} value={s.noteAuthor} placeholder="我" aria-label="批注署名" maxLength={40}
+                onChange={(e) => onChange({ noteAuthor: e.target.value.replace(/\s+/g, "") })} />
+            </Row>
             <Row label="文件树" hint="关闭时只显示 Markdown 文件"><label className="inline">{sw("showAllFiles", "显示所有文件")}<span>显示所有文件</span></label></Row>
             <Row label="启动时" hint="关掉的话，每次从开始页开始"><label className="inline">{sw("reopenLast", "打开上次的文件夹")}<span>打开上次的文件夹</span></label></Row>
             <Row label="关闭应用时" hint="不保存的修改会留在「版本」里，随时能找回"><label className="inline">{sw("askOnClose", "询问是否保存修改")}<span>有修改时询问是否保存</span></label></Row>

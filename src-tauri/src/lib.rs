@@ -590,6 +590,19 @@ fn open_path(path: String) -> Result<(), String> {
     export::open_path(&path)
 }
 
+/// 系统用户名，给批注署名做默认值。macOS 上优先用账户的全名（「张三」），拿不到就用登录名
+#[tauri::command]
+fn user_name() -> String {
+    #[cfg(target_os = "macos")]
+    if let Ok(out) = std::process::Command::new("id").arg("-F").output() {
+        let full = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if out.status.success() && !full.is_empty() {
+            return full;
+        }
+    }
+    std::env::var("USERNAME").or_else(|_| std::env::var("USER")).unwrap_or_default()
+}
+
 /// 用系统浏览器打开网页链接（只认 http、https、mailto）
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
@@ -720,6 +733,7 @@ pub fn run() {
             reveal,
             open_path,
             open_url,
+            user_name,
             pick_save,
             pick_folder,
             create_dir,

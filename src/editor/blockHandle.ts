@@ -9,11 +9,9 @@
 import type { Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { iconSvg } from "../lib/icons";
-import { kbd } from "../lib/platform";
+import { openDomMenu, type DomMenuItem } from "./domMenu";
 
-export type HandleMenuItem =
-  | { sep: true }
-  | { label: string; icon?: string; hint?: string; danger?: boolean; disabled?: boolean; run: () => void };
+export type HandleMenuItem = DomMenuItem;
 
 export interface DropSlot {
   /** 放在这个文档位置之前（行首；放到最后时是块的末尾） */
@@ -54,7 +52,7 @@ class HandleView {
   el: HTMLButtonElement;
   line: HTMLDivElement;
   cur: HandleTarget | null = null;
-  menu: HTMLDivElement | null = null;
+  menu: { close: () => void } | null = null;
   dragging = false;
   raf = 0;
   constructor(readonly view: EditorView, readonly providers: HandleProvider[]) {
@@ -143,63 +141,14 @@ class HandleView {
 
   openMenu(t: HandleTarget) {
     this.closeMenu();
-    const items = t.menu();
-    const m = document.createElement("div");
-    m.className = "menu hm-hmenu";
-    m.setAttribute("role", "menu");
-    m.setAttribute("aria-label", t.label);
-    const btns: HTMLButtonElement[] = [];
-    for (const it of items) {
-      if ("sep" in it) { const s = document.createElement("div"); s.className = "menu-sep"; s.setAttribute("role", "separator"); m.append(s); continue; }
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "menu-item" + (it.danger ? " danger" : "");
-      b.setAttribute("role", "menuitem");
-      b.disabled = !!it.disabled;
-      b.innerHTML = `<span class="mi">${it.icon ? iconSvg(it.icon, 14) : ""}</span><span class="ml"></span>${it.hint ? `<span class="mh">${kbd(it.hint)}</span>` : ""}`;
-      b.querySelector(".ml")!.textContent = it.label;
-      b.addEventListener("mousedown", (e) => e.preventDefault());
-      b.addEventListener("click", () => { this.closeMenu(); this.view.focus(); it.run(); });
-      b.addEventListener("mousemove", () => hi(btns.indexOf(b)));
-      btns.push(b);
-      m.append(b);
-    }
-    document.body.append(m);
-    const hr = this.el.getBoundingClientRect(), mr = m.getBoundingClientRect();
-    const left = Math.max(6, Math.min(hr.left, innerWidth - mr.width - 6));
-    const below = hr.bottom + 4 + mr.height < innerHeight - 6;
-    const top = below ? hr.bottom + 4 : Math.max(6, hr.top - 4 - mr.height);
-    m.style.left = Math.round(left) + "px";
-    m.style.top = Math.round(top) + "px";
-    m.style.transformOrigin = `${Math.round(hr.left - left + 9)}px ${below ? 0 : Math.round(mr.height)}px`;
-    this.menu = m;
     this.el.classList.add("open");
-    let at = -1;
-    const hi = (k: number) => { btns.forEach((b, i) => b.classList.toggle("hi", i === k)); at = k; };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.closeMenu(); this.view.focus(); }
-      else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault(); e.stopPropagation();
-        const live = btns.map((b, i) => (b.disabled ? -1 : i)).filter((i) => i >= 0);
-        const k = live.indexOf(at), n = live.length;
-        hi(live[((k < 0 ? (e.key === "ArrowDown" ? -1 : 0) : k) + (e.key === "ArrowDown" ? 1 : -1) + n) % n]);
-      } else if (e.key === "Enter" && at >= 0) { e.preventDefault(); e.stopPropagation(); btns[at].click(); }
-    };
-    const outside = (e: MouseEvent) => { if (!m.contains(e.target as Node)) { this.closeMenu(); } };
-    addEventListener("keydown", key, true);
-    addEventListener("mousedown", outside, true);
-    this.menuOff = () => { removeEventListener("keydown", key, true); removeEventListener("mousedown", outside, true); };
+    const close = openDomMenu(this.el, t.menu(), {
+      label: t.label,
+      onClose: () => { this.menu = null; this.el.classList.remove("open", "on"); this.view.focus(); },
+    });
+    this.menu = { close };
   }
-  menuOff = () => {};
-  closeMenu() {
-    if (!this.menu) return;
-    this.menuOff();
-    const m = this.menu;
-    this.menu = null;
-    this.el.classList.remove("open", "on");
-    m.classList.add("leaving");
-    setTimeout(() => m.remove(), 100);
-  }
+  closeMenu() { this.menu?.close(); }
 }
 
 export function blockHandle(providers: HandleProvider[]): Extension {
