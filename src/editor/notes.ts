@@ -153,6 +153,30 @@ function bubbleField(avatar: (who: string) => string) {
   });
 }
 
+/** 可见范围扩成整行后合并：批注的隐藏符号会把同一行切成几段 visibleRanges，不合并的话同一条批注会被扫两次 */
+export function lineSpans(state: EditorState, ranges: readonly { from: number; to: number }[]): [number, number][] {
+  const out: [number, number][] = [];
+  for (const { from, to } of ranges) {
+    const a = state.doc.lineAt(from).from, z = state.doc.lineAt(to).to;
+    const last = out[out.length - 1];
+    if (last && a <= last[1] + 1) last[1] = Math.max(last[1], z);
+    else out.push([a, z]);
+  }
+  return out;
+}
+
+/** 批注里要整体跳过的两段：开头的 {== 和 ==}{>>…<<}，按位置排好 */
+export function noteAtomRanges(state: EditorState, ranges: readonly { from: number; to: number }[]): [number, number][] {
+  const out: [number, number][] = [];
+  for (const [a, z] of lineSpans(state, ranges)) {
+    for (const m of state.sliceDoc(a, z).matchAll(NOTE_RE)) {
+      const s = a + m.index!, qe = s + 3 + m[1].length;
+      out.push([s, s + 3], [qe, s + m[0].length]);
+    }
+  }
+  return out;
+}
+
 /** 藏起来的批注符号整体跳过：光标不会停在 {== 或 ==}{>>…<<} 里面 */
 const atoms = ViewPlugin.fromClass(class {
   ranges: DecorationSet;
@@ -161,14 +185,7 @@ const atoms = ViewPlugin.fromClass(class {
   build(view: EditorView) {
     const b = new RangeSetBuilder<Decoration>();
     const mark = Decoration.mark({});
-    for (const { from, to } of view.visibleRanges) {
-      const a = view.state.doc.lineAt(from).from, z = view.state.doc.lineAt(to).to;
-      for (const m of view.state.sliceDoc(a, z).matchAll(NOTE_RE)) {
-        const s = a + m.index!, qe = s + 3 + m[1].length;
-        b.add(s, s + 3, mark);
-        b.add(qe, s + m[0].length, mark);
-      }
-    }
+    for (const [f, t] of noteAtomRanges(view.state, view.visibleRanges)) b.add(f, t, mark);
     return b.finish();
   }
 }, { provide: (p) => EditorView.atomicRanges.of((view) => view.plugin(p)?.ranges ?? Decoration.none) });
