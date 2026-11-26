@@ -205,3 +205,22 @@ describe("blockInsertSpec：图片自成一段", async () => {
     expect(apply("", "").out).toBe("![图](a.png)\n\n");
   });
 });
+
+describe("批注：找到光标所在的批注", async () => {
+  const { noteAt, parseBody } = await import("../src/editor/notes");
+  const doc = "前文{==这一句==}{>>@王老师 2026-11-26：要改<<}后文";
+  const st = EditorState.create({ doc });
+  it("光标在原文里（含两端）才算", () => {
+    const q = doc.indexOf("这一句");
+    expect(noteAt(st, q + 1)).toMatchObject({ quote: "这一句", who: "王老师", date: "2026-11-26", text: "要改" });
+    expect(noteAt(st, q + 3)?.quote).toBe("这一句");
+    expect(noteAt(st, 1)).toBeNull();
+    expect(noteAt(st, doc.indexOf("要改"))).toBeNull();
+    const n = noteAt(st, q + 1)!;
+    expect(doc.slice(n.bodyFrom, n.bodyTo)).toBe("@王老师 2026-11-26：要改");
+  });
+  it("内容前缀 @作者 日期：", () => {
+    expect(parseBody("@我 2026-11-26：")).toEqual({ who: "我", date: "2026-11-26", text: "", prefix: "@我 2026-11-26：".length });
+    expect(parseBody("没有署名的批注").text).toBe("没有署名的批注");
+  });
+});

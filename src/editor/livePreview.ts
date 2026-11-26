@@ -9,6 +9,9 @@ import type { SyntaxNode } from "@lezer/common";
 import katex from "katex";
 import { TableWidget } from "./tableWidget";
 import { iconSvg } from "../lib/icons";
+import { openNote, parseBody } from "./notes";
+
+const NOTE_SCAN = /\{==([\s\S]+?)==\}\{>>([\s\S]*?)<<\}/g;
 import { FileCardWidget, FileHooks } from "./fileCard";
 import { CARD_EXT } from "../lib/filePreview";
 
@@ -204,6 +207,25 @@ class ImageWidget extends WidgetType {
       addEventListener("mouseup", up);
     });
     if (reopenImage === this.src) { reopenImage = ""; requestAnimationFrame(open); }
+    return el;
+  }
+  ignoreEvent() { return true; }
+}
+
+/** 批注原文后面的小图标：点一下打开批注卡片；还没写内容的批注用虚线 */
+class NoteDotWidget extends WidgetType {
+  constructor(readonly empty: boolean) { super(); }
+  eq(o: NoteDotWidget) { return o.empty === this.empty; }
+  toDOM(view: EditorView) {
+    const el = document.createElement("span");
+    el.className = "hm-notedot" + (this.empty ? " empty" : "");
+    el.title = "查看批注";
+    el.innerHTML = iconSvg("note", 13);
+    el.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const pos = view.posAtDOM(el); // 小图标替换的是 ==}{>>…<<}，它的起点就是原文的末尾
+      view.dispatch({ selection: { anchor: pos }, effects: openNote.of({ pos, focus: true }) });
+    });
     return el;
   }
   ignoreEvent() { return true; }
@@ -648,6 +670,24 @@ function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range
   const codeRanges: [number, number][] = [];
   const taken: [number, number][] = [];
   const free = (f: number, t: number) => !taken.some(([a, z]) => f < z && t > a);
+  const text = doc.sliceString(b.from, b.to);
+
+  // 批注 {==原文==}{>>@作者 日期：内容<<}：不管光标在不在这一段，符号都藏起来（批注是图形化编辑的，见 notes.ts），
+  // 原文高亮，后面一个小图标。先处理批注，免得批注内容里的符号被下面当成强调、链接再装饰一遍
+  const code0: [number, number][] = [];
+  syntaxTree(state).iterate({ from: b.from, to: b.to, enter: (n) => { if (n.name === "InlineCode") code0.push([n.from, n.to]); } });
+  const hidden: [number, number][] = [];
+  NOTE_SCAN.lastIndex = 0;
+  for (let m: RegExpExecArray | null; (m = NOTE_SCAN.exec(text)); ) {
+    const from = b.from + m.index;
+    if (code0.some(([a, z]) => from >= a && from < z)) continue;
+    const quoteFrom = from + 3, quoteTo = quoteFrom + m[1].length, end = from + m[0].length;
+    decos.push(hide.range(from, quoteFrom));
+    decos.push(Decoration.mark({ class: "hm-anno", attributes: { "data-note-at": String(from) } }).range(quoteFrom, quoteTo));
+    decos.push(Decoration.replace({ widget: new NoteDotWidget(!parseBody(m[2]).text.trim()) }).range(quoteTo, end));
+    hidden.push([from, quoteFrom], [quoteTo, end]);
+    taken.push([from, quoteFrom], [quoteTo, end]);
+  }
 
   syntaxTree(state).iterate({
     from: b.from,
@@ -655,6 +695,7 @@ function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range
     enter: (n) => {
       const name = n.name;
       if (skip.some(([f, t]) => n.from >= f && n.to <= t)) return false; // 已经按插图整行替换掉了
+      if (hidden.some(([f, t]) => n.from >= f && n.to <= t)) return false; // 藏起来的批注符号和内容
       if (name === "InlineCode") { codeRanges.push([n.from, n.to]); decos.push(markCls("hm-icode").range(n.from, n.to)); }
       if (name === "StrongEmphasis") decos.push(markCls("hm-strong").range(n.from, n.to));
       if (name === "Emphasis") decos.push(markCls("hm-em").range(n.from, n.to));
@@ -707,7 +748,6 @@ function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range
     },
   });
 
-  const text = doc.sliceString(b.from, b.to);
   const inCode = (p: number) => codeRanges.some(([a, z]) => p >= a && p < z);
   const scan = (re: RegExp, fn: (m: RegExpExecArray, from: number) => void) => {
     re.lastIndex = 0;
@@ -718,19 +758,6 @@ function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range
     }
   };
 
-  // CriticMarkup 批注 {==原文==}{>>批注<<}
-  scan(/\{==([\s\S]+?)==\}\{>>([\s\S]*?)<<\}/g, (m, from) => {
-    const innerFrom = from + 3, innerTo = innerFrom + m[1].length, end = from + m[0].length;
-    decos.push(Decoration.mark({ class: "hm-anno", attributes: { "data-note-at": String(from) } }).range(innerFrom, innerTo));
-    if (active) {
-      decos.push(markCls("hm-anno-mark").range(from, innerFrom));
-      decos.push(markCls("hm-anno-mark").range(innerTo, end));
-    } else if (free(from, innerFrom) && free(innerTo, end)) {
-      decos.push(hide.range(from, innerFrom));
-      decos.push(hide.range(innerTo, end));
-      taken.push([from, innerFrom], [innerTo, end]);
-    }
-  });
   // 文献引用 [@key]
   scan(/\[@([\w:-]+)\]/g, (m, from) => {
     const to = from + m[0].length;

@@ -12,6 +12,8 @@ import { continueList, indentList, toggleInline } from "./commands";
 import { autoPair } from "./autoPair";
 import { cjkEmphasis, highlight } from "./cjkEmphasis";
 import { mathTools } from "./mathTools";
+import { notes } from "./notes";
+import { avatarColor } from "../components/SidePanel";
 import { Subscript, Superscript } from "@lezer/markdown";
 
 export interface EditorHandle {
@@ -67,6 +69,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial,
           previewCompartment.current.of(livePreview(preview)),
           autoPair(),
           mathTools(),
+          notes(avatarColor),
           keymap.of([
             { key: "Enter", run: continueList },
             { key: "Tab", run: (v) => indentList(v, 1) },

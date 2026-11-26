@@ -341,7 +341,7 @@ kbd { font: 500 11px var(--f-ui); padding: 1px 5px; border-radius: 4px; border: 
 .hm-iw { font-size: 12px; color: var(--fg-3); padding: 0 6px; min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
 /* 右下角的缩放手柄：白底圆角小方块里一个对角箭头，只在选中图片时出现 */
 .hm-igrip { position: absolute; right: 4px; bottom: 4px; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; color: var(--accent-fg); background: var(--raised); box-shadow: 0 0 0 1px var(--accent-line), 0 2px 6px -2px rgba(20,22,40,.25); cursor: nwse-resize; opacity: 0; pointer-events: none; transition: opacity 120ms; }
-.hm-igrip svg { transform: rotate(90deg); }
+
 .hm-figure.editing .hm-igrip { opacity: 1; pointer-events: auto; }
 .hm-figure.resizing, .hm-figure.resizing * { cursor: nwse-resize !important; }
 .hm-figure img { max-width: 100%; border-radius: 6px; border: 1px solid var(--line); vertical-align: top; }
@@ -938,3 +938,17 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .hm-itools button { display: inline-flex; align-items: center; gap: 5px; }
 .xwarn ul { margin: 8px 0 0; padding: 0 0 0 18px; color: var(--fg-2); line-height: 1.6; }
 .xwarn li .n { margin-left: 6px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+
+/* ---------- 批注：正文里只显示高亮的原文和一个小图标，卡片里看和改 ---------- */
+.hm-notedot { display: inline-grid; place-items: center; width: 16px; height: 16px; margin: 0 1px 0 2px; border-radius: 4px; vertical-align: .2em; color: var(--anno-line); cursor: pointer; transition: background 120ms; text-indent: 0; }
+.hm-notedot:hover { background: var(--anno); }
+.hm-notedot.empty { opacity: .6; }
+.cm-tooltip:has(> .hm-notebub) { border: 0; background: transparent; }
+.hm-notebub { width: 300px; padding: 10px 12px 10px; border-radius: 10px; background: var(--raised); box-shadow: var(--pop); font: 13px/1.5 var(--f-ui); color: var(--fg); animation: tipIn 120ms var(--ease); transform-origin: 0 0; }
+.nb-h { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; color: var(--fg-3); }
+.nb-h b { color: var(--fg); font-weight: 500; }
+.nb-h .av { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font: 500 11px var(--f-ui); color: #fff; flex: none; }
+.nb-ok { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; color: var(--fg-2); transition: background 120ms, color 120ms; }
+.nb-ok:hover { background: var(--ins-bg); color: var(--ins); }
+.hm-notebub textarea { display: block; width: 100%; min-height: 32px; resize: none; padding: 6px 8px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--bg); font: 13px/1.6 var(--f-ui); color: var(--fg); outline: none; transition: border-color 120ms; }
+.hm-notebub textarea:focus { border-color: var(--accent-line); }

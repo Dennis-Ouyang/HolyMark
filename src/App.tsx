@@ -36,7 +36,7 @@ function Welcome({ hasRoot, recent, onOpen, onNew, onRecent }: { hasRoot: boolea
   return (
     <div className="welcome">
       <h2>HolyMark</h2>
-      <p>{hasRoot ? "这个文件夹里还没有 Markdown 文稿。" : "打开一个放稿件的文件夹开始写作。文件就是普通的 Markdown，换任何编辑器都能打开。"}</p>
+      <p>{hasRoot ? "这个文件夹里还没有 Markdown 文稿。" : "选择一个文件夹作为你的工作区。"}</p>
       <div className="w-acts">
         {hasRoot ? <button className="btn acc" onClick={onNew}>新建文稿</button> : <button className="btn acc" onClick={onOpen}>打开文件夹…</button>}
       </div>

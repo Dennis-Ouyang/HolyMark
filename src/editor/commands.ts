@@ -228,18 +228,8 @@ export function insertLink(view: EditorView, url = "https://") {
   view.focus();
 }
 
-/** 给选中文字加批注，光标停在冒号后面直接写批注内容 */
-export function insertNote(view: EditorView, author: string) {
-  const r = view.state.selection.main;
-  if (r.empty) return false;
-  const d = new Date();
-  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  const quote = view.state.sliceDoc(r.from, r.to);
-  const head = `{==${quote}==}{>>@${author} ${date}：`;
-  view.dispatch({ changes: { from: r.from, to: r.to, insert: head + "<<}" }, selection: { anchor: r.from + head.length } });
-  view.focus();
-  return true;
-}
+// 加批注：图形化，见 notes.ts
+export { insertNote } from "./notes";
 
 export type BlockKind = "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "quote" | "ul" | "ol" | "task";
 const PREFIX = /^(\s*)(#{1,6} |> ?|[-*+] \[[ xX]\] |[-*+] |\d+\. )?/;

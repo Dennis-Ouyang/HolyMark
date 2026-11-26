@@ -98,7 +98,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&item("toggle_ribbon", "折叠 / 展开功能区", Some("CmdOrCtrl+Alt+R"))?)
         .item(&item("focus", "专注模式", Some("CmdOrCtrl+Shift+F"))?)
         .separator()
-        .item(&item("panel_outline", "大纲", Some("CmdOrCtrl+Alt+1"))?)
+        .item(&item("panel_outline", "目录", Some("CmdOrCtrl+Alt+1"))?)
         .item(&item("panel_notes", "批注", Some("CmdOrCtrl+Alt+2"))?)
         .item(&item("panel_versions", "版本", Some("CmdOrCtrl+Alt+3"))?)
         .separator()

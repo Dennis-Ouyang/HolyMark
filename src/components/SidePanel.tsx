@@ -63,7 +63,7 @@ export function SidePanel(p: Props) {
   return (
     <div className="panel-in">
       <div className="tabs" role="tablist" ref={tabs}>
-        <button role="tab" aria-selected={p.tab === "outline"} className={"tab" + (p.tab === "outline" ? " active" : "")} onClick={() => p.setTab("outline")}>大纲</button>
+        <button role="tab" aria-selected={p.tab === "outline"} className={"tab" + (p.tab === "outline" ? " active" : "")} onClick={() => p.setTab("outline")}>目录</button>
         <button role="tab" aria-selected={p.tab === "notes"} className={"tab" + (p.tab === "notes" ? " active" : "")} onClick={() => p.setTab("notes")}>批注{p.notes.length > 0 && <span className="badge">{p.notes.length}</span>}</button>
         <button role="tab" aria-selected={p.tab === "versions"} className={"tab" + (p.tab === "versions" ? " active" : "")} onClick={() => p.setTab("versions")}>版本{p.freshVersion && <span className="dotn" />}</button>
         <span className="ink" style={{ transform: `translateX(${ink.x}px)`, width: ink.w }} />
@@ -80,7 +80,7 @@ export function SidePanel(p: Props) {
                 </button>
               ))}
             </div>
-          ) : <div className="empty">这个文件还没有标题<br />用 # 开头的行会出现在这里</div>}
+          ) : <div className="empty">这个文档没有 Markdown 语法的目录</div>}
         </div>
       )}
 
@@ -90,17 +90,17 @@ export function SidePanel(p: Props) {
             <div key={n.at} className={"cc" + st.cls} style={st.style} onClick={() => p.onJump(n.at + 3)}>
               <div className="who"><span className="av" style={{ background: avatarColor(n.who) }}>{(n.who || "?").slice(0, 1)}</span><b>{n.who || "未署名"}</b><span>{n.date}</span></div>
               <div className="q">{n.quote}</div>
-              <div className={"tx" + (n.text ? "" : " ph2")}>{n.text || "正在正文里输入…"}</div>
+              <div className={"tx" + (n.text ? "" : " ph2")}>{n.text || "还没有写内容"}</div>
               <div className="acts"><button className="btn sm" onClick={(e) => { e.stopPropagation(); p.onResolve(n); }}>解决</button></div>
             </div>
-          ); }) : <div className="empty">没有批注<br />选中文字后点工具栏里的「批注」</div>}
+          ); }) : <div className="empty">这个文档还没有批注<br />选择一段文字来添加批注</div>}
         </div>
       )}
 
       {p.tab === "versions" && (
         <div className="pane">
           <div className="ph"><b>{p.fileName}</b><span><button className="lnk" onClick={p.onCompareFile} title="选一篇文稿和当前文稿左右对比">与其他文稿对比</button><button className="lnk" onClick={p.onSaveVersion}>{kbd("保存版本 ⌘S")}</button></span></div>
-          {p.versions.length ? <VersionList {...p} /> : <div className="empty">还没有版本<br />{kbd("按 ⌘S 保存第一个")}</div>}
+          {p.versions.length ? <VersionList {...p} /> : <div className="empty">这个文档还没有版本</div>}
         </div>
       )}
     </div>
