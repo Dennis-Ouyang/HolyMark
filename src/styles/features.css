@@ -67,3 +67,32 @@
 .hm-tip span { color: var(--fg-3); }
 @keyframes tipSide { from { opacity: 0; transform: translateX(-3px) scale(.97); } to { opacity: 1; transform: none; } }
 .leaving .hm-tip { animation: fadeOut 90ms var(--ease-out) forwards; }
+
+/* ---------- 公式补全、符号面板 ---------- */
+.cm-tooltip.cm-tooltip-autocomplete.hm-ac { border: 0; border-radius: 12px; background: var(--raised); box-shadow: var(--float); padding: 4px; animation: floatIn 120ms var(--ease); transform-origin: 0 0; }
+.hm-ac > ul { font: 13px var(--f-ui) !important; max-height: 280px !important; min-width: 260px; }
+.hm-ac > ul > li { display: flex; align-items: center; gap: 10px; padding: 4px 8px !important; border-radius: 8px; color: var(--fg); }
+.hm-ac > ul > li[aria-selected] { background: var(--accent-soft) !important; color: var(--fg) !important; }
+.hm-ac .cm-completionLabel { font-family: var(--mono); font-size: 12px; }
+.hm-ac .cm-completionMatchedText { text-decoration: none; color: var(--accent-fg); font-weight: 600; }
+.hm-ac .cm-completionDetail { margin-left: 0; font-style: normal; font-size: 12px; color: var(--fg-3); }
+.hm-ac-tex { margin-left: auto; padding-left: 16px; font-size: 14px; color: var(--fg); max-height: 40px; overflow: hidden; display: flex; align-items: center; }
+.hm-ac-tex .katex { font-size: 1em; }
+.hm-mathtip { position: relative; padding-right: 32px !important; }
+.hm-mt-sym { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; color: var(--fg-3); transition: background 120ms, color 120ms; }
+.hm-mt-sym:hover { background: var(--hover); color: var(--fg); }
+.hm-mathtip.err .hm-mt-sym { display: none; }
+.hm-float.symp { width: 380px; padding: 8px; }
+.sp-tabs { display: flex; align-items: center; gap: 2px; margin-bottom: 6px; }
+.sp-tabs button[role="tab"] { height: 26px; padding: 0 8px; border-radius: 8px; font-size: 12px; color: var(--fg-2); white-space: nowrap; transition: background 120ms, color 120ms; }
+.sp-tabs button[role="tab"]:hover { background: var(--hover); color: var(--fg); }
+.sp-tabs button.on { background: var(--accent-soft); color: var(--accent-fg); }
+.sp-x { margin-left: auto; width: 24px; height: 24px; }
+.sp-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; max-height: 220px; overflow: auto; }
+.sp-grid.wide { grid-template-columns: repeat(4, 1fr); }
+.sp-sym { height: 40px; display: grid; place-items: center; border-radius: 8px; font-size: 16px; color: var(--fg); overflow: hidden; transition: background 120ms; }
+.sp-grid.wide .sp-sym { height: 60px; font-size: 17px; }
+.sp-sym:hover { background: var(--hover); }
+.sp-sym .katex { font-size: 1em; }
+/* 正在选补全时，公式还没打完，不要同时冒出「公式有误」 */
+.cm-editor:has(.hm-ac) .hm-mathtip.err { display: none; }

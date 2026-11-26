@@ -64,6 +64,36 @@ step("N14 写作统计：今天净增、7 天柱子、文件树悬停字数", as
   await page.mouse.move(700, 500);
   for (let i = 0; i < 4; i++) await page.keyboard.press("Backspace");
 });
+step("N12 公式补全、Tab 跳参数、符号面板", async (page) => {
+  const before = await docText(page);
+  await page.evaluate(() => { const v = window.__hm.view(); const n = v.state.doc.length; v.focus(); v.dispatch({ changes: { from: n, insert: "\n\n$$\nx = \n$$\n" }, selection: { anchor: n + 9 } }); });
+  await page.keyboard.type("\\fra");
+  await page.waitForSelector(".hm-ac .hm-ac-tex");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("a");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("b");
+  const t = await docText(page);
+  if (!t.includes("x = \\frac{a}{b}")) throw new Error("补全或 Tab 不对：" + t.slice(-30));
+  // 正文里打 \ 不弹出
+  await page.evaluate(() => { const v = window.__hm.view(); v.dispatch({ selection: { anchor: 5 } }); });
+  await page.keyboard.type("\\al");
+  await page.waitForTimeout(300);
+  if (await page.$(".hm-ac")) throw new Error("正文里也弹出了公式补全");
+  await page.evaluate((b) => { const v = window.__hm.view(); v.focus(); v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: b + "\n\n$$\nx\n$$\n" } }); }, before);
+  await page.waitForTimeout(100);
+  await page.evaluate(() => { const v = window.__hm.view(); v.dispatch({ selection: { anchor: v.state.doc.length - 4 }, scrollIntoView: true }); });
+  await page.waitForSelector(".hm-mt-sym");
+  await page.waitForTimeout(200);
+  await page.dispatchEvent(".hm-mt-sym", "mousedown");
+  await page.waitForSelector(".hm-float.symp");
+  await page.click(".sp-tabs button:has-text('希腊字母')");
+  await page.click(".sp-sym >> nth=0");
+  if (!(await docText(page)).includes("\\alpha")) throw new Error("符号面板没有插入");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".hm-float.symp", { state: "detached" });
+  await page.evaluate((b) => { const v = window.__hm.view(); v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: b } }); }, before);
+});
 
 async function run(theme) {
   const browser = await chromium.launch();

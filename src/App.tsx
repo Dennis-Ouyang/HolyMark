@@ -25,6 +25,7 @@ import type { Pane } from "./components/Dialogs";
 import { features, FeatureHooks } from "./editor/features";
 import { useTidy } from "./features/useTidy";
 import { useWritingStats } from "./features/useWritingStats";
+import { useSymbols } from "./features/useSymbols";
 
 const AUTHOR = "我";
 /** macOS 有原生菜单负责快捷键；Windows 和浏览器预览里由前端处理 */
@@ -424,6 +425,7 @@ export default function App() {
   /* ---------- 新功能 ---------- */
   const openSettings = (pane?: Pane) => { setSettingsPane(pane); setDlg("settings"); };
   const wstats = useWritingStats({ be, tree, livePath: () => live.current.path, liveText: () => live.current.text, withPunct: s.countPunct });
+  const symbols = useSymbols(view);
   const tidy = useTidy({ view, rules: s.tidy, text, say, openSettings: () => openSettings("tidy") });
 
   /* ---------- 菜单 ---------- */
@@ -443,6 +445,7 @@ export default function App() {
     switch (id) {
       case "settings": openSettings(); break;
       case "tidy": if (path) tidy.open(); break;
+      case "math_symbols": if (path) symbols.open(); break;
       case "new_file": newFile(); break;
       case "open_folder": chooseFolder(); break;
       case "close_folder": closeFolder(); break;
@@ -778,6 +781,7 @@ export default function App() {
     { group: "命令", icon: "cmd", title: "Markdown 语法速查", run: () => setTimeout(() => setDlg("help_syntax"), 0) },
     { group: "命令", icon: "cmd", title: "导出 Word / PDF / Markdown…", keys: ["⌘", "⇧", "E"].map((k) => keyName(k)), run: () => setTimeout(openExport, 0) },
     { group: "命令", icon: "cmd", title: "设置", keys: ["⌘", ","].map((k) => keyName(k)), run: () => setDlg("settings") },
+    ...(path ? [{ group: "命令", icon: "symbols", title: "公式符号…", run: () => setTimeout(() => symbols.open(), 0) }] : []),
     ...(path ? [{ group: "命令", icon: "typography", title: "中文排版整理", sub: "选中的文字或全文", run: () => setTimeout(() => tidy.open(), 0) }] : []),
     { group: "命令", icon: "cmd", title: "专注模式", keys: ["⌘", "⇧", "F"].map((k) => keyName(k)), run: () => setFocus((f) => !f) },
     ...hs.filter((h) => h.level >= 2).map((h) => ({ group: "跳转", icon: "go", title: h.text, run: () => jump(h.pos) })),
@@ -995,6 +999,7 @@ export default function App() {
         onPick={pickInsert} onPickOther={() => { setInsertAt(null); setTimeout(citeOtherFile, 0); }} onClose={() => { setInsertAt(null); view()?.focus(); }} />}</Presence>
       {tidy.node}
       {wstats.treeTip}
+      {symbols.node}
       <Presence>{dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{dlg === "cmpfile" && <Palette items={cmpItems} search={noSearch} pinned={cmpPick} onClose={() => setDlg(null)} placeholder="选一篇文稿，和当前文稿左右对比" />}</Presence>
       <Presence>{dlg === "move" && moving && <Palette items={moveItems} search={noSearch} onClose={() => { setDlg(null); setMoving(null); }} placeholder={`把「${moving.name}」移到哪个文件夹`} />}</Presence>

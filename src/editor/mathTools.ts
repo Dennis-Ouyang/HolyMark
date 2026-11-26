@@ -8,6 +8,7 @@ import { EditorState, Extension, StateField } from "@codemirror/state";
 import { EditorView, showTooltip, Tooltip, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import katex from "katex";
 import { setFocus, topBlocks } from "./livePreview";
+import { iconSvg } from "../lib/icons";
 
 interface MathAt { from: number; to: number; tex: string; display: boolean }
 
@@ -72,6 +73,18 @@ const mathTip = StateField.define<Tooltip | null>({
           const s = document.createElement("span"); s.textContent = msg;
           dom.append(b, s);
         }
+        // 右上角的小按钮：打开公式符号面板（N12）
+        const sym = document.createElement("button");
+        sym.type = "button";
+        sym.className = "hm-mt-sym";
+        sym.title = "公式符号";
+        sym.setAttribute("aria-label", "公式符号");
+        sym.innerHTML = iconSvg("symbols", 13);
+        sym.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("hm-symbols", { detail: sym.getBoundingClientRect() }));
+        });
+        dom.appendChild(sym);
         return { dom };
       },
     };
