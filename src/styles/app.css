@@ -294,26 +294,51 @@ kbd { font: 500 11px var(--f-ui); padding: 1px 5px; border-radius: 4px; border: 
 .hm-linktip .how { color: var(--fg-3); flex: none; }
 .hm-icode { font-family: var(--mono); font-size: .85em; padding: .1em .3em; border-radius: 4px; background: var(--hover); }
 .hm-quote { border-left: 3px solid var(--line-2); padding-left: 1em !important; color: var(--fg-2); }
-/* 列表：每深一层多缩进 1.6em；行首的项目符号悬挂在文字左边 */
-.hm-list { padding-left: calc(1.4em + var(--d, 0) * 1.6em) !important; text-indent: -1.1em; text-align: left !important; }
-.hm-list.hm-cont { text-indent: 0; padding-left: calc(1.4em + var(--d, 0) * 1.6em + .3em) !important; }
-.hm-bullet { display: inline-block; width: 1.1em; color: var(--fg-3); text-indent: 0; }
-.hm-bullet-none { display: inline-block; width: 0; }
-/* 待办：圆形勾选框；勾上后填满主题色、对勾弹一下，文字变浅加删除线 */
+/* 列表（lists.ts）：符号放在固定宽度的槽里，悬挂在文字左边；每深一层缩进一个槽宽，
+   子项的符号正好对齐父项文字的起点。项目符号按层级循环 • ◦ ▪，编号用等宽数字右对齐。 */
+.hm-editor { --slot: 1.75em; }
+.hm-li { padding-left: calc((var(--d, 0) + 1) * var(--slot)) !important; text-align: left !important; }
+/* 紧跟段落（中间没空行）：上面留和段距一样的空；同一列表里各项之间 5px */
+.hm-li.hm-li-after { padding-top: calc(var(--ed-lh) * .45em) !important; }
+.hm-li.hm-li-next { padding-top: 5px !important; }
+.hm-lm { position: relative; display: inline-block; width: var(--slot); margin-left: calc(-1 * var(--slot)); text-indent: 0; text-align: center; color: var(--fg-3); font-family: var(--f-ui); user-select: none; }
+.hm-lm.bullet { font-size: .95em; }
+/* 编号右对齐在槽里；位数多了往左伸，不换行，文字起点不动 */
+.hm-lm.num { display: inline-flex; justify-content: flex-end; white-space: nowrap; padding-right: .4em; box-sizing: border-box; color: var(--fg-2); font-variant-numeric: tabular-nums; vertical-align: top; }
+.hm-lm.task .hm-check { margin: 0; }
+/* 父项的折叠小三角：悬停这一行才出现，折叠后一直显示 */
+.hm-fold { position: absolute; left: -15px; top: 50%; display: grid; place-items: center; width: 14px; height: 14px; margin-top: -7px; border-radius: 4px; color: var(--fg-3); opacity: 0; cursor: pointer; transition: opacity 120ms, background-color 120ms; }
+.hm-fold svg { transition: rotate 160ms var(--ease); }
+.hm-fold.open svg { rotate: 90deg; }
+.hm-li:hover .hm-fold, .hm-fold.closed { opacity: 1; }
+.hm-fold:hover { background: var(--hover); color: var(--fg); }
+/* 显示源代码时：原样显示符号和缩进 */
+.hm-list-src { text-align: left !important; }
+/* 待办：圆形勾选框；勾上后填满主题色、对勾弹一下，文字变浅加删除线（只划文字本身） */
 .hm-check { position: relative; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; margin-right: .5em; vertical-align: -2.5px; cursor: pointer; text-indent: 0;
-  box-shadow: inset 0 0 0 1.5px var(--fg-3); background: var(--bg); color: #fff; transition: background 160ms, box-shadow 160ms; }
+  box-shadow: inset 0 0 0 1.5px var(--fg-3); background: var(--bg); color: var(--accent); transition: background 160ms, box-shadow 160ms; }
 .hm-check:hover { box-shadow: inset 0 0 0 1.5px var(--accent); background: var(--accent-soft); }
-.hm-check.on { background: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.hm-check.done, .hm-check.on { background: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); color: #fff; }
+/* 半选：父项勾了、叶子没全勾（外部程序改的） */
+.hm-check.mixed { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); color: var(--accent-fg); }
+/* 父项没全部完成：框里画进度环 */
+.hm-check.partial svg { display: block; }
 .hm-check svg { display: block; }
-.hm-check.on svg { animation: checkIn 260ms var(--ease); }
+.hm-check.done svg, .hm-check.on svg { animation: checkIn 260ms var(--ease); }
 @keyframes checkIn { 0% { transform: scale(.5); opacity: 0; } 70% { transform: scale(1.04); opacity: 1; } 100% { transform: none; } }
 .hm-done { color: var(--fg-3); text-decoration: line-through; text-decoration-color: var(--line-2); }
-/* 待办父项：子项完成多少，底色就从左往右铺多少；全部完成时整行亮一下 */
-.hm-task-parent { background-image: linear-gradient(90deg, var(--accent-soft), color-mix(in srgb, var(--accent) 22%, transparent)); background-repeat: no-repeat; background-size: var(--prog, 0%) 100%;
-  border-radius: 6px; transition: background-size 480ms var(--ease); }
-.hm-task-parent.all { background-image: linear-gradient(90deg, var(--accent-soft), var(--accent-soft)); }
-.hm-task-count { display: inline-block; margin-left: .6em; padding: 0 .45em; border-radius: 4px; font: 500 11px/1.6 var(--f-ui); color: var(--fg-3); background: var(--hover); vertical-align: .1em; text-indent: 0; }
-.hm-task-count.all { color: var(--accent-fg); background: var(--accent-soft); }
+/* 父项后面的计数：安静的小字，全部完成时用主题色 */
+.hm-task-count { display: inline-block; margin-left: .5em; font: 12px/1 var(--f-ui); color: var(--fg-3); font-variant-numeric: tabular-nums; text-indent: 0; }
+.hm-task-count.all { color: var(--accent-fg); }
+/* 块把手（blockHandle.ts）：悬停才出现；拖动时显示插入位置的指示线 */
+.hm-handle { position: fixed; z-index: 40; display: grid; place-items: center; width: 18px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--fg-3); opacity: 0; pointer-events: none; cursor: grab; transition: opacity 120ms, background-color 120ms, color 120ms; }
+.hm-handle.on { opacity: 1; pointer-events: auto; }
+.hm-handle:hover, .hm-handle.open { background: var(--hover); color: var(--fg); }
+.hm-handle.drag { cursor: grabbing; background: var(--hover); color: var(--fg); }
+.hm-dropline { position: fixed; z-index: 41; height: 2px; border-radius: 1px; background: var(--accent); opacity: 0; pointer-events: none; transition: opacity 120ms; }
+.hm-dropline.on { opacity: 1; }
+body.hm-dragging, body.hm-dragging * { cursor: grabbing !important; user-select: none; }
+.menu.leaving { animation: fadeOut 100ms var(--ease-out) forwards; pointer-events: none; }
 .hm-glow { animation: glow 1s var(--ease); }
 @keyframes glow { 0% { box-shadow: 0 0 0 0 var(--accent-line); background-color: transparent; } 30% { box-shadow: 0 0 0 4px var(--accent-soft); background-color: var(--accent-soft); } 100% { box-shadow: 0 0 0 10px transparent; background-color: transparent; } }
 .hm-hr { display: inline-block; width: 100%; border-top: 1px solid var(--line-2); vertical-align: middle; }

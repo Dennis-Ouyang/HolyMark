@@ -94,18 +94,38 @@ describe("段间空行", () => {
   });
 });
 
-describe("待办父项进度", () => {
-  it("按子项完成比例铺底色，行尾显示完成数", () => {
-    const doc = "- [ ] 收拾行李\n  - [x] 护照\n  - [x] 充电器\n  - [ ] 防晒\n- [ ] 别的";
-    const state = EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage }), livePreview(opts("active"))] });
-    const found: string[] = [];
-    decoSet(state)[0].between(0, doc.length, (from, _to, v) => {
-      const spec = v.spec as { class?: string; attributes?: { style?: string }; widget?: { text?: string } };
-      if (spec.class?.includes("hm-task-parent")) found.push(`line${state.doc.lineAt(from).number}:${spec.attributes?.style}`);
-      if (spec.widget?.text) found.push(spec.widget.text);
+describe("待办和列表的渲染（C 节）", () => {
+  /** 列出某种装饰：行的 class、部件的 spec */
+  function scan(doc: string, focusAt?: number) {
+    let state = EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage }), livePreview(opts("active"))] });
+    if (focusAt !== undefined) state = state.update({ selection: { anchor: focusAt }, effects: setFocus.of(true) }).state;
+    const lines: string[] = [], widgets: any[] = [];
+    decoSet(state)[0].between(0, state.doc.length, (from, _to, v) => {
+      const spec = v.spec as { class?: string; widget?: any };
+      if (spec.class?.includes("hm-li")) lines.push(`${state.doc.lineAt(from).number}:${spec.class}`);
+      if (spec.widget) widgets.push(spec.widget);
     });
-    expect(found).toContain("line1:--prog:67%");
-    expect(found).toContain("2/3");
+    return { lines, widgets };
+  }
+  it("父项画进度环、行尾显示只数叶子的计数，不再铺整行底色", () => {
+    const r = scan("- [ ] 收拾行李\n  - [x] 护照\n  - [ ] 大件\n    - [x] 箱子\n    - [ ] 背包\n- [ ] 别的");
+    expect(r.widgets.find((w) => w.done !== undefined && w.total !== undefined && !w.s)).toMatchObject({ done: 2, total: 3 });
+    expect(r.widgets.find((w) => w.s?.total === 3).s).toMatchObject({ kind: "task", state: "partial", done: 2 });
+    expect(r.lines.join(" ")).not.toContain("hm-task-parent");
+  });
+  it("光标进入列表时仍是渲染状态：符号还是部件", () => {
+    const doc = "段落\n\n- 一\n  - 二\n    - 三";
+    const r = scan(doc, doc.indexOf("二"));
+    expect(r.widgets.filter((w) => w.s?.kind === "bullet").map((w) => w.s.depth)).toEqual([0, 1, 2]);
+  });
+  it("有序列表按「起始号 + 序号」显示", () => {
+    const r = scan("8. 八\n10. 十\n11. 十一");
+    expect(r.widgets.filter((w) => w.s?.kind === "num").map((w) => w.s.shown)).toEqual([8, 9, 10]);
+  });
+  it("紧跟段落的列表第一行留段距", () => {
+    const r = scan("基于此：\n- 一\n- 二");
+    expect(r.lines[0]).toContain("hm-li-after");
+    expect(r.lines[1]).toContain("hm-li-next");
   });
 });
 

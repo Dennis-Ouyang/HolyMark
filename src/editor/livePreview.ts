@@ -15,6 +15,7 @@ const NOTE_SCAN = /\{==([\s\S]+?)==\}\{>>([\s\S]*?)<<\}/g;
 import { FileCardWidget, FileHooks } from "./fileCard";
 import { CARD_EXT } from "../lib/filePreview";
 import { isLocalHref, links, LinkHooks } from "./links";
+import { listFolds, listRendered, lists, renderList } from "./lists";
 
 export interface PreviewOptions {
   /** 把文档里的图片路径解析成可显示的地址 */
@@ -416,7 +417,7 @@ const focusField = StateField.define<boolean>({
  * 这样长稿里每次按键的开销基本与全文长度无关。改动太多（比如整篇替换）时退回整篇重建。
  */
 type Local = { from: number; to: number; deco: Decoration }[];
-interface Zone { zone: number; base: number; end: number; sig: string; block: Block; active: boolean; gap: number; gapLine: number }
+interface Zone { zone: number; base: number; end: number; sig: string; block: Block; active: boolean; gap: number; gapLine: number; extra: string }
 interface Memo {
   cache: Map<string, Local>;
   /** 文档和语法树都没变时（只挪了光标），块列表直接沿用 */
@@ -439,12 +440,28 @@ export function build(state: EditorState, opts: PreviewOptions, memo: Memo = new
   let blocks: Block[];
   if (memo.doc === doc && memo.tree === tree) blocks = memo.blocks;
   else { blocks = topBlocks(state); memo.doc = doc; memo.tree = tree; memo.blocks = blocks; }
-  const isActive = (b: Block) => always || (focused && sel.some((r) => r.from <= b.to && r.to >= b.from));
+  const touches = (b: Block) => focused && sel.some((r) => r.from <= b.to && r.to >= b.from);
+  const isList = (b: Block) => b.kind === "BulletList" || b.kind === "OrderedList";
+  // 列表光标进入时仍保持渲染，只有「显示源代码」时才显示源码（见 lists.ts）
+  const isActive = (b: Block) => always || (isList(b) ? !listRendered(state, doc.lineAt(b.from).from, false) && touches(b) : touches(b));
+  const folds = state.field(listFolds, false) ?? [];
+  /** 渲染状态的列表：光标在哪几行、哪几项折叠了（块内行号），变了就要重算这一块 */
+  const extraOf = (b: Block, active: boolean): string => {
+    if (!isList(b) || active) return "";
+    const a = doc.lineAt(b.from).number, z = doc.lineAt(b.to).number;
+    const cur: number[] = [];
+    if (focused) for (const r of sel) if (r.from <= b.to && r.to >= b.from) {
+      for (let n = doc.lineAt(Math.max(r.from, b.from)).number, e = doc.lineAt(Math.min(r.to, b.to)).number; n <= e; n++) cur.push(n - a);
+    }
+    const fl: number[] = [];
+    for (const f of folds) if (f >= b.from && f <= b.to) fl.push(doc.lineAt(f).number - a);
+    return cur.length || fl.length ? `c${cur.join(",")}f${fl.join(",")}z${z - a}` : "";
+  };
   /** 段间空行上有光标时按正常行高显示，光标才有完整的高度；光标离开后再收窄成段距 */
   const gapShown = (line: number) => line >= 0 && !(focused && sel.some((r) => r.empty && r.head === line));
 
   /** 第 j 块的区段信息（要查行号，只对变了的块调用） */
-  const zoneOf = (j: number, active: boolean): Zone => {
+  const zoneOf = (j: number, active: boolean, extra: string): Zone => {
     const b = blocks[j];
     const startLine = doc.lineAt(b.from), endLine = doc.lineAt(b.to);
     const prevEnd = j ? doc.lineAt(blocks[j - 1].to).number : 0; // 上一块最后一行的行号
@@ -457,8 +474,8 @@ export function build(state: EditorState, opts: PreviewOptions, memo: Memo = new
     }
     const gap = gapShown(gapLine) ? gapLine : -1;
     const base = startLine.from;
-    const sig = `${b.kind}|${active ? 1 : 0}|${gap < 0 ? 0 : 1}|${base - zone}|${b.from - base}|${b.to - base}|${endLine.to - base}`;
-    return { zone, base, end: endLine.to, sig, block: b, active, gap, gapLine };
+    const sig = `${b.kind}|${active ? 1 : 0}|${gap < 0 ? 0 : 1}|${base - zone}|${b.from - base}|${b.to - base}|${endLine.to - base}|${extra}`;
+    return { zone, base, end: endLine.to, sig, block: b, active, gap, gapLine, extra };
   };
 
   const decosOf = (z: Zone, next: Map<string, Local>): Range<Decoration>[] => {
@@ -468,7 +485,7 @@ export function build(state: EditorState, opts: PreviewOptions, memo: Memo = new
     let local = next.get(key) ?? memo.cache.get(key);
     if (!local) {
       const abs: Range<Decoration>[] = [];
-      blockDecos(state, z.block, z.active, abs, opts);
+      blockDecos(state, z.block, z.active, abs, opts, z.extra);
       local = abs.map((r) => ({ from: r.from - z.base, to: r.to - z.base, deco: r.value }));
     }
     next.set(key, local);
@@ -492,12 +509,13 @@ export function build(state: EditorState, opts: PreviewOptions, memo: Memo = new
         if (o.block.kind === b.kind && map(o.block.from) === b.from && map(o.block.to) === b.to && (ch.empty || !ch.touchesRange(o.zone, o.end))) matched = i;
       }
       const active = isActive(b);
+      const extra = extraOf(b, active);
       const o = matched >= 0 ? old[matched] : null;
       const gapLine = o && o.gapLine >= 0 ? map(o.gapLine) : -1;
-      if (o && (j === 0 ? matched === 0 : prevMatched === matched - 1) && o.active === active && gapShown(gapLine) === o.gap >= 0) {
+      if (o && (j === 0 ? matched === 0 : prevMatched === matched - 1) && o.active === active && o.extra === extra && gapShown(gapLine) === o.gap >= 0) {
         zones[j] = ch.empty ? { ...o, block: b } : { ...o, block: b, zone: map(o.zone), base: map(o.base), end: map(o.end), gap: o.gap < 0 ? -1 : map(o.gap), gapLine };
       } else {
-        zones[j] = zoneOf(j, active);
+        zones[j] = zoneOf(j, active, extra);
         dirty.push(zones[j]);
       }
       prevMatched = matched;
@@ -517,7 +535,7 @@ export function build(state: EditorState, opts: PreviewOptions, memo: Memo = new
   }
 
   // 整篇重建
-  const zones = blocks.map((b, j) => zoneOf(j, isActive(b)));
+  const zones = blocks.map((b, j) => { const act = isActive(b); return zoneOf(j, act, extraOf(b, act)); });
   const next = new Map<string, Local>();
   const out: Range<Decoration>[] = [];
   for (const z of zones) for (const r of decosOf(z, next)) out.push(r);
@@ -528,7 +546,7 @@ export function build(state: EditorState, opts: PreviewOptions, memo: Memo = new
 }
 
 /** 一个块的全部装饰（绝对位置） */
-function blockDecos(state: EditorState, b: Block, active: boolean, decos: Range<Decoration>[], opts: PreviewOptions) {
+function blockDecos(state: EditorState, b: Block, active: boolean, decos: Range<Decoration>[], opts: PreviewOptions, extra = "") {
   const doc = state.doc;
   const linesOf = (b: Block, cls: string | ((n: number, i: number, last: boolean) => string)) => {
     const a = doc.lineAt(b.from).number, z = doc.lineAt(b.to).number;
@@ -613,63 +631,27 @@ function blockDecos(state: EditorState, b: Block, active: boolean, decos: Range<
     decos.push(lineCls(`hm-h hm-h${lv}`).range(doc.lineAt(b.from).from));
   }
   if (b.kind === "Blockquote") linesOf(b, "hm-quote");
-  if (b.kind === "BulletList" || b.kind === "OrderedList") listDecos(state, b, active, decos);
+  if (b.kind === "BulletList" || b.kind === "OrderedList") {
+    if (active) { listDecos(state, b, decos); inlineDecos(state, b, active, decos, opts, skip); return; }
+    // 渲染状态：符号、编号、勾选框都是部件，行内格式逐行处理（光标所在行显示源码）
+    const em = extra.match(/^c([\d,]*)f([\d,]*)/);
+    const nums = (x: string | undefined) => new Set((x || "").split(",").filter(Boolean).map(Number));
+    renderList(state, b.from, b.to, { cursorLines: nums(em?.[1]), folded: nums(em?.[2]) }, decos,
+      (from, to, act) => { if (to > from) inlineDecos(state, { from, to, kind: "ListLine" }, act, decos, opts, [], true); });
+    return;
+  }
   inlineDecos(state, b, active, decos, opts, skip);
 }
 
-const LIST_LINE = /^(\s*)([-*+]|\d+[.)])(\s|$)/;
 
-/**
- * 列表：按缩进算出每一项在第几层，渲染时把行首的空格藏起来、用左边距表示层级（悬挂缩进才对得齐）；
- * 待办的父项按子项完成的比例从左往右铺一层底色，行尾显示 3/5。
- */
-function listDecos(state: EditorState, b: Block, active: boolean, decos: Range<Decoration>[]) {
+/** 显示源代码时的列表：原样显示符号和缩进，只用等宽数字对齐 */
+function listDecos(state: EditorState, b: Block, decos: Range<Decoration>[]) {
   const doc = state.doc;
-  const a = doc.lineAt(b.from).number, z = doc.lineAt(b.to).number;
-  const stack: number[] = [];
-  let depth = 0;
-  for (let n = a; n <= z; n++) {
-    const line = doc.line(n);
-    const m = line.text.match(LIST_LINE);
-    let cls = "hm-list";
-    if (m) {
-      const ind = m[1].replace(/\t/g, "    ").length;
-      while (stack.length && stack[stack.length - 1] >= ind) stack.pop();
-      stack.push(ind);
-      depth = stack.length - 1;
-      if (!active && m[1].length) decos.push(hide.range(line.from, line.from + m[1].length));
-    } else if (line.text.trim()) {
-      cls += " hm-cont"; // 同一项里换行接着写的文字：和上面的文字对齐，不悬挂
-      const ws = line.text.match(/^\s*/)![0].length;
-      if (!active && ws) decos.push(hide.range(line.from, line.from + ws));
-    }
-    decos.push(Decoration.line({ class: cls, attributes: !active && depth ? { style: `--d:${depth}` } : undefined }).range(line.from));
-  }
-  // 待办父项的进度
-  syntaxTree(state).iterate({
-    from: b.from, to: b.to,
-    enter: (nd) => {
-      if (nd.name !== "ListItem") return;
-      const task = nd.node.getChild("Task");
-      if (!task) return;
-      const kids = [...nd.node.getChildren("BulletList"), ...nd.node.getChildren("OrderedList")];
-      let total = 0, done = 0;
-      for (const k of kids) k.cursor().iterate((c) => {
-        if (c.name !== "TaskMarker") return;
-        total++;
-        if (/x/i.test(doc.sliceString(c.from, c.to))) done++;
-      });
-      if (!total) return;
-      const line = doc.lineAt(nd.from);
-      const pct = Math.round((done / total) * 100);
-      decos.push(Decoration.line({ class: "hm-task-parent" + (done === total ? " all" : ""), attributes: { style: `--prog:${pct}%` } }).range(line.from));
-      decos.push(Decoration.widget({ widget: new TextWidget(`${done}/${total}`, "hm-task-count" + (done === total ? " all" : "")), side: 1 }).range(line.to));
-    },
-  });
+  for (let n = doc.lineAt(b.from).number, z = doc.lineAt(b.to).number; n <= z; n++) decos.push(lineCls("hm-list-src").range(doc.line(n).from));
 }
 
 /** 行内：强调、代码、链接、图片、任务框、引用、公式、批注 */
-function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range<Decoration>[], opts: PreviewOptions, skip: [number, number][] = []) {
+function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range<Decoration>[], opts: PreviewOptions, skip: [number, number][] = [], inList = false) {
   const doc = state.doc;
   const codeRanges: [number, number][] = [];
   const taken: [number, number][] = [];
@@ -729,6 +711,7 @@ function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range
         if (active) decos.push(markCls("hm-mark").range(n.from, after));
         else { decos.push(hide.range(n.from, after)); taken.push([n.from, after]); }
       }
+      if (inList && (name === "ListMark" || name === "TaskMarker")) return; // 列表符号由 lists.ts 渲染
       if (name === "ListMark" && !active) {
         const t = doc.sliceString(n.from, n.to);
         const task = /^\s?\[[ xX]\]/.test(doc.sliceString(n.to, n.to + 5));
@@ -825,5 +808,6 @@ export function livePreview(opts: PreviewOptions): Extension {
     },
     provide: (f) => EditorView.decorations.from(f),
   });
-  return [focusField, field, flashField, glowField, EditorView.focusChangeEffect.of((_s, focusing) => setFocus.of(focusing)), opts.links ? links(opts.links) : []];
+  // lists() 里的状态（显示源代码、折叠）要排在装饰前面：装饰重算时会读它们
+  return [lists(() => opts.syntax() === "always"), focusField, field, flashField, glowField, EditorView.focusChangeEffect.of((_s, focusing) => setFocus.of(focusing)), opts.links ? links(opts.links) : []];
 }

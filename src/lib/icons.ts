@@ -65,6 +65,25 @@ import i_ppt from "@tabler/icons/outline/presentation.svg?raw";
 import i_excel from "@tabler/icons/outline/file-spreadsheet.svg?raw";
 import i_markdown from "@tabler/icons/outline/markdown.svg?raw";
 import i_bib from "@tabler/icons/outline/bookmark.svg?raw";
+import i_grip from "@tabler/icons/outline/grip-vertical.svg?raw";
+import i_down from "@tabler/icons/outline/arrow-down.svg?raw";
+import i_upArrow from "@tabler/icons/outline/arrow-up.svg?raw";
+import i_fileOff from "@tabler/icons/outline/file-off.svg?raw";
+import i_dots from "@tabler/icons/outline/dots.svg?raw";
+import i_info from "@tabler/icons/outline/info-circle.svg?raw";
+import i_external from "@tabler/icons/outline/external-link.svg?raw";
+import i_eye from "@tabler/icons/outline/eye.svg?raw";
+import i_chevRight from "@tabler/icons/outline/chevron-right.svg?raw";
+import i_zip from "@tabler/icons/outline/file-zip.svg?raw";
+import i_photo from "@tabler/icons/outline/photo.svg?raw";
+import i_movie from "@tabler/icons/outline/movie.svg?raw";
+import i_music from "@tabler/icons/outline/music.svg?raw";
+import i_braces from "@tabler/icons/outline/braces.svg?raw";
+import i_fileUnknown from "@tabler/icons/outline/file-unknown.svg?raw";
+import i_moveTo from "@tabler/icons/outline/folder-symlink.svg?raw";
+import i_folderPlus from "@tabler/icons/outline/folder-plus.svg?raw";
+import i_filePlus from "@tabler/icons/outline/file-plus.svg?raw";
+import i_pencil from "@tabler/icons/outline/pencil.svg?raw";
 
 const RAW: Record<string, string> = {
   side: i_side,
@@ -129,6 +148,25 @@ const RAW: Record<string, string> = {
   excel: i_excel,
   markdown: i_markdown,
   bib: i_bib,
+  grip: i_grip,
+  down: i_down,
+  upArrow: i_upArrow,
+  fileOff: i_fileOff,
+  dots: i_dots,
+  info: i_info,
+  external: i_external,
+  eye: i_eye,
+  chevRight: i_chevRight,
+  zip: i_zip,
+  photo: i_photo,
+  movie: i_movie,
+  music: i_music,
+  braces: i_braces,
+  fileUnknown: i_fileUnknown,
+  moveTo: i_moveTo,
+  folderPlus: i_folderPlus,
+  filePlus: i_filePlus,
+  pencil: i_pencil,
 };
 
 /** 去掉外层 svg 和 Tabler 用来占位的透明方块，只留下线条 */
