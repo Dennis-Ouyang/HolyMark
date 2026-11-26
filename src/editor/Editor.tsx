@@ -90,7 +90,11 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial,
               return true;
             },
             drop(e, v) {
-              const files = [...(e.dataTransfer?.files || [])].filter((f) => f.type.startsWith("image/"));
+              const all = [...(e.dataTransfer?.files || [])];
+              if (!all.length) return false;
+              // 应用里由系统级拖放处理（拿得到完整路径），这里只拦下来，免得插两遍
+              if ("__TAURI_INTERNALS__" in window) { e.preventDefault(); return true; }
+              const files = all.filter((f) => f.type.startsWith("image/"));
               if (!files.length) return false;
               e.preventDefault();
               const pos = v.posAtCoords({ x: e.clientX, y: e.clientY }) ?? v.state.selection.main.head;

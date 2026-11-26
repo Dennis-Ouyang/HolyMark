@@ -183,3 +183,25 @@ describe("高亮、上下标、标题级别", async () => {
     expect(step("# 标题", -1)).toBe("# 标题");
   });
 });
+
+describe("blockInsertSpec：图片自成一段", async () => {
+  const { blockInsertSpec } = await import("../src/editor/commands");
+  const apply = (doc: string, at: string, text = "![图](a.png)") => {
+    const pos = at === "" ? doc.length : doc.indexOf(at);
+    const r = blockInsertSpec(doc, pos, text);
+    const out = doc.slice(0, r.from) + r.insert + doc.slice(r.from);
+    return { out, cursorAt: out.slice(r.cursor, r.cursor + 3) };
+  };
+  it("在一段文字下面只换了一行：补出空行，不并进上一段", () => {
+    expect(apply("第一段\n", "").out).toBe("第一段\n\n![图](a.png)\n\n");
+  });
+  it("插在一段话中间：前后都断开，光标落在后半段开头", () => {
+    expect(apply("前半句后半句", "后半句")).toEqual({ out: "前半句\n\n![图](a.png)\n\n后半句", cursorAt: "后半句" });
+  });
+  it("前后已经有空行：不多加", () => {
+    expect(apply("甲\n\n\n\n乙", "\n\n乙").out).toBe("甲\n\n![图](a.png)\n\n乙");
+  });
+  it("空文档", () => {
+    expect(apply("", "").out).toBe("![图](a.png)\n\n");
+  });
+});

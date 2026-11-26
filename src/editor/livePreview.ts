@@ -167,7 +167,12 @@ class ImageWidget extends WidgetType {
       view.dispatch({ changes: { from: line.from, to: line.to, insert: next } });
     };
     const outside = (e: MouseEvent) => { if (!el.contains(e.target as Node)) close(); };
-    const open = () => { el.classList.add("editing"); addEventListener("mousedown", outside, true); };
+    const open = () => {
+      // 没设宽度时，读数显示图片实际占版心多宽
+      if (!this.width) label.textContent = `${Math.round((img.getBoundingClientRect().width / Math.max(1, el.clientWidth - 16)) * 100)}%`;
+      el.classList.add("editing");
+      addEventListener("mousedown", outside, true);
+    };
     const close = () => { el.classList.remove("editing"); removeEventListener("mousedown", outside, true); };
     el.addEventListener("mousedown", (e) => {
       if ((e.target as HTMLElement).closest(".hm-itools, .hm-igrip")) return;
@@ -550,13 +555,24 @@ function blockDecos(state: EditorState, b: Block, active: boolean, decos: Range<
     }
     return;
   }
+  // 段落里单独占一行的图片（和上一行之间没空行，Markdown 算同一段）：这一行也按插图显示，不缩成行内小图
+  const skip: [number, number][] = [];
+  if (b.kind === "Paragraph" && !active) {
+    for (let n = doc.lineAt(b.from).number, z = doc.lineAt(b.to).number; n <= z; n++) {
+      const line = doc.line(n);
+      const m = line.text.match(/^\s*!\[([^\]]*)\]\(([^)]*)\)(\{([^}]*)\})?\s*$/);
+      if (!m) continue;
+      decos.push(Decoration.replace({ widget: new ImageWidget(m[2], m[1], true, opts, imageWidth(m[4] || "")), block: true }).range(line.from, line.to));
+      skip.push([line.from, line.to]);
+    }
+  }
   if (/^ATXHeading(\d)/.test(b.kind)) {
     const lv = +b.kind.slice(-1);
     decos.push(lineCls(`hm-h hm-h${lv}`).range(doc.lineAt(b.from).from));
   }
   if (b.kind === "Blockquote") linesOf(b, "hm-quote");
   if (b.kind === "BulletList" || b.kind === "OrderedList") listDecos(state, b, active, decos);
-  inlineDecos(state, b, active, decos, opts);
+  inlineDecos(state, b, active, decos, opts, skip);
 }
 
 const LIST_LINE = /^(\s*)([-*+]|\d+[.)])(\s|$)/;
@@ -611,7 +627,7 @@ function listDecos(state: EditorState, b: Block, active: boolean, decos: Range<D
 }
 
 /** 行内：强调、代码、链接、图片、任务框、引用、公式、批注 */
-function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range<Decoration>[], opts: PreviewOptions) {
+function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range<Decoration>[], opts: PreviewOptions, skip: [number, number][] = []) {
   const doc = state.doc;
   const codeRanges: [number, number][] = [];
   const taken: [number, number][] = [];
@@ -622,6 +638,7 @@ function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range
     to: b.to,
     enter: (n) => {
       const name = n.name;
+      if (skip.some(([f, t]) => n.from >= f && n.to <= t)) return false; // 已经按插图整行替换掉了
       if (name === "InlineCode") { codeRanges.push([n.from, n.to]); decos.push(markCls("hm-icode").range(n.from, n.to)); }
       if (name === "StrongEmphasis") decos.push(markCls("hm-strong").range(n.from, n.to));
       if (name === "Emphasis") decos.push(markCls("hm-em").range(n.from, n.to));

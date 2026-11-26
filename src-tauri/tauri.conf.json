@@ -24,7 +24,7 @@
           "y": 20
         },
         "label": "main",
-        "dragDropEnabled": false
+        "dragDropEnabled": true
       }
     ],
     "security": {

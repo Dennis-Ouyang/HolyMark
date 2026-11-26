@@ -335,7 +335,7 @@ kbd { font: 500 11px var(--f-ui); padding: 1px 5px; border-radius: 4px; border: 
 .hm-figure img { max-width: 100%; border-radius: 6px; border: 1px solid var(--line); vertical-align: top; }
 .hm-figure figcaption { font-size: .82em; color: var(--fg-2); margin-top: 4px; }
 .hm-figure.missing::after, .hm-img-inline.missing::after { content: attr(data-missing); font: 12px var(--f-ui); color: var(--fg-3); }
-.hm-img-inline img { max-height: 1.6em; vertical-align: middle; }
+.hm-img-inline img { max-height: 6em; max-width: 100%; vertical-align: middle; border-radius: 3px; }
 .hm-src-mono { font-family: var(--mono); font-size: .82rem; line-height: 1.7; text-align: left !important; }
 .hm-code { font-family: var(--mono); font-size: .82rem; line-height: 1.7; background: var(--code-bg); padding: 0 14px !important; text-align: left !important; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
 .hm-code-first { border-top: 1px solid var(--line); border-radius: 8px 8px 0 0; padding-top: 6px !important; }
@@ -865,3 +865,6 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .ins-foot button svg { color: var(--fg-2); }
 .ins-foot button span { margin-left: auto; font-size: 12px; color: var(--fg-3); }
 .ins-foot button:hover { background: var(--hover); }
+
+/* 从访达拖文件进正文时，标出松手后插入的位置 */
+.dropcaret { position: fixed; z-index: 80; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--accent); pointer-events: none; box-shadow: 0 0 0 3px var(--accent-soft); }

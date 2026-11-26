@@ -76,6 +76,10 @@ export interface Backend {
   movePath(path: string, dir: string): Promise<string>;
   /** 移到废纸篓 / 回收站 */
   trashPath(path: string): Promise<void>;
+  /** 把文件复制进某个文件夹（重名时加编号），返回新路径 */
+  copyIntoFolder(src: string, dir: string): Promise<string>;
+  /** 从访达 / 资源管理器拖文件进窗口：over（拖着移动）、drop（松手，带路径）、leave（拖出去或取消）。坐标是窗口里的 CSS 像素 */
+  onFileDrop(cb: (e: { type: "over" | "drop" | "leave"; paths: string[]; x: number; y: number }) => void): () => void;
   /** 可撤销的删除：先挪到 .holymark/trash/ 暂存，返回暂存路径；restore 挪回原处，commit 真正移到废纸篓 */
   stageDelete(path: string): Promise<string>;
   restoreStaged(staged: string, original: string): Promise<void>;
@@ -135,6 +139,23 @@ async function tauriBackend(): Promise<Backend> {
     duplicatePath: (path) => invoke("duplicate_path", { path }),
     movePath: (path, dir) => invoke("move_path", { path, dir }),
     trashPath: (path) => invoke("trash_path", { path }),
+    copyIntoFolder: (src, dir) => invoke("copy_into_folder", { src, dir }),
+    onFileDrop(cb) {
+      let un: (() => void) | null = null, alive = true;
+      import("@tauri-apps/api/webview").then(async ({ getCurrentWebview }) => {
+        const u = await getCurrentWebview().onDragDropEvent((e) => {
+          const p = e.payload as { type: string; paths?: string[]; position?: { x: number; y: number } };
+          // 位置是物理像素，换成 CSS 像素
+          const k = window.devicePixelRatio || 1;
+          const x = (p.position?.x ?? 0) / k, y = (p.position?.y ?? 0) / k;
+          if (p.type === "over" || p.type === "enter") cb({ type: "over", paths: (p.paths ?? []).map(toPosix), x, y });
+          else if (p.type === "drop") cb({ type: "drop", paths: (p.paths ?? []).map(toPosix), x, y });
+          else cb({ type: "leave", paths: [], x: 0, y: 0 });
+        });
+        if (alive) un = u; else u();
+      });
+      return () => { alive = false; un?.(); };
+    },
     stageDelete: (path) => invoke("stage_delete", { path }),
     restoreStaged: (staged, original) => invoke("restore_staged", { staged, original }),
     commitStaged: (staged) => invoke("commit_staged", { staged }),
@@ -269,6 +290,8 @@ function demoBackend(): Backend {
       for (const k of [...files.keys()]) if (k === path || k.startsWith(path + "/")) files.delete(k);
       for (const d of [...dirs]) if (d === path || d.startsWith(path + "/")) dirs.delete(d);
     },
+    async copyIntoFolder(src, dir) { const p = `${dir}/${src.slice(src.lastIndexOf("/") + 1)}`; files.set(p, files.get(src) ?? ""); return p; },
+    onFileDrop() { return () => {}; },
     async stageDelete(path) {
       const staged = `${DEMO_ROOT}/.holymark/trash/${Date.now()}/${path.slice(path.lastIndexOf("/") + 1)}`;
       return moveTo(path, staged);

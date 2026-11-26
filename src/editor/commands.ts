@@ -296,6 +296,22 @@ export function shiftHeading(view: Pick<EditorView, "state" | "dispatch">, dir: 
   view.dispatch({ changes: set, selection: EditorSelection.range(set.mapPos(r.anchor, 1), set.mapPos(r.head, 1)) });
 }
 
+/**
+ * 在 pos 处插入一个独立成段的块（图片、表格等）：前后补足空行，不和上下文挤成同一段
+ * （只隔一个换行时 Markdown 会把它算进上一段，图片就成了行内小图）。
+ * 光标放在块的后面，块马上按渲染后的样子显示，而不是停在块里显示源码。
+ */
+export function blockInsertSpec(doc: string, pos: number, text: string) {
+  const left = doc.slice(0, pos), right = doc.slice(pos);
+  const leftNL = (left.match(/[ \t]*(\n[ \t]*)*$/)?.[0].match(/\n/g) || []).length;
+  const rightNL = (right.match(/^[ \t]*(\n[ \t]*)*/)?.[0].match(/\n/g) || []).length;
+  const pre = left.trim() ? "\n".repeat(Math.max(0, 2 - leftNL)) : "";
+  // 后面没有字时多留一个空段，光标落在那里接着写
+  const post = right.trim() ? "\n".repeat(Math.max(0, 2 - rightNL)) : "\n\n";
+  const insert = pre + text + post;
+  return { from: pos, insert, cursor: pos + insert.length };
+}
+
 /** 在当前块之后插入一个新块，cursorOffset 指定光标在新块里的位置 */
 export function insertBlock(view: EditorView, text: string, cursorOffset?: number) {
   const { state } = view;

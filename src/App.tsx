@@ -7,7 +7,7 @@ import { applyAccent, loadSettings, saveSettings, Settings, fontStack } from "./
 import { BibEntry, parseBib, shortAuthor } from "./lib/bib";
 import { FileTree } from "./components/FileTree";
 import { FloatingToolbar, Ribbon } from "./components/Toolbars";
-import { activeStyles, BlockKind, currentBlock, indentList, InlineKind, shiftHeading, insertBlock, insertLink, insertNote, setBlock, tableMarkdown, toggleInline } from "./editor/commands";
+import { activeStyles, BlockKind, blockInsertSpec, currentBlock, indentList, InlineKind, shiftHeading, insertBlock, insertLink, insertNote, setBlock, tableMarkdown, toggleInline } from "./editor/commands";
 import { PanelTab, SidePanel, fmtTime, versionTitle } from "./components/SidePanel";
 import { Compare } from "./components/Compare";
 import { CountPop, HelpDialog, Palette, PaletteItem, SaveVersionDialog, SettingsDialog, UnsavedDialog } from "./components/Dialogs";
@@ -510,23 +510,24 @@ export default function App() {
       const name = f.name && f.name !== "image.png" ? f.name : `图片-${stamp()}.${ext}`;
       try {
         const dest = await be.saveImage(join(dirOf(path), "assets"), name, await toB64(f));
-        parts.push(`![${baseName(dest).replace(/\.[^.]+$/, "")}](${encodeURI(relative(dirOf(path), dest))})`);
+        parts.push(linkFor(dest, path).text);
       } catch (e) { say(`图片保存失败：${e}`); }
     }
     if (!parts.length) return;
-    const line = v.state.doc.lineAt(pos);
-    const before = line.text.slice(0, pos - line.from).trim() ? "\n\n" : "";
-    const after = line.text.slice(pos - line.from).trim() ? "\n\n" : "";
-    const insert = before + parts.join("\n\n") + after;
-    v.dispatch({ changes: { from: pos, insert }, selection: { anchor: pos + insert.length }, scrollIntoView: true });
+    // 图片自成一段，光标放到图片后面：图片马上按大图显示，点一下就有缩放控制条
+    const ins = blockInsertSpec(v.state.doc.toString(), pos, parts.join("\n\n"));
+    v.dispatch({ changes: { from: ins.from, insert: ins.insert }, selection: { anchor: ins.cursor }, scrollIntoView: true });
     v.focus();
     say(parts.length > 1 ? `已插入 ${parts.length} 张图片，保存在 assets/` : "图片已保存到 assets/");
   }
   function insertAtCursor(t: string, block = false) {
     const v = view(); if (!v) return;
     const r = v.state.selection.main;
-    const ins = block ? `\n\n${t}\n\n` : t;
-    v.dispatch({ changes: { from: r.from, to: r.to, insert: ins }, selection: { anchor: r.from + ins.length } });
+    if (block) {
+      const doc = v.state.doc.toString();
+      const ins = blockInsertSpec(doc.slice(0, r.from) + doc.slice(r.to), r.from, t);
+      v.dispatch({ changes: { from: r.from, to: r.to, insert: ins.insert }, selection: { anchor: ins.cursor }, scrollIntoView: true });
+    } else v.dispatch({ changes: { from: r.from, to: r.to, insert: t }, selection: { anchor: r.from + t.length } });
     v.focus();
   }
 
@@ -732,6 +733,69 @@ export default function App() {
     insertAtCursor(l.text, l.block);
     rememberInsert(p.path);
   }
+  /* ---------- 从访达 / 资源管理器拖文件进来 ---------- */
+  const [dropCaret, setDropCaret] = useState<{ left: number; top: number; height: number } | null>(null);
+  const overEditor = (x: number, y: number) => {
+    const r = scroller.current?.getBoundingClientRect();
+    return !!path && !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  };
+  /** 拖着移动时：正文里显示一条竖线，标出松手后插在哪里 */
+  function dragOver(x: number, y: number) {
+    const v = view();
+    if (!v || !overEditor(x, y)) { setDropCaret(null); return; }
+    const pos = v.posAtCoords({ x, y }) ?? v.state.selection.main.head;
+    const c = v.coordsAtPos(pos);
+    setDropCaret(c ? { left: Math.round(c.left), top: Math.round(c.top), height: Math.round(c.bottom - c.top) } : null);
+  }
+  /**
+   * 松手：拖进正文的，图片插成插图（文件夹以外的先复制进本文旁边的 assets/），其他文件插成相对路径链接；
+   * 拖到正文以外的地方，有 Markdown 文件就打开它。
+   */
+  async function dropFiles(paths: string[], x: number, y: number) {
+    setDropCaret(null);
+    const v = view();
+    if (!be || !paths.length) return;
+    if (!v || !overEditor(x, y)) {
+      const md = paths.find((p) => /\.(md|markdown)$/i.test(p));
+      if (md) await openExternalFile(md); else if (path) say("拖到正文里松手，就会插入文件链接");
+      return;
+    }
+    const pos = v.posAtCoords({ x, y }) ?? v.state.selection.main.head;
+    const imgs: string[] = [], links: string[] = [];
+    let copied = 0;
+    for (const p of paths) {
+      if (/\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(p)) {
+        let src = p;
+        if (!(root && isInside(root, p))) {
+          try { src = await be.copyIntoFolder(p, join(dirOf(path), "assets")); copied++; } catch (e) { say(`图片复制失败：${e}`); continue; }
+        }
+        imgs.push(linkFor(src, path).text);
+      } else { links.push(linkFor(p, path).text); rememberInsert(p); }
+    }
+    if (imgs.length) {
+      const ins = blockInsertSpec(v.state.doc.toString(), pos, [...(links.length ? [links.join("　")] : []), ...imgs].join("\n\n"));
+      v.dispatch({ changes: { from: ins.from, insert: ins.insert }, selection: { anchor: ins.cursor }, scrollIntoView: true });
+    } else if (links.length) {
+      const t = links.join("　");
+      v.dispatch({ changes: { from: pos, insert: t }, selection: { anchor: pos + t.length }, scrollIntoView: true });
+    }
+    v.focus();
+    const n = imgs.length + links.length;
+    if (n) say(copied ? `已插入 ${n} 个文件，其中 ${copied} 张图片复制到了 assets/` : imgs.length && !links.length ? `已插入 ${imgs.length} 张图片` : `已插入 ${n} 个文件链接`);
+  }
+  const dropRef = useRef({ dragOver, dropFiles });
+  dropRef.current = { dragOver, dropFiles };
+  useEffect(() => {
+    if (!be) return;
+    let frame = 0;
+    return be.onFileDrop((e) => {
+      cancelAnimationFrame(frame);
+      if (e.type === "over") frame = requestAnimationFrame(() => dropRef.current.dragOver(e.x, e.y));
+      else if (e.type === "drop") dropRef.current.dropFiles(e.paths, e.x, e.y);
+      else setDropCaret(null);
+    });
+  }, [be]);
+
   /** 引用文件夹以外的文件：用系统的文件选择窗口，插入相对路径链接 */
   async function citeOtherFile() {
     if (!be || !path) return;
@@ -859,6 +923,7 @@ export default function App() {
       {treeMenu && <Menu x={treeMenu.x} y={treeMenu.y} items={treeMenuItems(treeMenu.node)} onClose={() => setTreeMenu(null)} />}
       {folderMenu && <Menu x={folderMenu.x} y={folderMenu.y} items={folderMenuItems()} onClose={() => setFolderMenu(null)} minWidth={232} />}
       <Presence>{dlg === "unsaved" && <UnsavedDialog fileName={fileName} onSave={closeSaving} onDiscard={closeDiscarding} onCancel={() => setDlg(null)} />}</Presence>
+      {dropCaret && <div className="dropcaret" style={{ left: dropCaret.left, top: dropCaret.top, height: dropCaret.height }} aria-hidden="true" />}
       <Presence>{toast && <div className="toast" role="status"><i />{toast.msg}{toast.action && <button className="lnk" onClick={() => { toast.action!.run(); setToast(null); }}>{toast.action.label}</button>}</div>}</Presence>
     </div>
   );
