@@ -31,7 +31,7 @@ const INLINE: { k: InlineKind; title: string; icon: React.ReactNode }[] = [
 
 /* ---------------- 选中文字时的浮动工具栏 ---------------- */
 export function FloatingToolbar({ view, tick, author, active }: { view: EditorView | null; tick: number; author: string; active: Set<InlineKind> }) {
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; below: boolean } | null>(null);
   const [kind, setKind] = useState<BlockKind>("p");
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -44,15 +44,17 @@ export function FloatingToolbar({ view, tick, author, active }: { view: EditorVi
     const w = ref.current?.offsetWidth || 380;
     const mid = (Math.min(a.left, b.left) + Math.max(a.right, b.right)) / 2 - host.left;
     let top = Math.min(a.top, b.top) - host.top - 46;
-    if (top < 4) top = Math.max(a.bottom, b.bottom) - host.top + 8;
+    const below = top < 4;
+    if (below) top = Math.max(a.bottom, b.bottom) - host.top + 8;
     // 用整数像素定位，不用 translateX(-50%)：半像素会让 Windows 上的字发虚
     const left = Math.round(Math.min(Math.max(8, mid - w / 2), host.width - w - 8));
-    setPos({ left, top: Math.round(top) });
+    // 从选区那一侧长出来：栏在上方时从底边中点缩放，翻到下方时从顶边
+    setPos({ left, top: Math.round(top), below });
     setKind(currentBlock(view));
   }, [view, tick]);
   if (!pos || !view) return null;
   return (
-    <div className="ftb" ref={ref} style={{ left: pos.left, top: pos.top }} role="toolbar" aria-label="格式">
+    <div className={"ftb" + (pos.below ? " below" : "")} ref={ref} style={{ left: pos.left, top: pos.top }} role="toolbar" aria-label="格式">
       <Select value={kind} options={BLOCKS} onChange={(k) => setBlock(view, k)} ariaLabel="段落类型" keepFocus className="ghost" />
       <span className="sep" />
       {INLINE.map((x) => <TB key={x.k} title={x.title} on={active.has(x.k)} onClick={() => toggleInline(view, x.k, true)}>{x.icon}</TB>)}

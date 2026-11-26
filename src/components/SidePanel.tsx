@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import type { Heading, Note } from "../lib/markdown";
 import type { VersionMeta } from "../lib/backend";
 import { Icon } from "./Icons";
@@ -31,8 +31,25 @@ interface Props {
   onSaveVersion: () => void;
 }
 
+/**
+ * 错峰出场：一组列表刚出现（换到这一栏、换了文件）时，当时就在的条目一条接一条进来。
+ * 之后新增的条目不参与，平时打字重绘也不会重播。
+ */
+function useStagger(group: string) {
+  const r = useRef<{ group: string | null; open: boolean; keys: Map<string, number> }>({ group: null, open: false, keys: new Map() });
+  if (r.current.group !== group) r.current = { group, open: true, keys: new Map() };
+  useEffect(() => { r.current.open = false; });
+  return (key: string): { cls: string; style?: CSSProperties } => {
+    const m = r.current.keys;
+    if (r.current.open && !m.has(key)) m.set(key, m.size);
+    const i = m.get(key);
+    return i === undefined ? { cls: "" } : { cls: " stg", style: { "--i": i } as CSSProperties };
+  };
+}
+
 export function SidePanel(p: Props) {
   const tabs = useRef<HTMLDivElement>(null);
+  const stagger = useStagger(p.tab + "|" + p.fileName);
   const [ink, setInk] = useState({ x: 0, w: 0 });
   useLayoutEffect(() => {
     const el = tabs.current?.querySelector<HTMLElement>(".tab.active");
@@ -68,14 +85,14 @@ export function SidePanel(p: Props) {
 
       {p.tab === "notes" && (
         <div className="pane">
-          {p.notes.length ? p.notes.map((n) => (
-            <div key={n.at} className="cc" onClick={() => p.onJump(n.at + 3)}>
+          {p.notes.length ? p.notes.map((n) => { const st = stagger(String(n.at)); return (
+            <div key={n.at} className={"cc" + st.cls} style={st.style} onClick={() => p.onJump(n.at + 3)}>
               <div className="who"><span className="av" style={{ background: avatarColor(n.who) }}>{(n.who || "?").slice(0, 1)}</span><b>{n.who || "未署名"}</b><span>{n.date}</span></div>
               <div className="q">{n.quote}</div>
               <div className={"tx" + (n.text ? "" : " ph2")}>{n.text || "正在正文里输入…"}</div>
               <div className="acts"><button className="btn sm" onClick={(e) => { e.stopPropagation(); p.onResolve(n); }}>解决</button></div>
             </div>
-          )) : <div className="empty">没有批注<br />选中文字后点工具栏里的「批注」</div>}
+          ); }) : <div className="empty">没有批注<br />选中文字后点工具栏里的「批注」</div>}
         </div>
       )}
 
@@ -90,6 +107,7 @@ export function SidePanel(p: Props) {
 }
 
 function VersionList(p: Props) {
+  const stagger = useStagger(p.fileName);
   // 记住已经显示过的版本，新出现的从上方滑入
   const seen = useRef<Set<string> | null>(null);
   const fresh = new Set<string>();
@@ -100,10 +118,11 @@ function VersionList(p: Props) {
   return <>{p.versions.map((v) => {
     const t = fmtTime(v.at);
     const head = t.day !== day ? <div className="vgrp">{(day = t.day)}</div> : null;
+    const st = stagger(v.id);
     return (
       <div key={v.id}>
         {head}
-        <button className={`ver ${v.source}` + (v.id === p.selectedVersion ? " sel" : "") + (fresh.has(v.id) ? " enter" : "")} onClick={() => p.onOpenVersion(v.id)}>
+        <button className={`ver ${v.source}` + (v.id === p.selectedVersion ? " sel" : "") + (fresh.has(v.id) ? " enter" : st.cls)} style={st.style} onClick={() => p.onOpenVersion(v.id)}>
           <span className="nd" />
           <span><div className="nm">{versionTitle(v)}</div><div className="tm">{t.hm} · {SRC[v.source]}{v.note ? ` · ${v.note}` : ""}</div></span>
           {v.id === p.freshVersion && <span className="nw">新</span>}

@@ -13,6 +13,7 @@ import { PanelTab, SidePanel, fmtTime, versionTitle } from "./components/SidePan
 import { Compare } from "./components/Compare";
 import { CountPop, HelpDialog, Palette, PaletteItem, SaveVersionDialog, SettingsDialog, UnsavedDialog } from "./components/Dialogs";
 import { Icon } from "./components/Icons";
+import { Presence } from "./components/Presence";
 import { WindowControls } from "./components/WindowControls";
 import { baseName, dirOf, isInside, join, normalize, relative, toPosix } from "./lib/paths";
 import { isMac, isWindows, kbd, keyName } from "./lib/platform";
@@ -459,7 +460,17 @@ export default function App() {
     await flush();
     setVersions(await be.listVersions(path));
     setCmp(null);
-    say(`已恢复到「${versionTitle(cmp.v)}」，恢复前的内容已存为版本`);
+    // 直接恢复、不先问“确定吗”，但给几秒撤销：撤销就是把恢复前的内容放回来（它也已经存成了版本）
+    const at = path;
+    say(`已恢复到「${versionTitle(cmp.v)}」，恢复前的内容已存为版本`, { label: "撤销", run: () => {
+      if (live.current.path !== at) return;
+      const now = live.current.text;
+      ed.current?.replace(before);
+      window.setTimeout(() => ed.current?.flash(changedLines(now, before)), 50);
+      live.current.text = before;
+      setText(before);
+      void flush();
+    } });
   }
   function pickImage() {
     if (!path) return;
@@ -679,15 +690,15 @@ export default function App() {
         {be?.isDemo && <span className="sb demo-tag">浏览器预览 · 演示文件夹</span>}
       </footer>
 
-      {countPop && <CountPop title={countPop.title} text={countPop.text} count={count} anchor={countPop.rect} onClose={() => setCountPop(null)} />}
-      {dlg === "save" && <SaveVersionDialog changes={saveChanges} fileName={fileName} onSave={saveVersion} onClose={() => setDlg(null)} />}
-      {dlg === "settings" && <SettingsDialog s={s} fonts={fonts} onChange={update} onClose={() => setDlg(null)} />}
-      {(dlg === "help_syntax" || dlg === "help_keys") && <HelpDialog kind={dlg === "help_syntax" ? "syntax" : "keys"} onClose={() => setDlg(null)} />}
-      {dlg === "palette" && <Palette items={commands} search={search} onClose={() => setDlg(null)} placeholder="搜索全文、文件夹，或输入命令" />}
-      {dlg === "cite" && <Palette items={citeItems} search={citeSearch} pinned={pickOther} onClose={() => setDlg(null)} placeholder="搜索文献或文件，回车插入" />}
-      {dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => setDlg(null)} />}
-      {dlg === "unsaved" && <UnsavedDialog fileName={fileName} onSave={closeSaving} onDiscard={closeDiscarding} onCancel={() => setDlg(null)} />}
-      {toast && <div className="toast" role="status"><i />{toast.msg}{toast.action && <button className="lnk" onClick={() => { toast.action!.run(); setToast(null); }}>{toast.action.label}</button>}</div>}
+      <Presence>{countPop && <CountPop title={countPop.title} text={countPop.text} count={count} anchor={countPop.rect} onClose={() => setCountPop(null)} />}</Presence>
+      <Presence>{dlg === "save" && <SaveVersionDialog changes={saveChanges} fileName={fileName} onSave={saveVersion} onClose={() => setDlg(null)} />}</Presence>
+      <Presence>{dlg === "settings" && <SettingsDialog s={s} fonts={fonts} onChange={update} onClose={() => setDlg(null)} />}</Presence>
+      <Presence>{(dlg === "help_syntax" || dlg === "help_keys") && <HelpDialog kind={dlg === "help_syntax" ? "syntax" : "keys"} onClose={() => setDlg(null)} />}</Presence>
+      <Presence>{dlg === "palette" && <Palette items={commands} search={search} onClose={() => setDlg(null)} placeholder="搜索全文、文件夹，或输入命令" />}</Presence>
+      <Presence>{dlg === "cite" && <Palette items={citeItems} search={citeSearch} pinned={pickOther} onClose={() => setDlg(null)} placeholder="搜索文献或文件，回车插入" />}</Presence>
+      <Presence>{dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => setDlg(null)} />}</Presence>
+      <Presence>{dlg === "unsaved" && <UnsavedDialog fileName={fileName} onSave={closeSaving} onDiscard={closeDiscarding} onCancel={() => setDlg(null)} />}</Presence>
+      <Presence>{toast && <div className="toast" role="status"><i />{toast.msg}{toast.action && <button className="lnk" onClick={() => { toast.action!.run(); setToast(null); }}>{toast.action.label}</button>}</div>}</Presence>
     </div>
   );
 }

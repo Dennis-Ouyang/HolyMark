@@ -348,7 +348,9 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
           </span>
           <button type="button" className="btn" onClick={() => { setO(normalizeOpts({ fmt: o.fmt })); setFromRef(new Set()); }}>全部清空</button>
           <button type="button" className="btn" onClick={onClose}>取消</button>
-          <button type="button" className="btn acc" disabled={busy || missing.length > 0 || (be.isDemo && !isMd)} onClick={run}>{busy ? "正在导出…" : `导出 .${EXT[o.fmt]}`}</button>
+          {/* 导出中文字不换，只淡出、换成转圈：按钮宽度不变，旁边的按钮不会被挤动 */}
+          <button type="button" className={"btn acc" + (busy ? " loading" : "")} aria-busy={busy || undefined} aria-label={busy ? "正在导出" : undefined}
+            disabled={busy || missing.length > 0 || (be.isDemo && !isMd)} onClick={run}><span className="lbl">导出 .{EXT[o.fmt]}</span></button>
         </div>
         {job && <JobView job={job} fmt={o.fmt} be={be} onBack={() => setJob(null)} onClose={onClose} />}
       </div>

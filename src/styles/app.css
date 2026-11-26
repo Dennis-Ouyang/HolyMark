@@ -11,9 +11,18 @@
   --hl-kw:#8E3BC9; --hl-str:#3F8A2E; --hl-num:#B5541A; --hl-com:#9AA0A6; --hl-fn:#2F62C9;
   --pop:0 0 0 1px var(--line-2), 0 16px 40px -10px rgba(20,22,40,.22);
   --seg-track:#EEEFF3; --seg-thumb:#FFFFFF;
+  --scrim:rgba(8,10,18,.28);
   --f-ui:-apple-system,BlinkMacSystemFont,"Segoe UI Variable Text","Segoe UI","Inter","PingFang SC","Hiragino Sans GB","Microsoft YaHei UI","Microsoft YaHei",sans-serif;
   --mono:ui-monospace,"SF Mono",Menlo,"Cascadia Mono",Consolas,monospace;
   --ease:cubic-bezier(.2,.8,.2,1);
+  /* 退场：起步慢、收尾快，比进场短 */
+  --ease-out:cubic-bezier(.4,0,1,1);
+  /* 弹簧：不支持 linear() 的旧 WebView 退回普通缓动 */
+  --spring:var(--ease); --spring-ms:220ms;
+}
+/* stiffness 400、damping 30 的弹簧：回弹约 3%，420ms 内落定 */
+@supports (transition-timing-function: linear(0, 1)) {
+  :root { --spring:linear(0, .039, .132, .255, .386, .514, .631, .732, .815, .882, .933, .97, .996, 1.013, 1.023, 1.027, 1.028, 1.027, 1.024, 1.021, 1.017, 1.013, 1.01, 1.007, 1.005, 1.003, 1.002, 1.001, 1); --spring-ms:420ms; }
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -28,6 +37,7 @@
     --hl-kw:#C792EA; --hl-str:#9ECE6A; --hl-num:#F5A97F; --hl-com:#5C6370; --hl-fn:#7AA2F7;
     --pop:0 0 0 1px var(--line-2), 0 16px 40px -8px rgba(0,0,0,.55);
     --seg-track:#16171C; --seg-thumb:#2A2D36;
+    --scrim:rgba(0,0,0,.5);
   }
 }
 :root[data-theme="dark"] {
@@ -42,6 +52,7 @@
   --hl-kw:#C792EA; --hl-str:#9ECE6A; --hl-num:#F5A97F; --hl-com:#5C6370; --hl-fn:#7AA2F7;
   --pop:0 0 0 1px var(--line-2), 0 16px 40px -8px rgba(0,0,0,.55);
   --seg-track:#16171C; --seg-thumb:#2A2D36;
+  --scrim:rgba(0,0,0,.5);
 }
 
 * { box-sizing: border-box; }
@@ -79,7 +90,7 @@ kbd { font: 500 11px var(--f-ui); padding: 1px 5px; border-radius: 4px; border: 
 .crumbs .sep { opacity: .5; margin-right: 6px; }
 .crumbs .dirty { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-3); flex: none; margin-left: 2px; }
 .spacer { flex: 1; align-self: stretch; }
-.ib { height: 28px; min-width: 28px; padding: 0 8px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--fg-2); font-size: 13px; transition: background 120ms, color 120ms; white-space: nowrap; }
+.ib { height: 28px; min-width: 28px; padding: 0 8px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--fg-2); font-size: 13px; transition: background 120ms, color 120ms, scale var(--press-ms, var(--spring-ms)) var(--press-ease, var(--spring)); white-space: nowrap; }
 .ib:hover:not(:disabled) { background: var(--hover); color: var(--fg); }
 .ib.on { color: var(--accent-fg); background: var(--accent-soft); }
 .ib.primary { background: var(--accent); color: #fff; padding: 0 12px; }
@@ -145,7 +156,7 @@ kbd { font: 500 11px var(--f-ui); padding: 1px 5px; border-radius: 4px; border: 
 .rgrp .row { display: flex; align-items: center; gap: 2px; }
 .rgrp .gl { font-size: 11px; line-height: 16px; color: var(--fg-3); white-space: nowrap; }
 .rb { height: 28px; min-width: 28px; padding: 0 7px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 13px; color: var(--fg-2); white-space: nowrap; }
-.rb { transition: background 120ms, color 120ms, box-shadow 120ms; }
+.rb { transition: background 120ms, color 120ms, box-shadow 120ms, scale var(--press-ms, var(--spring-ms)) var(--press-ease, var(--spring)); }
 .rb:hover:not(:disabled) { background: var(--hover); color: var(--fg); }
 .rb:active:not(:disabled) { background: var(--line); }
 .rb.on { background: var(--accent-soft); color: var(--accent-fg); }
@@ -178,6 +189,7 @@ kbd { font: 500 11px var(--f-ui); padding: 1px 5px; border-radius: 4px; border: 
 .rgrp.reset .rb { width: 32px; height: 32px; }
 
 .gridpop { position: fixed; z-index: 95; min-width: 0; }
+.pop.gridpop { transform-origin: 0 0; animation-name: popDown; }
 .gridpick { display: grid; grid-template-columns: repeat(8, 16px); gap: 3px; padding: 6px; }
 .gridpick i { width: 16px; height: 16px; border: 1px solid var(--line-2); border-radius: 3px; background: var(--bg); cursor: pointer; }
 .gridpick i.on { background: var(--accent-soft); border-color: var(--accent); }
@@ -261,10 +273,13 @@ kbd { font: 500 11px var(--f-ui); padding: 1px 5px; border-radius: 4px; border: 
 .hm-code-lang { font: 11px var(--f-ui); color: var(--fg-3); }
 
 /* ---------- 浮动工具栏 ---------- */
-.ftb { position: absolute; z-index: 25; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 9px; background: var(--raised); box-shadow: var(--pop); animation: ftbIn 120ms var(--ease); }
+.ftb { position: absolute; z-index: 25; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 9px; background: var(--raised); box-shadow: var(--pop); animation: ftbIn 150ms var(--ease); transform-origin: 50% 100%; }
+.ftb.below { transform-origin: 50% 0; animation-name: ftbInBelow; }
 .ftb .sep { width: 1px; height: 18px; background: var(--line-2); margin: 0 3px; }
 .ftb select { height: 28px; border: 0; background: transparent; font-size: 13px; color: var(--fg); padding: 0 4px; border-radius: 6px; cursor: pointer; }
-@keyframes ftbIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+/* 从选区那一侧长出来 */
+@keyframes ftbIn { from { opacity: 0; transform: translateY(4px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes ftbInBelow { from { opacity: 0; transform: translateY(-4px) scale(.96); } to { opacity: 1; transform: none; } }
 
 /* ---------- 对照视图 ---------- */
 .cmp { position: absolute; inset: 0; background: var(--bg); display: flex; flex-direction: column; z-index: 12; animation: fade 160ms ease; }
@@ -328,6 +343,8 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .cc { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 10px 12px; margin-bottom: 8px; cursor: pointer; transition: border-color 120ms; }
 .cc:hover { border-color: var(--anno-line); }
 .cc { animation: paneIn 200ms var(--ease) both; }
+/* 错峰出场：只在打开这一栏时，一条接一条进来；第 8 条以后一起进，免得等太久 */
+.cc.stg, .ver.stg { animation: paneIn 220ms var(--ease) both; animation-delay: calc(min(var(--i), 8) * 40ms); }
 .cc .who { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg-3); }
 .cc .who b { color: var(--fg); font-weight: 500; }
 .av { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font: 500 11px var(--f-ui); color: #fff; flex: none; }
@@ -351,7 +368,17 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .ver .nw { font-size: 11px; color: var(--accent-fg); padding: 0 6px; border-radius: 8px; background: var(--accent-soft); margin-top: 2px; }
 
 /* ---------- 按钮、弹层、对话框 ---------- */
-.btn { height: 28px; padding: 0 12px; border-radius: 6px; font-size: 13px; border: 1px solid var(--line-2); color: var(--fg-2); white-space: nowrap; }
+.btn { position: relative; height: 28px; padding: 0 12px; border-radius: 6px; font-size: 13px; border: 1px solid var(--line-2); color: var(--fg-2); white-space: nowrap;
+  transition: background 120ms, color 120ms, scale var(--press-ms, var(--spring-ms)) var(--press-ease, var(--spring)); }
+/* 按下反馈：按住缩到 0.97，松开用弹簧回来 */
+.btn:active:not(:disabled), .ib:active:not(:disabled), .rb:active:not(:disabled) { scale: .97; --press-ms: 90ms; --press-ease: ease-out; }
+.ib:active:not(:disabled), .rb:active:not(:disabled) { scale: .94; }
+/* 加载态：文字留在原处撑住宽度，只是上滑淡出；转圈叠在正中。稍等 120ms 再变，免得很快完成时一闪 */
+.btn .lbl { display: inline-block; transition: opacity 140ms, translate 200ms var(--ease); }
+.btn.loading .lbl { opacity: 0; translate: 0 -6px; transition-delay: 120ms; }
+.btn.loading::after { content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; border-top-color: transparent;
+  animation: spin 700ms linear infinite, fade 160ms ease 120ms both; }
+.btn.loading:disabled { opacity: 1; cursor: progress; }
 .btn:hover:not(:disabled) { color: var(--fg); background: var(--hover); }
 .btn.sm { height: 24px; padding: 0 10px; font-size: 12px; }
 .btn.acc { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -365,14 +392,17 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .segm button + button::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 1px; background: var(--line-2); opacity: .7; transition: opacity 160ms; }
 .segm button.on::before, .segm button.on + button::before { opacity: 0; }
 .segm .thumb { position: absolute; z-index: 0; top: 2px; left: 0; height: 24px; border-radius: 5px; background: var(--seg-thumb); box-shadow: 0 1px 2px rgba(16,18,30,.12), 0 0 0 .5px rgba(16,18,30,.08); }
-.segm.ready .thumb { transition: transform 220ms var(--ease), width 220ms var(--ease); }
+.segm.ready .thumb { transition: transform var(--spring-ms) var(--spring), width var(--spring-ms) var(--spring); }
 .segm.disabled { opacity: .5; }
 .pop { position: absolute; z-index: 30; min-width: 200px; background: var(--raised); border-radius: 10px; box-shadow: var(--pop); padding: 6px; animation: paneIn 140ms var(--ease); }
-.countpop { position: fixed; }
+.pop.countpop { position: fixed; transform-origin: 0 100%; animation-name: popUp; }
+/* 浮窗从打开它的按钮那个角长出来：字数浮窗在状态栏按钮上方，表格网格在按钮下方 */
+@keyframes popUp { from { opacity: 0; transform: translateY(4px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes popDown { from { opacity: 0; transform: translateY(-4px) scale(.96); } to { opacity: 1; transform: none; } }
 .pop .lbl { font-size: 11px; color: var(--fg-3); padding: 4px 10px 2px; }
 .cnt { display: grid; grid-template-columns: 1fr auto; gap: 6px 18px; padding: 6px 10px; font-size: 13px; color: var(--fg-2); }
 .cnt b { font-weight: 500; color: var(--fg); text-align: right; font-variant-numeric: tabular-nums; }
-.scrim { position: fixed; inset: 0; z-index: 50; background: rgba(5,6,10,.4); display: flex; justify-content: center; align-items: flex-start; padding: 14vh 16px 16px; animation: fade 140ms ease; }
+.scrim { position: fixed; inset: 0; z-index: 50; background: var(--scrim); display: flex; justify-content: center; align-items: flex-start; padding: 14vh 16px 16px; animation: fade 140ms ease; }
 .scrim.center { align-items: center; padding-top: 16px; }
 .palette, .sheetdlg { width: min(620px,100%); background: var(--raised); border-radius: 12px; box-shadow: var(--pop); overflow: hidden; animation: palIn 160ms var(--ease); }
 .sheetdlg { width: min(460px,100%); }
@@ -442,6 +472,15 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .toast { position: fixed; left: 0; right: 0; width: fit-content; max-width: calc(100% - 32px); margin: 0 auto; bottom: 44px; z-index: 70; display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-radius: 9px; background: var(--raised); box-shadow: var(--pop); font-size: 13px; animation: toastIn 240ms var(--ease); }
 .toast i { width: 6px; height: 6px; border-radius: 50%; background: var(--ins); }
 @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+/* 退场（配合 Presence 组件）：比进场短，往进来的方向退回去 */
+.presence { display: contents; }
+.leaving .scrim { animation: fadeOut 140ms var(--ease-out) forwards; pointer-events: none; }
+.leaving .scrim > * { animation: palOut 140ms var(--ease-out) forwards; }
+.leaving .toast { animation: toastOut 140ms var(--ease-out) forwards; }
+.leaving .pop { animation: fadeOut 100ms var(--ease-out) forwards; }
+@keyframes fadeOut { to { opacity: 0; } }
+@keyframes palOut { to { opacity: 0; transform: scale(.98); } }
+@keyframes toastOut { to { opacity: 0; transform: translateY(6px); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; } }
 
 /* ---------- 统一下拉 ---------- */
