@@ -70,25 +70,6 @@ Windows 版和 Mac 版的区别：
 - 默认字体是微软雅黑。文件属性区里写的 Mac 字体（如 `Songti SC`）在 Windows 上会自动用对应的字体（中易宋体）显示，反过来也一样。
 - 安装包没有代码签名，第一次运行时 SmartScreen 可能拦一下：点「更多信息 → 仍要运行」。
 
-## 测试
-
-```bash
-npx tsc --noEmit                 # 类型检查
-npx vitest run                   # 单元测试
-cd src-tauri && cargo test --lib # Rust 端（需要 Rust 环境）
-```
-
-冒烟测试：打开浏览器预览，依次加载演示稿和一份覆盖所有块类型的测试稿（`tests/fixtures/all-blocks.md`），光标走遍每一行，再打开导出对话框和搜索，浅色、深色各跑一遍。控制台出现任何 error 就判失败。
-
-```bash
-npm run dev                                                # 另开一个终端
-NODE_PATH=$(npm root -g) node scripts/smoke.mjs            # 需要全局装好 Playwright
-```
-
-检查构建产物在内容安全策略（CSP）下是否正常：`npx vite build && npx vite preview`（端口 1421，带上和桌面版相同的 CSP 头），然后 `node scripts/smoke.mjs http://localhost:1421`。
-
-CSP 写在 `src-tauri/tauri.conf.json` 的 `app.security.csp`，每条指令一项。以后要访问新的网站（比如向 doi.org 取文献信息），在 `connect-src` 后面加上域名即可，`vite preview` 会自动用同一份。
-
 ## 长稿性能
 
 浏览器预览里加 `?stress` 会生成一篇 20 万字的测试稿并直接打开（`?stress=400000` 指定字数），用来手动试手感。自动测量：
@@ -103,6 +84,7 @@ NODE_PATH=$(npm root -g) node scripts/bench-long-doc.mjs 200000   # 需要 Playw
 ## 测试
 
 ```bash
+npx tsc --noEmit                  # 类型检查
 npm test                          # 前端：切块、字数、批注、大纲、版本对齐、导出选项换算、实时预览增量更新、格式切换、路径与快捷键
 cd src-tauri && cargo test --lib  # 后端：文件树、读写、版本库、Word 样式改写
 ```
@@ -113,6 +95,17 @@ cd src-tauri && cargo test --lib  # 后端：文件树、读写、版本库、Wo
 npx vite-node scripts/export-smoke.ts /tmp/hm-smoke
 cd src-tauri && HM_EXPORT_JOB=/tmp/hm-smoke/job-pdf.json cargo test --lib e2e_from_env -- --ignored
 ```
+
+冒烟测试：打开浏览器预览，依次加载演示稿和一份覆盖所有块类型的测试稿（`tests/fixtures/all-blocks.md`），光标走遍每一行，再打开导出对话框和搜索，浅色、深色各跑一遍。控制台出现任何 error 就判失败。
+
+```bash
+npm run dev                                                # 另开一个终端
+NODE_PATH=$(npm root -g) node scripts/smoke.mjs            # 需要全局装好 Playwright
+```
+
+检查构建产物在内容安全策略（CSP）下是否正常：`npx vite build && npx vite preview`（端口 1421，带上和桌面版相同的 CSP 头），然后 `node scripts/smoke.mjs http://localhost:1421`。
+
+CSP 写在 `src-tauri/tauri.conf.json` 的 `app.security.csp`，每条指令一项。以后要访问新的网站（比如向 doi.org 取文献信息），在 `connect-src` 后面加上域名即可，`vite preview` 会自动用同一份。
 
 ## 结构
 
