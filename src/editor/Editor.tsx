@@ -15,6 +15,7 @@ import { mathTools } from "./mathTools";
 import { notes } from "./notes";
 import { tabKeymap } from "./keys";
 import { emptyPairs } from "./emptyPairs";
+import { zhPhrases } from "./phrases";
 import { avatarColor } from "../components/SidePanel";
 import { Subscript, Superscript } from "@lezer/markdown";
 
@@ -83,6 +84,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial,
             ...defaultKeymap,
           ]),
           emptyPairs(),
+          zhPhrases,
           EditorView.updateListener.of((u) => {
             if (u.docChanged && !silent.current) cb.current.onChange(u.state.doc.toString());
             if (u.selectionSet || u.docChanged || u.focusChanged) cb.current.onSelection(u.view);
