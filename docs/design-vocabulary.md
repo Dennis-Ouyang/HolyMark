@@ -48,6 +48,11 @@ HolyMark 的气质：**长篇写作工具，安静、克制、不抢正文**。�
 9. **用 `scale`、`translate` 这类单独的变换属性，或者 `opacity`。** 不要去动画 `width`、`height`、`top`、`left`。唯一例外是分段滑块的 `width`。
 10. **Windows 上避免半像素。** 定位用整数像素；静止状态不要留下 `translateX(-50%)` 这类会让文字发虚的变换。
 
+### 4. 已经写明理由的例外
+
+- **文件预览卡片的悬停**（`src/editor/fileCard.ts`、`.hm-fcard`）：前面那张纸上浮 6px、后面两张展开到 ±3.5°/4°，用 `transform` 走 240ms `--ease`，比「hover 120ms」长。理由：这是在纸张位移，不是颜色变化，120ms 太短看不出"纸张"的感觉；幅度很小、没有回弹，仍然安静。后面两张纸上没有字，静止时的旋转不会让文字发虚；前面那张静止时没有变换。
+- **公式预览浮层**（`.hm-mathtip`）挂在 CodeMirror 的 tooltip 层里，和 `Menu`、`Select` 一样不在 `Presence` 里，没有退场。
+
 ---
 
 ## 二、视觉与交互规矩

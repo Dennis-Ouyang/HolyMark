@@ -1,6 +1,7 @@
 //! HolyMark 后端：文件夹、读写、版本库、外部修改监听。
 mod export;
 mod fsops;
+mod preview;
 #[cfg(target_os = "macos")]
 mod menu;
 mod versions;
@@ -112,6 +113,15 @@ fn open_folder(app: tauri::AppHandle, state: State<AppState>, root: String) -> R
     w.watch(&rootp, RecursiveMode::Recursive).map_err(err)?;
     *state.watcher.lock().unwrap() = Some(w);
     Ok(tree)
+}
+
+/// 关闭文件夹：停止监听，回到没有打开工作区的状态
+#[tauri::command]
+fn close_folder(state: State<AppState>) {
+    *state.watcher.lock().unwrap() = None;
+    let mut i = state.inner.lock().unwrap();
+    i.root = None;
+    i.written.clear();
 }
 
 #[tauri::command]
@@ -438,6 +448,12 @@ fn reveal(path: String) -> Result<(), String> {
     export::reveal(&path)
 }
 
+/// 文件预览卡片要画的内容（标题、开头几段、页数、修改时间）
+#[tauri::command]
+async fn file_preview(path: String) -> Result<preview::FilePreview, String> {
+    tauri::async_runtime::spawn_blocking(move || preview::preview(Path::new(&path))).await.map_err(err)?
+}
+
 /// 用默认程序打开（导出完成后的「打开」）
 #[tauri::command]
 fn open_path(path: String) -> Result<(), String> {
@@ -506,6 +522,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             open_folder,
+            close_folder,
+            file_preview,
             list_tree,
             read_text,
             write_text,

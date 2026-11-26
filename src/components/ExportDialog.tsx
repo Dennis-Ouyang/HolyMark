@@ -289,6 +289,7 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
       </div>}
       <div className="og"><h5>其他</h5>
         <div className="orow"><span>目录</span><label className="pair spread"><span className="dnote">在正文前生成目录</span><button type="button" className={"switch" + (o.toc ? " on" : "")} role="switch" aria-checked={o.toc} aria-label="生成目录" onClick={() => set({ toc: !o.toc })} /></label></div>
+        {o.fmt === "pdf" && <div className="orow"><span>公式编号</span><label className="pair spread"><span className="dnote">行间公式右侧显示 (1) (2)…</span><button type="button" className={"switch" + (o.eqNum ? " on" : "")} role="switch" aria-checked={o.eqNum} aria-label="公式编号" onClick={() => set({ eqNum: !o.eqNum })} /></label></div>}
         <div className="orow top"><span>Pandoc 参数</span><textarea className="xa" value={o.extra} placeholder="额外的参数，例如 --number-sections" aria-label="额外的 Pandoc 参数" onChange={(e) => set({ extra: e.target.value })} /></div>
       </div>
     </>
@@ -356,12 +357,38 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
   );
 }
 
+/**
+ * Pandoc / Typst 的提示：一条提示常常带好几行说明，按行数数会多出好几倍。
+ * 这里按「一条」来数，相同的合并，常见的几种换成中文说明。
+ */
+export function summarizeWarnings(raw: string): { text: string; n: number }[] {
+  const items: string[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    // 缩进的、或者 Typst 的「┌─ 文件:行」这类是上一条的说明
+    if (items.length && (/^\s/.test(line) || /^[│┌└├─=^]/.test(line.trim()))) continue;
+    items.push(line.trim());
+  }
+  const zh = (t: string) => {
+    let m: RegExpMatchArray | null;
+    if ((m = t.match(/unknown font family:\s*(.+)$/i))) return `系统里没有字体「${m[1].trim()}」，用了替代字体`;
+    if ((m = t.match(/Could not fetch resource\s+'?([^']+)'?/i))) return `找不到文件：${m[1].trim()}`;
+    if ((m = t.match(/Missing character:.*?(\S+)\s*$/i))) return `字体里缺字：${m[1]}`;
+    if (/Could not convert TeX math/i.test(t)) return "有公式没能转换，按原样的 TeX 输出";
+    return t.replace(/^\[WARNING\]\s*/, "").replace(/^warning:\s*/i, "");
+  };
+  const out = new Map<string, number>();
+  for (const it of items) { const k = zh(it); out.set(k, (out.get(k) ?? 0) + 1); }
+  return [...out].map(([text, n]) => ({ text, n }));
+}
+
 /* ---------------- 导出进度与完成 ---------------- */
 function JobView({ job, fmt, be, onBack, onClose }: { job: Job; fmt: Fmt; be: Backend; onBack: () => void; onClose: () => void }) {
   const steps = STAGES[fmt];
   const cur = job.state === "running" ? Math.max(0, steps.findIndex(([k]) => k === job.stage)) : steps.length;
   const pct = job.state === "running" ? Math.round(((cur + 0.5) / steps.length) * 100) : 100;
-  const warnCount = job.state === "done" && job.warnings ? job.warnings.split("\n").filter((l) => l.trim()).length : 0;
+  const warns = job.state === "done" ? summarizeWarnings(job.warnings) : [];
+  const warnCount = warns.reduce((n, w) => n + w.n, 0);
   return (
     <div className="xjob" role={job.state === "error" ? "alert" : "status"} aria-live="polite">
       <div className={"xjob-card " + job.state}>
@@ -376,7 +403,9 @@ function JobView({ job, fmt, be, onBack, onClose }: { job: Job; fmt: Fmt; be: Ba
           <div className="xjob-badge ok"><Icon name="check" size={22} /></div>
           <h4>导出完成</h4>
           <div className="xjob-file"><b>{baseName(job.out)}</b><small>{dirOf(job.out)}</small></div>
-          {warnCount > 0 && <details className="xwarn"><summary>Pandoc 有 {warnCount} 条提示，文件已经生成</summary><pre>{job.warnings}</pre></details>}
+          {warnCount > 0 && <details className="xwarn"><summary>有 {warnCount} 条提示，文件已经生成</summary>
+            <ul>{warns.map((w, i) => <li key={i}>{w.text}{w.n > 1 && <span className="n">× {w.n}</span>}</li>)}</ul>
+            <pre>{job.warnings}</pre></details>}
           <div className="xjob-acts">
             {!be.isDemo && <button type="button" className="btn" onClick={() => be.openPath(job.out)}><Icon name="open" size={14} />打开</button>}
             {!be.isDemo && <button type="button" className="btn" onClick={() => be.reveal(job.out)}>{isWindows ? "在资源管理器中显示" : "在访达中显示"}</button>}

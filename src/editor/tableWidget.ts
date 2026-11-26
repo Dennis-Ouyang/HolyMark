@@ -8,6 +8,7 @@
  *   分隔行超过 72 个字符时 Pandoc 按这个比例排 Word / PDF 里的列宽。行高跟着内容走，存不下来。
  */
 import { EditorView, WidgetType } from "@codemirror/view";
+import { iconSvg } from "../lib/icons";
 
 export interface TableModel { head: string[]; align: string[]; rows: string[][] }
 
@@ -302,13 +303,4 @@ export class TableWidget extends WidgetType {
   }
 }
 
-const svg = (d: string) => `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
-const ICONS: Record<string, string> = {
-  rowAbove: svg('<rect x="2" y="8" width="12" height="5.5" rx="1"/><path d="M8 1.5v5M5.5 4h5"/>'),
-  rowBelow: svg('<rect x="2" y="2.5" width="12" height="5.5" rx="1"/><path d="M8 9.5v5M5.5 12h5"/>'),
-  colLeft: svg('<rect x="8" y="2" width="5.5" height="12" rx="1"/><path d="M1.5 8h5M4 5.5v5"/>'),
-  colRight: svg('<rect x="2.5" y="2" width="5.5" height="12" rx="1"/><path d="M9.5 8h5M12 5.5v5"/>'),
-  delRow: svg('<rect x="2" y="5" width="12" height="6" rx="1"/><path d="m6 6.5 4 3M10 6.5l-4 3"/>'),
-  delCol: svg('<rect x="5" y="2" width="6" height="12" rx="1"/><path d="m6.5 6 3 4M9.5 6l-3 4"/>'),
-  source: svg('<path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5"/>'),
-};
+const ICONS: Record<string, string> = Object.fromEntries(["rowAbove", "rowBelow", "colLeft", "colRight", "delRow", "delCol", "source"].map((k) => [k, iconSvg(k, 15)]));

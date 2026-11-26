@@ -51,7 +51,7 @@ export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; f
   const num = (k: keyof Settings, attrs: { min: number; max?: number; step?: number; disabled?: boolean }, unit?: string) => (
     <NumberField value={String(s[k])} {...attrs} unit={unit} ariaLabel={String(k)} onCommit={(v) => { const n = parseFloat(v); if (!Number.isNaN(n)) onChange({ [k]: n } as Partial<Settings>); }} />
   );
-  const sw = (k: "showAllFiles" | "goalOn" | "askOnClose", label: string) => (
+  const sw = (k: "showAllFiles" | "goalOn" | "askOnClose" | "reopenLast" | "eqNumbers", label: string) => (
     <button className={"switch" + (s[k] ? " on" : "")} role="switch" aria-checked={s[k]} aria-label={label} onClick={() => onChange({ [k]: !s[k] } as Partial<Settings>)} />
   );
   return (
@@ -77,6 +77,7 @@ export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; f
               </div>
             </Row>
             <Row label="文件树" hint="关闭时只显示 Markdown 文件"><label className="inline">{sw("showAllFiles", "显示所有文件")}<span>显示所有文件</span></label></Row>
+            <Row label="启动时" hint="关掉的话，每次从开始页开始"><label className="inline">{sw("reopenLast", "打开上次的文件夹")}<span>打开上次的文件夹</span></label></Row>
             <Row label="关闭应用时" hint="不保存的修改会留在「版本」里，随时能找回"><label className="inline">{sw("askOnClose", "询问是否保存修改")}<span>有修改时询问是否保存</span></label></Row>
           </>}
           {pane === "editor" && <>
@@ -86,6 +87,7 @@ export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; f
             <Row label="字号">{num("fontSize", { min: 12, max: 28 }, "px")}</Row>
             <Row label="行距">{num("lineHeight", { min: 1.2, max: 2.6, step: 0.05 }, "倍")}</Row>
             <Row label="版心宽度" hint="每行大约多少个字">{num("measure", { min: 24, max: 60 }, "字")}</Row>
+            <Row label="公式编号" hint="行间公式 $$…$$ 右侧显示 (1) (2)…"><label className="inline">{sw("eqNumbers", "行间公式编号")}<span>显示编号</span></label></Row>
             <Row label="Markdown 符号"><Segmented label="Markdown 符号" value={s.syntax} options={[["active", "光标所在处显示"], ["always", "始终显示"]]} onChange={(v) => onChange({ syntax: v })} /></Row>
           </>}
           {pane === "count" && <>

@@ -31,6 +31,27 @@ function flatten(nodes: TreeNode[]): TreeNode[] { return nodes.flatMap((n) => (n
 /** 侧栏里显示的路径：太长时只留后半段 */
 function shortPath(p: string) { return p.length > 38 ? "…" + p.slice(-37) : p; }
 
+/** 开始页：没有打开文件夹（或文件夹里还没有文稿）时显示 */
+function Welcome({ hasRoot, recent, onOpen, onNew, onRecent }: { hasRoot: boolean; recent: string[]; onOpen: () => void; onNew: () => void; onRecent: (f: string) => void }) {
+  return (
+    <div className="welcome">
+      <h2>HolyMark</h2>
+      <p>{hasRoot ? "这个文件夹里还没有 Markdown 文稿。" : "打开一个放稿件的文件夹开始写作。文件就是普通的 Markdown，换任何编辑器都能打开。"}</p>
+      <div className="w-acts">
+        {hasRoot ? <button className="btn acc" onClick={onNew}>新建文稿</button> : <button className="btn acc" onClick={onOpen}>打开文件夹…</button>}
+      </div>
+      {!hasRoot && recent.length > 0 && <div className="w-recent">
+        <div className="w-h">最近打开</div>
+        {recent.slice(0, 6).map((f) => (
+          <button key={f} className="w-item" onClick={() => onRecent(f)} title={f}>
+            <Icon name="folder" size={15} /><b>{baseName(f)}</b><small>{dirOf(f)}</small>
+          </button>
+        ))}
+      </div>}
+    </div>
+  );
+}
+
 export default function App() {
   const [s, setS] = useState<Settings>(loadSettings);
   const [be, setBe] = useState<Backend | null>(null);
@@ -102,7 +123,7 @@ export default function App() {
     (async () => {
       const pending = await be.takePendingOpen().catch(() => [] as string[]);
       if (pending.length) { await openExternalFile(pending[pending.length - 1]); return; }
-      const start = be.isDemo ? dirOf(dirOf(demoStartFile)) : s.lastFolder;
+      const start = be.isDemo ? dirOf(dirOf(demoStartFile)) : s.reopenLast ? s.lastFolder : "";
       if (start) await openFolder(start, be.isDemo ? demoStartFile : undefined).catch(() => update({ lastFolder: "" }));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -141,6 +162,18 @@ export default function App() {
     undoable(`已新建「${baseName(p)}」`, async () => { await be.trashPath(p); if (prev) await openFile(prev); });
     const v = view();
     if (v) { v.focus(); v.dispatch({ selection: { anchor: v.state.doc.length } }); }
+  }
+  /** 关闭文件夹，回到开始页；下次启动也从开始页开始，直到再打开一个文件夹 */
+  async function closeFolder() {
+    if (!be || !root) return;
+    await flush().catch(() => {});
+    await Promise.all([...staged.current.keys()].map((p) => { window.clearTimeout(staged.current.get(p)); return be.commitStaged(p).catch(() => {}); }));
+    staged.current.clear();
+    await be.closeFolder().catch(() => {});
+    live.current = { path: "", text: "", base: "", lastWritten: "", lastVersionAt: 0 };
+    ed.current?.load("");
+    setRoot(""); setTree([]); setPath(""); setText(""); setVersions([]); setCmp(null); setFileCmp(null); setBib([]);
+    update({ lastFolder: "" });
   }
   async function chooseFolder() {
     if (!be) return;
@@ -305,6 +338,12 @@ export default function App() {
   }, [total, text, hs, cursor, s.countPunct]);
 
   const bibMap = useMemo(() => new Map(bib.map((b) => [b.key, b])), [bib]);
+  // 文件卡片要用到的操作，经由 ref 调用，免得每次重新渲染都重建编辑器装饰
+  const fileHooksRef = useRef<{ open: (abs: string) => void; reveal: (abs: string) => void }>({ open: () => {}, reveal: () => {} });
+  fileHooksRef.current = {
+    open: (abs) => { if (/\.(md|markdown)$/i.test(abs)) openExternalFile(abs); else be?.openPath(abs).catch(() => say("没能打开这个文件")); },
+    reveal: (abs) => { be?.reveal(abs).catch(() => {}); },
+  };
   const preview = useMemo(() => ({
     syntax: () => s.syntax,
     citeLabel: (k: string) => { const b = bibMap.get(k); return b ? `${shortAuthor(b.author)}, ${b.year}` : "@" + k; },
@@ -317,7 +356,18 @@ export default function App() {
       if (isTauri) return (window as unknown as { __TAURI_INTERNALS__: { convertFileSrc: (p: string) => string } }).__TAURI_INTERNALS__.convertFileSrc(abs);
       return abs;
     },
-  }), [s.syntax, bibMap]);
+    files: {
+      resolve: (src: string) => {
+        let raw = src.replace(/^<(.*)>$/, "$1");
+        try { raw = decodeURI(raw); } catch { /* 原样使用 */ }
+        return /^(\/|[A-Za-z]:[\\/])/.test(raw) ? toPosix(raw) : normalize(join(dirOf(live.current.path), raw));
+      },
+      url: (abs: string) => (isTauri ? (window as unknown as { __TAURI_INTERNALS__: { convertFileSrc: (p: string) => string } }).__TAURI_INTERNALS__.convertFileSrc(abs) : abs),
+      preview: (abs: string) => (be ? be.filePreview(abs) : Promise.reject(new Error("no backend"))),
+      open: (abs: string) => fileHooksRef.current.open(abs),
+      reveal: (abs: string) => fileHooksRef.current.reveal(abs),
+    },
+  }), [s.syntax, bibMap, be]);
   const previewKey = `${s.syntax}|${bib.length}`;
 
   const editorStyle = {
@@ -378,6 +428,7 @@ export default function App() {
       case "settings": setDlg("settings"); break;
       case "new_file": newFile(); break;
       case "open_folder": chooseFolder(); break;
+      case "close_folder": closeFolder(); break;
       case "save_version": if (path) setDlg("save"); break;
       case "find": ed.current?.find(); break;
       case "search": setDlg((d) => (d === "palette" ? null : "palette")); break;
@@ -661,7 +712,7 @@ export default function App() {
     ...(s.recentFolders.filter((f) => f !== root).length ? [{ head: "最近打开" } as MenuEntry, ...s.recentFolders.filter((f) => f !== root).map((f) => ({ label: baseName(f), hint: shortPath(dirOf(f)), icon: "folder", run: () => openFolder(f).catch(() => say("这个文件夹已经不在了")) }))] : []),
     ...(s.recentFolders.filter((f) => f !== root).length ? [{ sep: true } as MenuEntry] : []),
     { label: "打开其他文件夹…", icon: "folder", hint: "⌘O", run: chooseFolder },
-    ...(root ? [{ label: isWindows ? "在资源管理器中显示" : "在访达中显示", icon: "open", run: () => be?.reveal(root) }] : []),
+    ...(root ? [{ label: isWindows ? "在资源管理器中显示" : "在访达中显示", icon: "open", run: () => be?.reveal(root) }, { sep: true } as MenuEntry, { label: "关闭文件夹", icon: "close", run: closeFolder }] : []),
   ];
   const folderList = (nodes: TreeNode[]): TreeNode[] => nodes.flatMap((n) => (n.dir ? [n, ...folderList(n.children)] : []));
   const moveItems: PaletteItem[] = moving ? [
@@ -703,6 +754,7 @@ export default function App() {
     { group: "命令", icon: "cmd", title: "保存版本", keys: ["⌘", "S"].map((k) => keyName(k)), run: () => setDlg("save") },
     { group: "命令", icon: "cmd", title: "插入文件链接…", keys: ["⌘", "⇧", "C"].map((k) => keyName(k)), run: () => setTimeout(openInsert, 0) },
     { group: "命令", icon: "cmd", title: "打开文件夹…", keys: ["⌘", "O"].map((k) => keyName(k)), run: chooseFolder },
+    ...(root ? [{ group: "命令", icon: "cmd", title: "关闭文件夹", run: closeFolder }] : []),
     { group: "命令", icon: "cmd", title: "新建文稿", keys: ["⌘", "N"].map((k) => keyName(k)), run: newFile },
     { group: "命令", icon: "cmd", title: "与其他文稿对比…", run: () => setTimeout(() => setDlg("cmpfile"), 0) },
     { group: "命令", icon: "cmd", title: "Markdown 语法速查", run: () => setTimeout(() => setDlg("help_syntax"), 0) },
@@ -770,7 +822,12 @@ export default function App() {
           try { src = await be.copyIntoFolder(p, join(dirOf(path), "assets")); copied++; } catch (e) { say(`图片复制失败：${e}`); continue; }
         }
         imgs.push(linkFor(src, path).text);
-      } else { links.push(linkFor(p, path).text); rememberInsert(p); }
+      } else {
+        // PDF、Word 这些单独成段（显示成预览卡片），其余插成行内链接
+        const l = linkFor(p, path);
+        (l.block ? imgs : links).push(l.text);
+        rememberInsert(p);
+      }
     }
     if (imgs.length) {
       const ins = blockInsertSpec(v.state.doc.toString(), pos, [...(links.length ? [links.join("　")] : []), ...imgs].join("\n\n"));
@@ -837,7 +894,7 @@ export default function App() {
   }
   const dirty = !!path && text !== live.current.base;
 
-  const appCls = ["app", showSide ? "" : "no-side", showPanel ? "" : "no-panel", focus ? "focus" : "", isTauri && isMac ? "mac" : "", customFrame ? "framed" : ""].join(" ");
+  const appCls = [s.eqNumbers ? "eqnum" : "", "app", showSide ? "" : "no-side", showPanel ? "" : "no-panel", focus ? "focus" : "", isTauri && isMac ? "mac" : "", customFrame ? "framed" : ""].join(" ");
   const fileName = baseName(path);
   const crumbs = path && root ? relative(root, path).split("/") : [];
 
@@ -854,7 +911,7 @@ export default function App() {
         {path && saveState === "error" && <div className="savestate" role="alert" title="自动保存没有成功，继续编辑会再次尝试"><i />保存失败</div>}
         <button className="searchbtn" onClick={() => setDlg("palette")} aria-label="搜索或执行命令"><Icon name="search" size={14} /><span className="lbl">搜索</span><kbd>{kbd("⌘K")}</kbd></button>
         <button className={"ib" + (focus ? " on" : "")} title={kbd("专注 ⌘⇧F")} aria-label="专注模式" onClick={() => setFocus(!focus)}><Icon name="focus" /></button>
-        <button className="ib primary" title={kbd("导出 ⌘⇧E")} disabled={!path} onClick={openExport}>导出</button>
+        <button className="ib" title={kbd("导出 ⌘⇧E")} aria-label="导出" disabled={!path} onClick={openExport}><Icon name="export" /></button>
         <button className="ib" title={kbd("切换右栏 ⌘/")} aria-label="切换右栏" onClick={() => setShowPanel(!showPanel)}><Icon name="panel" /></button>
         {customFrame && <WindowControls />}
       </header>
@@ -875,12 +932,12 @@ export default function App() {
       </aside>
 
       <main className="main">
-        <Ribbon view={ed.current?.view() ?? null} author={AUTHOR} settings={s} fonts={fonts} layout={layout} onLayout={applyLayout}
+        {path && <Ribbon view={ed.current?.view() ?? null} author={AUTHOR} settings={s} fonts={fonts} layout={layout} onLayout={applyLayout}
           collapsed={s.ribbonCollapsed} setCollapsed={(c) => update({ ribbonCollapsed: c })}
-          onPickImage={pickImage} onCite={openInsert} active={fmt.active} block={fmt.block} />
+          onPickImage={pickImage} onCite={openInsert} active={fmt.active} block={fmt.block} />}
         <div className="scroller" ref={scroller} onScroll={() => window.requestAnimationFrame(syncScrollHeading)} onMouseDown={clickBelow}>
           <div className="doc">
-            {!path && <div className="welcome"><h2>HolyMark</h2><p>打开一个放稿件的文件夹开始写作。文件就是普通的 Markdown，换任何编辑器都能打开。</p><button className="btn acc" onClick={chooseFolder}>打开文件夹</button></div>}
+            {!path && <Welcome hasRoot={!!root} recent={s.recentFolders} onOpen={chooseFolder} onNew={() => newFile()} onRecent={(f) => openFolder(f).catch(() => { say("这个文件夹已经不在了"); update({ recentFolders: s.recentFolders.filter((x) => x !== f) }); })} />}
             <div hidden={!path}><Editor ref={ed} initial="" preview={preview} previewKey={previewKey} onChange={onChange} onSelection={onSelection} onImages={insertImages} /></div>
           </div>
         </div>

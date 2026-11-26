@@ -29,6 +29,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let file = SubmenuBuilder::new(app, "文件")
         .item(&item("new_file", "新建文稿", Some("CmdOrCtrl+N"))?)
         .item(&item("open_folder", "打开文件夹…", Some("CmdOrCtrl+O"))?)
+        .item(&item("close_folder", "关闭文件夹", None)?)
         .separator()
         .item(&item("save_version", "保存版本…", Some("CmdOrCtrl+S"))?)
         .item(&item("export", "导出…", Some("CmdOrCtrl+Shift+E"))?)

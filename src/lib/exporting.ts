@@ -42,6 +42,8 @@ export interface ExportOptions {
   csl: string;
   notes: "comment" | "drop";
   toc: boolean;
+  /** 行间公式编号（PDF） */
+  eqNum: boolean;
   extra: string;
   mdNotes: "keep" | "drop";
   mdCite: "keep" | "text";
@@ -53,7 +55,7 @@ export const EMPTY: ExportOptions = {
   fmt: "docx", ref: "", paper: "", pw: "", ph: "", mt: "", mb: "", ml: "", mr: "",
   header: "", headerAlign: "center", footer: "", footerAlign: "center",
   cjk: "", latin: "", size: "", lsMode: "multi", ls: "", indent: "", before: "", after: "", align: "",
-  H: { 1: { ...H0 }, 2: { ...H0 }, 3: { ...H0 } }, csl: "", notes: "comment", toc: false, extra: "",
+  H: { 1: { ...H0 }, 2: { ...H0 }, 3: { ...H0 } }, csl: "", notes: "comment", toc: false, eqNum: false, extra: "",
   mdNotes: "keep", mdCite: "keep", mdFm: "keep",
 };
 export function cloneOpts(o: ExportOptions): ExportOptions {
@@ -371,6 +373,7 @@ export function typstTemplate(o: ExportOptions, title: string): string {
     "  #block(inset: (left: 1.5em, top: -0.4em))[#it.description]",
     "]",
     "#set table(inset: 6pt, stroke: 0.5pt)",
+    ...(o.eqNum ? ["#set math.equation(numbering: \"(1)\")"] : []),
     "#show figure.where(kind: table): set figure.caption(position: top)",
     "#show figure.where(kind: image): set figure.caption(position: bottom)",
     "$if(highlighting-definitions)$",

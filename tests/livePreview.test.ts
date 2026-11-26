@@ -108,3 +108,22 @@ describe("待办父项进度", () => {
     expect(found).toContain("2/3");
   });
 });
+
+describe("公式编辑：光标所在的公式", async () => {
+  const { mathAt } = await import("../src/editor/mathTools");
+  const at = (doc: string, mark: string) => {
+    const pos = doc.indexOf(mark);
+    return mathAt(EditorState.create({ doc: doc.replace(mark, ""), selection: { anchor: pos } }));
+  };
+  it("行内 $…$", () => {
+    expect(at("公式 $e^{i|\\pi}$ 结束", "|")).toMatchObject({ tex: "e^{i\\pi}", display: false });
+    expect(at("公式 $e$ 结|束", "|")).toBeNull();
+  });
+  it("行间 $$ 块", () => {
+    expect(at("前文\n\n$$\na+|b\n$$\n\n后文", "|")).toMatchObject({ tex: "a+b", display: true });
+    expect(at("$$x|$$", "|")).toMatchObject({ tex: "x", display: true });
+  });
+  it("两个公式之间的正文不算", () => {
+    expect(at("$$\na\n$$\n正|文\n$$\nb\n$$", "|")).toBeNull();
+  });
+});

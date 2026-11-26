@@ -8,6 +8,9 @@ import { syntaxTree } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
 import katex from "katex";
 import { TableWidget } from "./tableWidget";
+import { iconSvg } from "../lib/icons";
+import { FileCardWidget, FileHooks } from "./fileCard";
+import { CARD_EXT } from "../lib/filePreview";
 
 export interface PreviewOptions {
   /** 把文档里的图片路径解析成可显示的地址 */
@@ -16,6 +19,8 @@ export interface PreviewOptions {
   citeLabel: (key: string) => string;
   /** 语法显示方式：只在光标所在块显示，或始终显示 */
   syntax: () => "active" | "always";
+  /** 单独成段的文件链接显示成预览卡片（不给就按普通链接显示） */
+  files?: FileHooks;
 }
 
 interface Block {
@@ -155,6 +160,7 @@ class ImageWidget extends WidgetType {
     const grip = document.createElement("span");
     grip.className = "hm-igrip";
     grip.title = "拖动缩放";
+    grip.innerHTML = iconSvg("resize", 12);
     el.append(bar, grip);
     label.textContent = this.width || "原始大小";
 
@@ -554,6 +560,16 @@ function blockDecos(state: EditorState, b: Block, active: boolean, decos: Range<
       blockReplace(b, new ImageWidget(m[2], m[1], true, opts, imageWidth(m[4] || "")));
     }
     return;
+  }
+  // 只有一个文件链接的段落（PDF、Word、PPT、Excel、Markdown）：显示成纸张预览卡片
+  if (b.kind === "Paragraph" && opts.files && !active) {
+    const m = text.match(/^\[([^\]]*)\]\((<[^>]+>|[^)\s]+)\)\s*$/);
+    if (m) {
+      const href = m[2].replace(/^<|>$/g, "");
+      let dec = href;
+      try { dec = decodeURI(href); } catch { /* 原样用 */ }
+      if (!/^[a-z][a-z0-9+.-]*:/i.test(href) && CARD_EXT.test(dec)) { blockReplace(b, new FileCardWidget(href, m[1], opts.files)); return; }
+    }
   }
   // 段落里单独占一行的图片（和上一行之间没空行，Markdown 算同一段）：这一行也按插图显示，不缩成行内小图
   const skip: [number, number][] = [];

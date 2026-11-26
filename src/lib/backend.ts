@@ -7,6 +7,7 @@ import { longManuscript } from "./stress";
 import { toPosix } from "./paths";
 import { isWindows } from "./platform";
 import { splitBlocks } from "./markdown";
+import type { FilePreview } from "./filePreview";
 
 export interface TreeNode { name: string; path: string; dir: boolean; children: TreeNode[] }
 export type VersionSource = "saved" | "external" | "auto";
@@ -56,6 +57,8 @@ export interface Backend {
   /** 导出进行到哪一步：style → pandoc → typst → write */
   onExportProgress(cb: (stage: string) => void): () => void;
   openFolder(root: string): Promise<TreeNode[]>;
+  /** 关闭文件夹：停止监听外部修改 */
+  closeFolder(): Promise<void>;
   listTree(root: string): Promise<TreeNode[]>;
   readText(path: string): Promise<string>;
   writeText(path: string, content: string): Promise<void>;
@@ -76,6 +79,8 @@ export interface Backend {
   movePath(path: string, dir: string): Promise<string>;
   /** 移到废纸篓 / 回收站 */
   trashPath(path: string): Promise<void>;
+  /** 文件预览卡片的内容 */
+  filePreview(path: string): Promise<FilePreview>;
   /** 把文件复制进某个文件夹（重名时加编号），返回新路径 */
   copyIntoFolder(src: string, dir: string): Promise<string>;
   /** 从访达 / 资源管理器拖文件进窗口：over（拖着移动）、drop（松手，带路径）、leave（拖出去或取消）。坐标是窗口里的 CSS 像素 */
@@ -120,6 +125,7 @@ async function tauriBackend(): Promise<Backend> {
       return () => { alive = false; un?.(); };
     },
     openFolder: (root) => invoke("open_folder", { root }),
+    closeFolder: () => invoke("close_folder"),
     listTree: (root) => invoke("list_tree", { root }),
     readText: (path) => invoke("read_text", { path }),
     writeText: (path, content) => invoke("write_text", { path, content }),
@@ -140,6 +146,7 @@ async function tauriBackend(): Promise<Backend> {
     movePath: (path, dir) => invoke("move_path", { path, dir }),
     trashPath: (path) => invoke("trash_path", { path }),
     copyIntoFolder: (src, dir) => invoke("copy_into_folder", { src, dir }),
+    filePreview: (path) => invoke("file_preview", { path }),
     onFileDrop(cb) {
       let un: (() => void) | null = null, alive = true;
       import("@tauri-apps/api/webview").then(async ({ getCurrentWebview }) => {
@@ -229,6 +236,7 @@ function demoBackend(): Backend {
     async openPath() { /* 浏览器里打不开本机文件 */ },
     onExportProgress() { return () => {}; },
     async openFolder() { return tree(); },
+    async closeFolder() { /* 演示文件夹没有监听 */ },
     async listTree() { return tree(); },
     async readText(path) { return files.get(path) ?? ""; },
     async writeText(path, c) { files.set(path, c); },
@@ -289,6 +297,11 @@ function demoBackend(): Backend {
     async trashPath(path) {
       for (const k of [...files.keys()]) if (k === path || k.startsWith(path + "/")) files.delete(k);
       for (const d of [...dirs]) if (d === path || d.startsWith(path + "/")) dirs.delete(d);
+    },
+    async filePreview(path) {
+      const t = files.get(path);
+      if (t === undefined) throw new Error("找不到文件");
+      return { kind: "md", title: "", lines: t.split(/\n\s*\n/).map((x) => x.trim()).filter(Boolean).slice(0, 10), size: t.length, modified: Date.now() };
     },
     async copyIntoFolder(src, dir) { const p = `${dir}/${src.slice(src.lastIndexOf("/") + 1)}`; files.set(p, files.get(src) ?? ""); return p; },
     onFileDrop() { return () => {}; },

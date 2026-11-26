@@ -23,17 +23,17 @@ function TB({ title, onClick, children, className, on, disabled }: { title: stri
 
 /** 行内格式按钮：粗体、斜体、删除线、行内代码、公式 */
 const INLINE: { k: InlineKind; title: string; icon: React.ReactNode }[] = [
-  { k: "bold", title: "粗体 ⌘B", icon: <b className="gl-b">B</b> },
-  { k: "italic", title: "斜体 ⌘I", icon: <i className="gl-i">I</i> },
-  { k: "strike", title: "删除线 ⌘⇧X", icon: <s className="gl-s">S</s> },
+  { k: "bold", title: "粗体 ⌘B", icon: <Icon name="bold" /> },
+  { k: "italic", title: "斜体 ⌘I", icon: <Icon name="italic" /> },
+  { k: "strike", title: "删除线 ⌘⇧X", icon: <Icon name="strike" /> },
   { k: "code", title: "行内代码 ⌘E", icon: <Icon name="code" /> },
   { k: "math", title: "行内公式 ⌘⇧M", icon: <Icon name="math" /> },
 ];
 /** 功能区里多出来的：高亮、上标、下标 */
 const MORE_INLINE: { k: InlineKind; title: string; icon: React.ReactNode }[] = [
   { k: "highlight", title: "高亮 ⌘⇧H", icon: <Icon name="highlight" /> },
-  { k: "sup", title: "上标（x^2^）", icon: <span className="gl-sup">x<sup>2</sup></span> },
-  { k: "sub", title: "下标（H~2~O）", icon: <span className="gl-sup">x<sub>2</sub></span> },
+  { k: "sup", title: "上标（x^2^）", icon: <Icon name="sup" /> },
+  { k: "sub", title: "下标（H~2~O）", icon: <Icon name="sub" /> },
 ];
 
 /* ---------------- 选中文字时的浮动工具栏 ---------------- */

@@ -11,6 +11,7 @@ import type { TreeNode } from "../lib/backend";
 import { BibEntry, shortAuthor } from "../lib/bib";
 import { baseName, dirOf, relative } from "../lib/paths";
 import { kbd } from "../lib/platform";
+import { CARD_EXT } from "../lib/filePreview";
 
 export type InsertPick = { kind: "file"; path: string } | { kind: "bib"; key: string };
 type Row = { kind: "file"; node: TreeNode; dir: string } | { kind: "bib"; b: BibEntry };
@@ -145,5 +146,7 @@ export function linkFor(file: string, docPath: string) {
   const name = baseName(file);
   const r = relative(dirOf(docPath), file);
   const rel = /[\s()<>]/.test(r) ? `<${r}>` : r;
-  return TYPE[extOf(name)] === "img" ? { text: `![${name.replace(/\.[^.]+$/, "")}](${rel})`, block: true } : { text: `[${name.replace(/\.(md|markdown)$/i, "")}](${rel})`, block: false };
+  if (TYPE[extOf(name)] === "img") return { text: `![${name.replace(/\.[^.]+$/, "")}](${rel})`, block: true };
+  // PDF、Word、PPT、Excel、Markdown 单独成段，正文里显示成预览卡片
+  return { text: `[${name.replace(/\.[^.]+$/, "")}](${rel})`, block: CARD_EXT.test(name) };
 }

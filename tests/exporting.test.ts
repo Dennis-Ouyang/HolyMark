@@ -127,3 +127,15 @@ describe("defaults file", () => {
     expect(normalizeOpts({ fmt: "pdf", H: { 1: { size: "16" } } } as never).H[2].num).toBe("");
   });
 });
+
+describe("导出提示的归并", async () => {
+  const { summarizeWarnings } = await import("../src/components/ExportDialog");
+  it("说明行不单独计数，相同的合并，常见的换成中文", () => {
+    const raw = ["warning: unknown font family: songti sc", "  ┌─ output.typ:3:10", "  │", "warning: unknown font family: songti sc", "  ┌─ output.typ:9:2", "[WARNING] Could not fetch resource 'a.png'", "[WARNING] Some other thing"].join("\n");
+    expect(summarizeWarnings(raw)).toEqual([
+      { text: "系统里没有字体「songti sc」，用了替代字体", n: 2 },
+      { text: "找不到文件：a.png", n: 1 },
+      { text: "Some other thing", n: 1 },
+    ]);
+  });
+});

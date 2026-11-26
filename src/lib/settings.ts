@@ -19,6 +19,10 @@ export interface Settings {
   autoMinutes: number;
   mergeSeconds: number;
   lastFolder: string;
+  /** 行间公式右侧显示编号 (1) (2) … */
+  eqNumbers: boolean;
+  /** 启动时自动打开上次的文件夹；关掉就从开始页开始 */
+  reopenLast: boolean;
   /** 最近打开的文件夹，最新的在前 */
   recentFolders: string[];
   ribbonCollapsed: boolean;
@@ -48,6 +52,8 @@ export const DEFAULTS: Settings = {
   mergeSeconds: 5,
   lastFolder: "",
   recentFolders: [],
+  reopenLast: true,
+  eqNumbers: false,
   ribbonCollapsed: false,
   showAllFiles: false,
   v: 2,

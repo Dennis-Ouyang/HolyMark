@@ -39,6 +39,9 @@
   },
   "bundle": {
     "active": true,
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "targets": "all",
     "category": "Productivity",
     "icon": [

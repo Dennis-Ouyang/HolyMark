@@ -11,6 +11,7 @@ import { flash, livePreview, PreviewOptions } from "./livePreview";
 import { continueList, indentList, toggleInline } from "./commands";
 import { autoPair } from "./autoPair";
 import { cjkEmphasis, highlight } from "./cjkEmphasis";
+import { mathTools } from "./mathTools";
 import { Subscript, Superscript } from "@lezer/markdown";
 
 export interface EditorHandle {
@@ -65,6 +66,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial,
           syntaxHighlighting(codeHighlight),
           previewCompartment.current.of(livePreview(preview)),
           autoPair(),
+          mathTools(),
           keymap.of([
             { key: "Enter", run: continueList },
             { key: "Tab", run: (v) => indentList(v, 1) },

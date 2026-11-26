@@ -133,9 +133,11 @@ describe("图片宽度", async () => {
 
 describe("插入文件链接的写法", async () => {
   const { linkFor } = await import("../src/components/InsertFile");
-  it("中文直接写，有空格时用尖括号，图片是块级的 ![]()", () => {
-    expect(linkFor("/稿/资料/访谈提纲.md", "/稿/正文/03.md")).toEqual({ text: "[访谈提纲](../资料/访谈提纲.md)", block: false });
-    expect(linkFor("/稿/正文/02 文献综述.md", "/稿/正文/03.md")).toEqual({ text: "[02 文献综述](<02 文献综述.md>)", block: false });
+  it("中文直接写，有空格时用尖括号；图片、PDF、Word、Markdown 单独成段（显示成插图或预览卡片）", () => {
+    expect(linkFor("/稿/资料/访谈提纲.md", "/稿/正文/03.md")).toEqual({ text: "[访谈提纲](../资料/访谈提纲.md)", block: true });
+    expect(linkFor("/稿/正文/02 文献综述.md", "/稿/正文/03.md")).toEqual({ text: "[02 文献综述](<02 文献综述.md>)", block: true });
+    expect(linkFor("/稿/资料/开题报告.docx", "/稿/正文/03.md")).toEqual({ text: "[开题报告](../资料/开题报告.docx)", block: true });
+    expect(linkFor("/稿/资料/数据.zip", "/稿/正文/03.md")).toEqual({ text: "[数据](../资料/数据.zip)", block: false });
     expect(linkFor("/稿/正文/assets/框架图.png", "/稿/正文/03.md")).toEqual({ text: "![框架图](assets/框架图.png)", block: true });
   });
 });
