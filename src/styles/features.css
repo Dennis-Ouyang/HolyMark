@@ -51,3 +51,19 @@
 .tp-foot .lnk { font-size: 12px; color: var(--fg-3); padding: 2px 4px; border-radius: 5px; }
 .tp-foot .lnk:hover { color: var(--fg); background: var(--hover); }
 .hm-repeat { text-decoration: underline wavy var(--warn); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+
+/* ---------- 写作统计 ---------- */
+.wstats { margin: 6px 4px 2px; padding: 10px 6px 2px; border-top: 1px solid var(--line); }
+.ws-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--fg-2); margin-bottom: 8px; }
+.ws-head b { font-size: 13px; font-weight: 600; color: var(--fg); }
+.ws-bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; height: 56px; }
+.ws-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; cursor: default; }
+.ws-col i { width: 100%; max-width: 18px; border-radius: 3px; background: var(--line-2); transition: background 120ms; }
+.ws-col.on i { background: var(--fg-3); }
+.ws-col span { font-size: 10px; line-height: 1; color: var(--fg-3); }
+/* 文件树悬停的小提示 */
+.hm-tip { position: fixed; z-index: 80; display: flex; align-items: baseline; gap: 8px; height: 28px; padding: 0 10px; border-radius: 8px; background: var(--raised); box-shadow: var(--float); font-size: 12px; white-space: nowrap; pointer-events: none; transform-origin: 0 50%; animation: tipSide 120ms var(--ease); line-height: 28px; }
+.hm-tip b { font-weight: 500; color: var(--fg); }
+.hm-tip span { color: var(--fg-3); }
+@keyframes tipSide { from { opacity: 0; transform: translateX(-3px) scale(.97); } to { opacity: 1; transform: none; } }
+.leaving .hm-tip { animation: fadeOut 90ms var(--ease-out) forwards; }

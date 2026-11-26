@@ -181,7 +181,7 @@ export function Palette({ items, search, onClose, placeholder, pinned }: { items
 }
 
 /* ---------------- 字数浮窗 ---------------- */
-export function CountPop({ title, text, count, anchor, onClose }: { title: string; text: string; count: (t: string, p: boolean) => number; anchor: DOMRect; onClose: () => void }) {
+export function CountPop({ title, text, count, anchor, onClose, children }: { title: string; text: string; count: (t: string, p: boolean) => number; anchor: DOMRect; onClose: () => void; children?: React.ReactNode }) {
   useEffect(() => {
     // 点状态栏上打开它的那个按钮由按钮自己处理（再点一次是关闭），这里不抢
     const f = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest("[data-countpop]")) onClose(); };
@@ -197,6 +197,7 @@ export function CountPop({ title, text, count, anchor, onClose }: { title: strin
         <span>字符数（含空格）</span><b>{text.length.toLocaleString()}</b>
         <span>字符数（不含空格）</span><b>{text.replace(/\s/g, "").length.toLocaleString()}</b>
       </div>
+      {children}
     </div>
   );
 }

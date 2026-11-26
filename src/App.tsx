@@ -24,6 +24,7 @@ import { ExportDialog } from "./components/ExportDialog";
 import type { Pane } from "./components/Dialogs";
 import { features, FeatureHooks } from "./editor/features";
 import { useTidy } from "./features/useTidy";
+import { useWritingStats } from "./features/useWritingStats";
 
 const AUTHOR = "我";
 /** macOS 有原生菜单负责快捷键；Windows 和浏览器预览里由前端处理 */
@@ -196,6 +197,7 @@ export default function App() {
       await be.writeText(l.path, l.text);
       l.lastWritten = l.text;
       setSaveState("saved");
+      wstats.noteSave(l.path, l.text);
     }
   }
 
@@ -206,6 +208,7 @@ export default function App() {
     live.current = { path: p, text: content, base: content, lastWritten: content, lastVersionAt: Date.now() };
     setPath(p); setText(content); setCmp(null); setFileCmp(null); setFresh(null);
     ed.current?.load(content);
+    wstats.noteOpen(p, content);
     if (scroller.current) scroller.current.scrollTop = 0;
     setScrollHeading(0);
     // 打开时留一个基线版本，之后的任何修改都能回到这里
@@ -420,6 +423,7 @@ export default function App() {
 
   /* ---------- 新功能 ---------- */
   const openSettings = (pane?: Pane) => { setSettingsPane(pane); setDlg("settings"); };
+  const wstats = useWritingStats({ be, tree, livePath: () => live.current.path, liveText: () => live.current.text, withPunct: s.countPunct });
   const tidy = useTidy({ view, rules: s.tidy, text, say, openSettings: () => openSettings("tidy") });
 
   /* ---------- 菜单 ---------- */
@@ -619,6 +623,7 @@ export default function App() {
     const cur = live.current.path;
     if (cur === from || cur.startsWith(from + "/")) {
       const np = to + cur.slice(from.length);
+      wstats.noteMove(from, to);
       live.current.path = np;
       setPath(np);
       if (be) setVersions(await be.listVersions(np).catch(() => []));
@@ -980,7 +985,7 @@ export default function App() {
         {be?.isDemo && <span className="sb demo-tag">浏览器预览 · 演示文件夹</span>}
       </footer>
 
-      <Presence>{countPop && <CountPop title={countPop.title} text={countPop.text} count={count} anchor={countPop.rect} onClose={() => setCountPop(null)} />}</Presence>
+      <Presence>{countPop && <CountPop title={countPop.title} text={countPop.text} count={count} anchor={countPop.rect} onClose={() => setCountPop(null)}>{countPop.title === "全文" && <wstats.Section />}</CountPop>}</Presence>
       <Presence>{dlg === "save" && <SaveVersionDialog changes={saveChanges} fileName={fileName} onSave={saveVersion} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{dlg === "settings" && <SettingsDialog s={s} fonts={fonts} onChange={update} initialPane={settingsPane} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{(dlg === "help_syntax" || dlg === "help_keys") && <HelpDialog kind={dlg === "help_syntax" ? "syntax" : "keys"} onClose={() => setDlg(null)} />}</Presence>
@@ -989,6 +994,7 @@ export default function App() {
       <Presence ms={100}>{insertAt && <InsertFile at={insertAt} files={flatten(tree)} docPath={path} root={root} bib={bib} recent={recentIns}
         onPick={pickInsert} onPickOther={() => { setInsertAt(null); setTimeout(citeOtherFile, 0); }} onClose={() => { setInsertAt(null); view()?.focus(); }} />}</Presence>
       {tidy.node}
+      {wstats.treeTip}
       <Presence>{dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{dlg === "cmpfile" && <Palette items={cmpItems} search={noSearch} pinned={cmpPick} onClose={() => setDlg(null)} placeholder="选一篇文稿，和当前文稿左右对比" />}</Presence>
       <Presence>{dlg === "move" && moving && <Palette items={moveItems} search={noSearch} onClose={() => { setDlg(null); setMoving(null); }} placeholder={`把「${moving.name}」移到哪个文件夹`} />}</Presence>

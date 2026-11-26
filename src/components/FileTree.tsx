@@ -53,7 +53,7 @@ function Item({ node, depth, current, onOpen, renaming, onRename, onMenu }: Item
   if (node.dir) {
     return (
       <>
-        <button className={"tn dir" + (open ? "" : " closed")} style={style} onClick={() => setOpen(!open)} onContextMenu={menu} role="treeitem" aria-expanded={open}>
+        <button className={"tn dir" + (open ? "" : " closed")} style={style} data-path={node.path} onClick={() => setOpen(!open)} onContextMenu={menu} role="treeitem" aria-expanded={open}>
           <span className="chev"><Icon name="chev" size={12} /></span><span className="nm">{node.name}</span>
         </button>
         {open && <div className="kids">{node.children.length ? node.children.map((c) => <Item key={c.path} node={c} depth={depth + 1} {...{ current, onOpen, renaming, onRename, onMenu }} />)
@@ -64,7 +64,7 @@ function Item({ node, depth, current, onOpen, renaming, onRename, onMenu }: Item
   const ext = node.name.includes(".") ? node.name.split(".").pop()!.toUpperCase() : "";
   return (
     <button className={"tn" + (node.path === current ? " active" : "") + (md ? "" : " other")} style={style}
-      onClick={() => md && onOpen(node.path)} onContextMenu={menu} title={md ? node.path : "暂时只能打开 Markdown 文件"} role="treeitem">
+      onClick={() => md && onOpen(node.path)} onContextMenu={menu} data-path={node.path} title={md ? undefined : "暂时只能打开 Markdown 文件"} role="treeitem">
       <span className="ico"><Icon name={md ? "doc" : "file"} size={14} /></span>
       <span className="nm">{md ? node.name.replace(/\.(md|markdown)$/i, "") : node.name.replace(/\.[^.]+$/, "")}</span>
       {!md && <span className="ext">{ext}</span>}

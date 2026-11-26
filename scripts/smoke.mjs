@@ -47,6 +47,23 @@ step("N10 中文排版整理：预览、执行、撤销", async (page) => {
   if (!undone.includes("测试一下,好的...")) throw new Error("撤销没有还原");
   await page.evaluate((t) => { const v = window.__hm.view(); v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: t } }); }, before);
 });
+step("N14 写作统计：今天净增、7 天柱子、文件树悬停字数", async (page) => {
+  await page.evaluate(() => { const v = window.__hm.view(); v.focus(); v.dispatch({ selection: { anchor: v.state.doc.length } }); });
+  await page.keyboard.type("统计测试");
+  await page.waitForTimeout(1000);
+  await page.click(".statusbar [data-countpop]");
+  await page.waitForSelector(".countpop .wstats");
+  const head = await page.textContent(".ws-head b");
+  if (!/^\+/.test(head.trim())) throw new Error("今天净增不对：" + head);
+  if ((await page.$$(".ws-col")).length !== 7) throw new Error("不是 7 根柱子");
+  await page.click(".statusbar [data-countpop]");
+  await page.hover(".tree .tn[data-path*='02 文献综述']");
+  await page.waitForSelector(".hm-tip", { timeout: 3000 });
+  const t = await page.textContent(".hm-tip");
+  if (!/字/.test(t)) throw new Error("悬停提示不对：" + t);
+  await page.mouse.move(700, 500);
+  for (let i = 0; i < 4; i++) await page.keyboard.press("Backspace");
+});
 
 async function run(theme) {
   const browser = await chromium.launch();
