@@ -54,6 +54,8 @@ export interface Backend {
   reveal(path: string): Promise<void>;
   /** 用系统默认的程序打开 */
   openPath(path: string): Promise<void>;
+  /** 用系统浏览器打开网页链接（http、https、mailto） */
+  openUrl(url: string): Promise<void>;
   /** 导出进行到哪一步：style → pandoc → typst → write */
   onExportProgress(cb: (stage: string) => void): () => void;
   openFolder(root: string): Promise<TreeNode[]>;
@@ -120,6 +122,7 @@ async function tauriBackend(): Promise<Backend> {
     readReference: (path) => invoke("read_reference", { path }),
     reveal: (path) => invoke("reveal", { path }),
     openPath: (path) => invoke("open_path", { path }),
+    openUrl: (url) => invoke("open_url", { url }),
     onExportProgress(cb) {
       let un: (() => void) | null = null, alive = true;
       listen<string>("export-progress", (e) => cb(e.payload)).then((u) => { if (alive) un = u; else u(); });
@@ -235,6 +238,7 @@ function demoBackend(): Backend {
     async readReference() { throw new Error("浏览器预览里不能读取参考文档"); },
     async reveal() { /* 浏览器里没有 Finder */ },
     async openPath() { /* 浏览器里打不开本机文件 */ },
+    async openUrl(url) { window.open(url, "_blank", "noopener,noreferrer"); },
     onExportProgress() { return () => {}; },
     async openFolder() { return tree(); },
     async closeFolder() { /* 演示文件夹没有监听 */ },

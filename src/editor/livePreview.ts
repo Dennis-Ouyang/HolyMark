@@ -14,6 +14,7 @@ import { openNote, parseBody } from "./notes";
 const NOTE_SCAN = /\{==([\s\S]+?)==\}\{>>([\s\S]*?)<<\}/g;
 import { FileCardWidget, FileHooks } from "./fileCard";
 import { CARD_EXT } from "../lib/filePreview";
+import { isLocalHref, links, LinkHooks } from "./links";
 
 export interface PreviewOptions {
   /** 把文档里的图片路径解析成可显示的地址 */
@@ -24,6 +25,8 @@ export interface PreviewOptions {
   syntax: () => "active" | "always";
   /** 单独成段的文件链接显示成预览卡片（不给就按普通链接显示） */
   files?: FileHooks;
+  /** ⌘ / Ctrl + 点击打开链接（见 links.ts） */
+  links?: LinkHooks;
 }
 
 interface Block {
@@ -706,7 +709,12 @@ function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range
       if (name === "Highlight") decos.push(markCls("hm-hl").range(n.from, n.to));
       // [@key] 是文献引用，不按链接处理
       if (name === "Link" && /^\[@[\w:-]+\]$/.test(doc.sliceString(n.from, n.to))) return false;
-      if (name === "Link") decos.push(markCls("hm-link").range(n.from, n.to));
+      if (name === "Link") {
+        decos.push(markCls("hm-link").range(n.from, n.to));
+        // 本机文件链接前加一个小文件图标，和网页链接区分开
+        const u = n.node.getChild("URL");
+        if (!active && u && isLocalHref(doc.sliceString(u.from, u.to))) decos.push(Decoration.widget({ widget: new TextWidget("", "hm-linkfile"), side: -1 }).range(n.from));
+      }
       const marker = ["EmphasisMark", "CodeMark", "StrikethroughMark", "SuperscriptMark", "SubscriptMark", "HighlightMark", "LinkMark", "URL", "LinkTitle"].includes(name);
       if (marker) {
         const parent = n.node.parent?.name;
@@ -817,5 +825,5 @@ export function livePreview(opts: PreviewOptions): Extension {
     },
     provide: (f) => EditorView.decorations.from(f),
   });
-  return [focusField, field, flashField, glowField, EditorView.focusChangeEffect.of((_s, focusing) => setFocus.of(focusing))];
+  return [focusField, field, flashField, glowField, EditorView.focusChangeEffect.of((_s, focusing) => setFocus.of(focusing)), opts.links ? links(opts.links) : []];
 }

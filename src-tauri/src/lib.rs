@@ -577,6 +577,19 @@ fn open_path(path: String) -> Result<(), String> {
     export::open_path(&path)
 }
 
+/// 用系统浏览器打开网页链接（只认 http、https、mailto）
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    let lower = url.to_ascii_lowercase();
+    if !(lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:")) {
+        return Err("只能打开网页和邮件链接".into());
+    }
+    if url.chars().any(|c| c.is_control()) {
+        return Err("链接不对".into());
+    }
+    export::open_path(&url)
+}
+
 /// 选保存位置（系统「存储为」窗口）。选中的路径记下来，之后允许写到这里，即使在文件夹以外
 #[tauri::command]
 async fn pick_save(app: tauri::AppHandle, state: State<'_, AppState>, title: String, default_path: String, extension: String) -> Result<Option<String>, String> {
@@ -693,6 +706,7 @@ pub fn run() {
             read_reference,
             reveal,
             open_path,
+            open_url,
             pick_save,
             pick_folder,
             create_dir,

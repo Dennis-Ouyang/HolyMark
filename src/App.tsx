@@ -371,6 +371,11 @@ export default function App() {
       open: (abs: string) => fileHooksRef.current.open(abs),
       reveal: (abs: string) => fileHooksRef.current.reveal(abs),
     },
+    links: {
+      docPath: () => live.current.path,
+      openUrl: (url: string) => { be?.openUrl(url).catch(() => say("没能打开这个链接", "error")); },
+      openFile: (abs: string) => fileHooksRef.current.open(abs),
+    },
   }), [s.syntax, bibMap, be]);
   const previewKey = `${s.syntax}|${bib.length}`;
 
