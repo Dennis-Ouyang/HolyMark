@@ -89,25 +89,96 @@ class MermaidWidget extends WidgetType {
   ignoreEvent() { return false; }
 }
 
+/** 属性区常见键名的中文：给读者看的是「标题」「文献库」，不是 title、bibliography */
+const PROP_NAMES: Record<string, string> = {
+  title: "标题", subtitle: "副标题", author: "作者", date: "日期", abstract: "摘要", keywords: "关键词", tags: "标签",
+  bibliography: "文献库", csl: "引用样式", lang: "语言", toc: "目录", "toc-depth": "目录层级", numbersections: "章节编号",
+  papersize: "纸张", geometry: "页边距", fontsize: "字号", mainfont: "西文字体", CJKmainfont: "中文字体", linestretch: "行距",
+  "reference-doc": "参考文档", holymark: "本文版式", "heading-font": "标题字体", "body-font": "正文字体", "font-size": "字号",
+  "line-height": "行距", measure: "版心宽度", description: "说明", category: "分类", status: "状态",
+};
+/** 展开过的属性区（按内容记），重画时保持展开 */
+const openProps = new Set<string>();
+
+/**
+ * 属性区（YAML）：默认收成一行安静的「属性」和键名摘要，点开才显示全部（F7）。
+ * 键名显示中文；分隔用间距，不用虚线。点某一项的值进入源码编辑。
+ */
 class FrontMatterWidget extends WidgetType {
   constructor(readonly yaml: string) { super(); }
   eq(o: FrontMatterWidget) { return o.yaml === this.yaml; }
   toDOM(view: EditorView) {
     const el = document.createElement("div");
-    el.className = "hm-props";
-    el.title = "文件属性（YAML）";
-    let inner = "";
+    el.className = "hm-props" + (openProps.has(this.yaml) ? " open" : "");
+    const rows: [string, string, boolean][] = [];
     for (const line of this.yaml.split("\n")) {
-      const m = line.match(/^([\w-]+):\s*(.+)$/);
+      const m = line.match(/^([\w-]+):\s*(.*)$/);
       const sub = line.match(/^\s+([\w-]+):\s*(.+)$/);
-      if (m) inner += `<span class="hm-prop"><b>${esc(m[1])}</b>${esc(m[2])}</span>`;
-      else if (sub) inner += `<span class="hm-prop sub"><b>${esc(sub[1])}</b>${esc(sub[2])}</span>`;
+      const item = line.match(/^\s+-\s+(.+)$/);
+      if (m) rows.push([m[1], m[2].replace(/^["']|["']$/g, ""), false]);
+      else if (sub) rows.push([sub[1], sub[2].replace(/^["']|["']$/g, ""), true]);
+      else if (item && rows.length) rows[rows.length - 1][1] += (rows[rows.length - 1][1] ? "、" : "") + item[1].replace(/^["']|["']$/g, "");
     }
-    el.innerHTML = inner || `<span class="hm-prop">属性</span>`;
-    el.addEventListener("mousedown", (e) => focusAt(view, el, e, 4));
+    const head = document.createElement("button");
+    head.type = "button";
+    head.className = "hp-h";
+    const tri = document.createElement("span");
+    tri.className = "tri";
+    tri.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.5 11 8l-6 4.5z"/></svg>';
+    const lab = document.createElement("span");
+    lab.className = "lab";
+    lab.textContent = "属性";
+    const sum = document.createElement("span");
+    sum.className = "sum";
+    sum.textContent = rows.filter((x) => !x[2]).map(([k]) => PROP_NAMES[k] || k).join("　");
+    head.append(tri, lab, sum);
+    head.addEventListener("mousedown", (e) => e.preventDefault());
+    head.addEventListener("click", () => {
+      const open = !el.classList.contains("open");
+      el.classList.toggle("open", open);
+      if (open) openProps.add(this.yaml); else openProps.delete(this.yaml);
+      view.requestMeasure();
+    });
+    const list = document.createElement("dl");
+    for (const [k, v, sub] of rows) {
+      const dt = document.createElement("dt");
+      dt.textContent = PROP_NAMES[k] || k;
+      dt.title = k;
+      if (sub) dt.className = "sub";
+      const dd = document.createElement("dd");
+      dd.textContent = v || "—";
+      dd.addEventListener("mousedown", (e) => focusAt(view, el, e, 4));
+      list.append(dt, dd);
+    }
+    el.append(head, list);
     return el;
   }
-  ignoreEvent() { return false; }
+  ignoreEvent() { return true; }
+}
+
+/** 代码块第一行（``` 那一行）：右上角写语言，悬停整个代码块时出现「复制」 */
+class CodeHeadWidget extends WidgetType {
+  constructor(readonly lang: string, readonly code: string) { super(); }
+  eq(o: CodeHeadWidget) { return o.lang === this.lang && o.code === this.code; }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "hm-code-head";
+    const lang = document.createElement("span");
+    lang.className = "hm-code-lang";
+    lang.textContent = this.lang;
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "hm-code-copy";
+    copy.textContent = "复制";
+    copy.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); });
+    copy.addEventListener("click", (e) => {
+      e.stopPropagation();
+      navigator.clipboard?.writeText(this.code).then(() => { copy.textContent = "已复制"; setTimeout(() => { copy.textContent = "复制"; }, 1200); }).catch(() => {});
+    });
+    el.append(lang, copy);
+    return el;
+  }
+  ignoreEvent() { return true; }
 }
 
 /** 图片宽度写在 Pandoc 的属性里：![说明](图.png){width=60%}；返回改好宽度的源码，width 为空表示去掉 */
@@ -585,11 +656,14 @@ function blockDecos(state: EditorState, b: Block, active: boolean, decos: Range<
       blockReplace(b, new MermaidWidget(text.replace(/^```mermaid\s*\n?/, "").replace(/\n?```\s*$/, "")));
       return;
     }
-    linesOf(b, (_n, i, last) => "hm-code" + (i === 0 ? " hm-code-first" : "") + (last ? " hm-code-last" : ""));
+    const first = doc.lineAt(b.from), last = doc.lineAt(b.to);
+    const closed = last.number !== first.number && /^\s*(```|~~~)/.test(last.text);
+    // 渲染状态下开头、结尾的 ``` 行都收窄成同样的高度，上下对称（以前结尾那行藏了字、行高还在，底部空出一整行）
+    linesOf(b, (_n, i, isLast) => "hm-code" + (i === 0 ? " hm-code-first" : "") + (isLast ? " hm-code-last" : "") + (!active && (i === 0 || (isLast && closed)) ? " hm-code-fence" : ""));
     if (!active) {
-      const first = doc.lineAt(b.from), last = doc.lineAt(b.to);
-      decos.push(Decoration.replace({ widget: new TextWidget(info.trim() || "代码", "hm-code-lang") }).range(first.from, first.to));
-      if (last.number !== first.number && /^\s*```/.test(last.text)) decos.push(hide.range(last.from, last.to));
+      const code = doc.sliceString(Math.min(first.to + 1, b.to), closed ? Math.max(first.to + 1, last.from - 1) : b.to);
+      decos.push(Decoration.replace({ widget: new CodeHeadWidget(info.trim() || "代码", code) }).range(first.from, first.to));
+      if (closed) decos.push(hide.range(last.from, last.to));
     }
     return;
   }

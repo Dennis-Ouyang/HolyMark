@@ -282,7 +282,7 @@ kbd { font: 500 11px var(--f-ui); padding: 1px 5px; border-radius: 4px; border: 
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .hm-hl { background: rgba(250,204,21,.24); } }
 .hm-gap { line-height: calc(var(--ed-lh) * .45) !important; }
 /* 所有 Markdown 控制符用同一种等宽字体，和正文字体分开 */
-.hm-mark, .hm-cite-src, .hm-math-src, .hm-code-lang { font-family: var(--mono) !important; font-size: .78rem; font-weight: 400 !important; font-style: normal !important; letter-spacing: 0; }
+.hm-mark, .hm-cite-src, .hm-math-src { font-family: var(--mono) !important; font-size: .78rem; font-weight: 400 !important; font-style: normal !important; letter-spacing: 0; }
 .hm-mark { color: var(--tk); }
 .hm-h .hm-mark { vertical-align: .12em; }
 .hm-flash { animation: flash 1.4s ease-out; }
@@ -400,10 +400,20 @@ body.hm-dragging, body.hm-dragging * { cursor: grabbing !important; user-select:
 .hm-table th { font-weight: 600; border-bottom: 1px solid var(--fg-3); }
 .hm-table td.num { font-variant-numeric: tabular-nums; }
 .hm-table td:hover, .hm-table th:hover { background: var(--hover); }
-.hm-props { display: flex; flex-wrap: wrap; gap: 6px; font: 12px var(--f-ui); color: var(--fg-3); padding: 6px 0 10px; border-bottom: 1px dashed var(--line); border-radius: 0; margin-bottom: 8px; }
-.hm-prop { padding: 1px 7px; border-radius: 5px; background: var(--surface); border: 1px solid var(--line); }
-.hm-prop b { font-weight: 500; color: var(--fg-2); margin-right: 4px; }
-.hm-prop.sub { border-style: dashed; }
+/* 属性区（F7）：默认收成一行安静的「属性」，点开才显示全部；键名显示中文；分隔用间距，不用虚线 */
+.hm-props { margin: 0 0 var(--gap-text); font: 12px/1.6 var(--f-ui); color: var(--fg-3); }
+.hp-h { display: flex; align-items: center; gap: 6px; max-width: 100%; height: 24px; margin-left: -6px; padding: 0 6px; border-radius: 6px; color: var(--fg-3); font-size: 12px; transition: background-color 120ms, color 120ms; }
+.hp-h:hover { background: var(--hover); color: var(--fg-2); }
+.hp-h .tri { display: grid; place-items: center; transition: rotate 160ms var(--ease); }
+.hm-props.open .hp-h .tri { rotate: 90deg; }
+.hp-h .lab { color: var(--fg-2); }
+.hp-h .sum { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hm-props.open .hp-h .sum { display: none; }
+.hm-props dl { display: none; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; margin: 6px 0 0; padding: 0 0 0 16px; }
+.hm-props.open dl { display: grid; }
+.hm-props dt { color: var(--fg-3); }
+.hm-props dt.sub { padding-left: 1em; }
+.hm-props dd { margin: 0; color: var(--fg); overflow-wrap: anywhere; cursor: text; }
 /* 图片：选中框、缩放手柄、工具条都贴着图片本身（.hm-imgbox），不是整栏宽（B12）；
    默认宽度就是正文栏宽，左右不再缩进 */
 .hm-figure { position: relative; text-align: center; cursor: pointer; }
@@ -426,7 +436,14 @@ body.hm-dragging, body.hm-dragging * { cursor: grabbing !important; user-select:
 .hm-code { font-family: var(--mono); font-size: .82rem; line-height: 1.7; background: var(--code-bg); padding: 0 14px !important; text-align: left !important; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
 .hm-code-first { border-top: 1px solid var(--line); border-radius: 8px 8px 0 0; padding-top: 6px !important; }
 .hm-code-last { border-bottom: 1px solid var(--line); border-radius: 0 0 8px 8px; padding-bottom: 6px !important; }
-.hm-code-lang { font: 11px var(--f-ui); color: var(--fg-3); }
+/* 代码块：开头、结尾的 ``` 行收窄成同样高度，上下对称；语言写在右上角，悬停代码块时出现「复制」（F6） */
+.hm-code.hm-code-fence { height: 8px; padding-top: 0 !important; padding-bottom: 0 !important; line-height: 8px; font-size: 0; }
+.hm-code-head { position: absolute; top: 6px; right: 8px; display: flex; align-items: center; gap: 6px; z-index: 1; }
+.hm-code-first { position: relative; }
+.hm-code-lang { font: 11px/20px var(--f-ui); color: var(--fg-3); }
+.hm-code-copy { height: 22px; padding: 0 8px; border-radius: 5px; font: 12px var(--f-ui); color: var(--fg-2); background: var(--raised); box-shadow: inset 0 0 0 .5px var(--line-2); opacity: 0; transition: opacity 120ms, background-color 120ms; }
+.hm-code-copy:hover { color: var(--fg); background: var(--hover); }
+.hm-code-first:is(:hover, :has(~ .hm-code:hover):not(:has(~ .hm-code-last ~ .hm-code:hover))) .hm-code-copy { opacity: 1; }
 
 /* ---------- 浮动工具栏 ---------- */
 .ftb { position: absolute; z-index: 25; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 9px; background: var(--raised); box-shadow: var(--pop); animation: ftbIn 150ms var(--ease); transform-origin: 50% 100%; }
@@ -845,7 +862,7 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .win .hm-editor .cm-scroller { letter-spacing: 0; }
 .win .hm-h2 { font-size: 1.375em; }
 .win .hm-h3 { font-size: 1.125em; }
-.win .hm-mark, .win .hm-cite-src, .win .hm-math-src, .win .hm-code-lang { font-size: 12px; }
+.win .hm-mark, .win .hm-cite-src, .win .hm-math-src { font-size: 12px; }
 .win .hm-code, .win .hm-src-mono { font-size: 13px; }
 
 /* Windows 的滚动条默认又宽又灰，换成细的、和 macOS 接近的样子 */
