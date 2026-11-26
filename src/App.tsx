@@ -21,6 +21,7 @@ import { baseName, dirOf, isInside, isMarkdown, join, normalize, relative, toPos
 import { isMac, isWindows, kbd, keyName } from "./lib/platform";
 import { menuIdFor } from "./lib/shortcuts";
 import { ExportDialog } from "./components/ExportDialog";
+import { merge3 } from "./lib/merge";
 import { NoticeAction, NoticeKind, setNotifier } from "./editor/notice";
 
 const AUTHOR = "我";
@@ -242,12 +243,23 @@ export default function App() {
     return be.onExternalChange(async (p) => {
       if (p !== live.current.path) return;
       const content = await be.readText(p);
-      if (content === live.current.text) return;
-      const before = live.current.text;
-      live.current.text = content; live.current.lastWritten = content; live.current.base = content;
-      ed.current?.replace(content);
-      ed.current?.flash(changedLines(before, content));
-      setText(content);
+      const l = live.current;
+      if (content === l.text) return;
+      const before = l.text;
+      // 编辑器里还有没写盘的字（自动保存的 600ms 防抖窗口里）：先存成版本，保证不会丢；
+      // 再按块三方合并（基线是上次写盘的内容）。改的是不同块就直接合并，同一处两边都保留
+      const unsaved = l.text !== l.lastWritten;
+      if (unsaved) await be.saveVersion(p, l.text, "auto").catch(() => null);
+      const { text: merged, conflicts } = unsaved ? merge3(l.lastWritten, l.text, content) : { text: content, conflicts: 0 };
+      l.text = merged; l.lastWritten = content; l.base = content;
+      ed.current?.replace(merged);
+      ed.current?.flash(changedLines(before, merged));
+      setText(merged);
+      if (merged !== content) {
+        await flush().catch(() => setSaveState("error"));
+        if (conflicts) say("外部程序也改了你正在写的地方，两边的内容都保留了，请看一下", "warn");
+        else say("已合并外部修改和你刚写的字", "success");
+      }
       const vs = await be.listVersions(p);
       setVersions(vs);
       setFresh(vs[0]?.id ?? null);
