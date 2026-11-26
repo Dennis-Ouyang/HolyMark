@@ -40,6 +40,11 @@ export function previewHTML(src: string, o: ExportOptions, ctx: PreviewCtx): { h
     }));
   } else body = dropNotes(body);
   body = prepareAssets(body, ctx.docDir).body;
+  // 图片宽度 {width=60%}：marked 不认属性，借标题传给下面的 renderer.image
+  body = outsideCode(body, (s) => s.replace(/(!\[[^\]]*\]\()(<[^>]*>|[^)\s]+)\)\{([^}]*)\}/g, (_m, a: string, h: string, attrs: string) => {
+    const w = attrs.match(/(?:^|\s)width=([^\s}]+)/)?.[1];
+    return w ? `${a}${h} "hm-w:${w}")` : `${a}${h})`;
+  }));
   // 公式、引用先换成 HTML，再交给 marked
   body = outsideCode(body, (s) => s
     .replace(/^\$\$[ \t]*\n([\s\S]*?)\n[ \t]*\$\$[ \t]*$/gm, (_m, t: string) => `<div class="pv-mathb">${tex(t, true)}</div>`)
@@ -48,10 +53,17 @@ export function previewHTML(src: string, o: ExportOptions, ctx: PreviewCtx): { h
       const keys = inner.split(";").map((k) => k.trim().slice(1));
       return "（" + keys.map((k) => { const b = ctx.bib.get(k); return b ? `${esc(shortAuthor(b.author))}，${esc(b.year)}` : `@${esc(k)}?`; }).join("；") + "）";
     }));
+  // marked 不认 ==高亮==、^上标^、~下标~，先换成 HTML（Pandoc 导出时自己处理）
+  body = outsideCode(body, (s) => s
+    .replace(/(^|[^{=])==(?=\S)([^=\n]*?\S)==(?![=}])/g, "$1<mark>$2</mark>")
+    .replace(/\^([^\s^]+)\^/g, "<sup>$1</sup>")
+    .replace(/(^|[^~])~([^\s~]+)~(?!~)/g, "$1<sub>$2</sub>"));
   const renderer = new marked.Renderer();
-  renderer.image = (href: string, _title: string | null, text: string) => {
+  renderer.image = (href: string, title: string | null, text: string) => {
     const h = href.replace(/^<|>$/g, "");
-    return `<span class="pv-fig"><img src="${esc(ctx.resolveImage(h))}" alt="">${text ? `<span class="pv-cap">${esc(text)}</span>` : ""}</span>`;
+    const w = title?.startsWith("hm-w:") ? title.slice(5) : "";
+    const style = w ? ` style="width:${esc(/^\d+(\.\d+)?$/.test(w) ? w + "px" : w)}"` : "";
+    return `<span class="pv-fig"${style}><img src="${esc(ctx.resolveImage(h))}" alt="">${text ? `<span class="pv-cap">${esc(text)}</span>` : ""}</span>`;
   };
   let html = marked.parse(body, { gfm: true, renderer, async: false }) as string;
   // 只有一张图片的段落：居中，不缩进

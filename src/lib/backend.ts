@@ -67,6 +67,15 @@ export interface Backend {
   /** 保存粘贴或拖进来的图片，data 是 base64，返回保存后的路径 */
   saveImage(dir: string, name: string, data: string): Promise<string>;
   createFile(dir: string, base: string): Promise<string>;
+  /** 新建文件夹（重名时加编号），返回路径 */
+  createDir(dir: string, base: string): Promise<string>;
+  /** 改名（只改最后一段），返回新路径；版本历史跟着走 */
+  renamePath(path: string, name: string): Promise<string>;
+  duplicatePath(path: string): Promise<string>;
+  /** 移到另一个文件夹里，返回新路径 */
+  movePath(path: string, dir: string): Promise<string>;
+  /** 移到废纸篓 / 回收站 */
+  trashPath(path: string): Promise<void>;
   takePendingOpen(): Promise<string[]>;
   onOpenFile(cb: () => void): () => void;
   onMenu(cb: (id: string) => void): () => void;
@@ -117,6 +126,11 @@ async function tauriBackend(): Promise<Backend> {
     listFonts: () => invoke("list_fonts"),
     saveImage: (dir, name, data) => invoke("save_image", { dir, name, data }),
     createFile: (dir, base) => invoke("create_file", { dir, base }),
+    createDir: (dir, base) => invoke("create_dir", { dir, base }),
+    renamePath: (path, name) => invoke("rename_path", { path, name }),
+    duplicatePath: (path) => invoke("duplicate_path", { path }),
+    movePath: (path, dir) => invoke("move_path", { path, dir }),
+    trashPath: (path) => invoke("trash_path", { path }),
     takePendingOpen: () => invoke("take_pending_open"),
     onOpenFile(cb) {
       let un: (() => void) | null = null;
@@ -145,6 +159,7 @@ export const demoStartFile = stressChars ? STRESS_PATH : DEMO_START;
 
 function demoBackend(): Backend {
   const files = new Map<string, string>(Object.entries(DEMO_FILES));
+  const dirs = new Set<string>(); // 空文件夹
   if (stressChars) files.set(STRESS_PATH, longManuscript(stressChars));
   const listeners = new Set<(p: string) => void>();
   const key = (p: string) => "holymark-demo-versions:" + p;
@@ -156,16 +171,18 @@ function demoBackend(): Backend {
 
   const tree = (): TreeNode[] => {
     const root: TreeNode = { name: "", path: DEMO_ROOT, dir: true, children: [] };
-    for (const p of [...files.keys()].sort()) {
+    const add = (p: string, isDir: boolean) => {
       const parts = p.slice(DEMO_ROOT.length + 1).split("/");
       let cur = root;
       parts.forEach((part, i) => {
         const path = DEMO_ROOT + "/" + parts.slice(0, i + 1).join("/");
         let n = cur.children.find((c) => c.name === part);
-        if (!n) { n = { name: part, path, dir: i < parts.length - 1, children: [] }; cur.children.push(n); }
+        if (!n) { n = { name: part, path, dir: isDir || i < parts.length - 1, children: [] }; cur.children.push(n); }
         cur = n;
       });
-    }
+    };
+    for (const p of [...files.keys()].sort()) add(p, false);
+    for (const d of dirs) add(d, true);
     const sort = (ns: TreeNode[]) => { ns.sort((a, b) => (+b.dir - +a.dir) || a.name.localeCompare(b.name, "zh")); ns.forEach((n) => sort(n.children)); };
     sort(root.children);
     return root.children;
@@ -216,10 +233,45 @@ function demoBackend(): Backend {
       files.set(p, `# ${p.split("/").pop()!.replace(/\.md$/, "")}\n\n`);
       return p;
     },
+    async createDir(dir, base) {
+      let p = `${dir}/${base}`, n = 2;
+      const taken = (x: string) => dirs.has(x) || [...files.keys()].some((f) => f === x || f.startsWith(x + "/"));
+      while (taken(p)) p = `${dir}/${base} ${n++}`;
+      dirs.add(p);
+      return p;
+    },
+    async renamePath(path, name) {
+      if (!name.trim() || /[\\/:*?"<>|]/.test(name)) throw new Error("名字里有不能用的字符");
+      const to = path.slice(0, path.lastIndexOf("/") + 1) + name.trim();
+      return moveTo(path, to);
+    },
+    async duplicatePath(path) {
+      const dot = path.lastIndexOf(".");
+      const [stem, ext] = dot > path.lastIndexOf("/") ? [path.slice(0, dot), path.slice(dot)] : [path, ""];
+      let p = `${stem} 副本${ext}`, n = 2;
+      while (files.has(p)) p = `${stem} 副本 ${n++}${ext}`;
+      files.set(p, files.get(path) ?? "");
+      return p;
+    },
+    async movePath(path, dir) {
+      if ((dir + "/").startsWith(path + "/")) throw new Error("不能把文件夹移到它自己里面");
+      return moveTo(path, `${dir}/${path.slice(path.lastIndexOf("/") + 1)}`);
+    },
+    async trashPath(path) {
+      for (const k of [...files.keys()]) if (k === path || k.startsWith(path + "/")) files.delete(k);
+      for (const d of [...dirs]) if (d === path || d.startsWith(path + "/")) dirs.delete(d);
+    },
     async takePendingOpen() { return []; },
     onOpenFile() { return () => {}; },
     onMenu() { return () => {}; },
   };
+  function moveTo(from: string, to: string) {
+    if (to === from) return from;
+    if (files.has(to) || dirs.has(to)) throw new Error("已经有同名的文件了");
+    for (const k of [...files.keys()]) if (k === from || k.startsWith(from + "/")) { files.set(to + k.slice(from.length), files.get(k)!); files.delete(k); }
+    for (const d of [...dirs]) if (d === from || d.startsWith(from + "/")) { dirs.add(to + d.slice(from.length)); dirs.delete(d); }
+    return to;
+  }
   // 演示用：模拟 AI 在编辑器外改写文件
   (window as unknown as { holymarkSimulateExternal: (p: string, c: string) => Promise<void> }).holymarkSimulateExternal = async (p, c) => {
     const prev = files.get(p) ?? "";

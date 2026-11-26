@@ -17,10 +17,17 @@ export const SHORTCUTS: [string, string][] = [
   ["Mod+1", "block_h1"],
   ["Mod+2", "block_h2"],
   ["Mod+3", "block_h3"],
+  ["Mod+4", "block_h4"],
+  ["Mod+5", "block_h5"],
+  ["Mod+6", "block_h6"],
+  ["Mod+=", "heading_up"],
+  ["Mod+-", "heading_down"],
   ["Mod+Shift+.", "block_quote"],
   ["Mod+Shift+8", "block_ul"],
   ["Mod+Shift+7", "block_ol"],
   ["Mod+Shift+9", "block_task"],
+  ["Mod+]", "indent"],
+  ["Mod+[", "outdent"],
   ["Mod+Alt+C", "insert_code"],
   ["Mod+Alt+B", "insert_math"],
   ["Mod+Shift+I", "insert_image"],
@@ -29,6 +36,7 @@ export const SHORTCUTS: [string, string][] = [
   ["Mod+Shift+X", "strike"],
   ["Mod+E", "code"],
   ["Mod+Shift+M", "math"],
+  ["Mod+Shift+H", "highlight"],
   ["Mod+Shift+K", "link"],
   ["Mod+Shift+C", "cite"],
   ["Mod+Alt+M", "note"],
@@ -41,7 +49,7 @@ export const SHORTCUTS: [string, string][] = [
   ["Mod+Alt+3", "panel_versions"],
 ];
 
-const CODE: Record<string, string> = { ",": "Comma", ".": "Period", "/": "Slash", "\\": "Backslash" };
+const CODE: Record<string, string> = { ",": "Comma", ".": "Period", "/": "Slash", "\\": "Backslash", "[": "BracketLeft", "]": "BracketRight", "=": "Equal", "-": "Minus" };
 /** 按物理键位比较（e.code），这样 Shift、Alt 改变了字符也不影响 */
 function codeOf(k: string) {
   if (/^[A-Z]$/.test(k)) return "Key" + k;

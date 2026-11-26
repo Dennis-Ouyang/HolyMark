@@ -8,13 +8,15 @@ import { applyAccent, loadSettings, saveSettings, Settings, fontStack } from "./
 import { BibEntry, parseBib, shortAuthor } from "./lib/bib";
 import { FileTree } from "./components/FileTree";
 import { FloatingToolbar, Ribbon } from "./components/Toolbars";
-import { activeStyles, BlockKind, currentBlock, InlineKind, insertBlock, insertLink, insertNote, setBlock, tableMarkdown, toggleInline } from "./editor/commands";
+import { activeStyles, BlockKind, currentBlock, indentList, InlineKind, shiftHeading, insertBlock, insertLink, insertNote, setBlock, tableMarkdown, toggleInline } from "./editor/commands";
 import { PanelTab, SidePanel, fmtTime, versionTitle } from "./components/SidePanel";
 import { Compare } from "./components/Compare";
 import { CountPop, HelpDialog, Palette, PaletteItem, SaveVersionDialog, SettingsDialog, UnsavedDialog } from "./components/Dialogs";
 import { Icon } from "./components/Icons";
 import { Presence } from "./components/Presence";
 import { WindowControls } from "./components/WindowControls";
+import { Menu, MenuEntry } from "./components/Menu";
+import { SearchPanel } from "./components/Search";
 import { baseName, dirOf, isInside, join, normalize, relative, toPosix } from "./lib/paths";
 import { isMac, isWindows, kbd, keyName } from "./lib/platform";
 import { menuIdFor } from "./lib/shortcuts";
@@ -40,11 +42,18 @@ export default function App() {
   const [versions, setVersions] = useState<VersionMeta[]>([]);
   const [fresh, setFresh] = useState<string | null>(null);
   const [cmp, setCmp] = useState<{ v: VersionMeta; against: "current" | "prev"; oldText: string; newText: string } | null>(null);
+  /** 和另一个文件对比 */
+  const [fileCmp, setFileCmp] = useState<{ name: string; text: string } | null>(null);
+  /** 文件树：右键菜单、改名中的路径、移动中的路径 */
+  const [treeMenu, setTreeMenu] = useState<{ x: number; y: number; node: TreeNode | null } | null>(null);
+  const [folderMenu, setFolderMenu] = useState<{ x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [moving, setMoving] = useState<TreeNode | null>(null);
   const [tab, setTab] = useState<PanelTab>("outline");
   const [showSide, setShowSide] = useState(true);
   const [showPanel, setShowPanel] = useState(true);
   const [focus, setFocus] = useState(false);
-  const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "cite" | "help_syntax" | "help_keys" | "export" | "unsaved">(null);
+  const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "cite" | "help_syntax" | "help_keys" | "export" | "unsaved" | "cmpfile" | "move">(null);
   const [fonts, setFonts] = useState<FontFamily[]>([]);
   const [scrollHeading, setScrollHeading] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
@@ -102,7 +111,7 @@ export default function App() {
   async function openFolder(dir: string, file?: string) {
     if (!be) return;
     const t = await be.openFolder(dir);
-    setRoot(dir); setTree(t); update({ lastFolder: dir });
+    setRoot(dir); setTree(t); update({ lastFolder: dir, recentFolders: [dir, ...s.recentFolders.filter((x) => x !== dir)].slice(0, 8) });
     const files = flatten(t);
     const bibs = files.filter((f) => f.name.endsWith(".bib"));
     const entries = (await Promise.all(bibs.map((b) => be.readText(b.path).catch(() => "")))).flatMap(parseBib);
@@ -123,9 +132,9 @@ export default function App() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [be, root]);
-  async function newFile() {
+  async function newFile(dir?: string) {
     if (!be || !root) { await chooseFolder(); return; }
-    const p = await be.createFile(path ? dirOf(path) : root, "未命名");
+    const p = await be.createFile(dir ?? (path ? dirOf(path) : root), "未命名");
     setTree(await be.listTree(root));
     await openFile(p);
     const v = view();
@@ -152,7 +161,7 @@ export default function App() {
     await flush();
     const content = await be.readText(p);
     live.current = { path: p, text: content, base: content, lastWritten: content, lastVersionAt: Date.now() };
-    setPath(p); setText(content); setCmp(null); setFresh(null);
+    setPath(p); setText(content); setCmp(null); setFileCmp(null); setFresh(null);
     ed.current?.load(content);
     if (scroller.current) scroller.current.scrollTop = 0;
     setScrollHeading(0);
@@ -359,7 +368,7 @@ export default function App() {
     }
     const block = id.startsWith("block_") ? (id.slice(6) as BlockKind) : null;
     if (block) { if (v) setBlock(v, block); return; }
-    const inline = { bold: "bold", italic: "italic", strike: "strike", code: "code", math: "math" } as const;
+    const inline = { bold: "bold", italic: "italic", strike: "strike", code: "code", math: "math", highlight: "highlight", sup: "sup", sub: "sub" } as const;
     if (id in inline) { if (v) toggleInline(v, inline[id as keyof typeof inline]); return; }
     switch (id) {
       case "settings": setDlg("settings"); break;
@@ -389,6 +398,10 @@ export default function App() {
       case "help_keys": setDlg("help_keys"); break;
       case "export": openExport(); break;
       case "quit": requestClose(); break;
+      case "indent": if (v) indentList(v, 1); break;
+      case "heading_up": if (v) shiftHeading(v, -1); break;
+      case "heading_down": if (v) shiftHeading(v, 1); break;
+      case "outdent": if (v) indentList(v, -1); break;
     }
   }
   const menuRef = useRef(onMenu);
@@ -520,6 +533,122 @@ export default function App() {
   }
   const resolveImage = useCallback((src: string) => preview.resolveImage(src), [preview]);
 
+  /* ---------- 文件管理（右键菜单）---------- */
+  const refreshTree = async () => { if (be && root) setTree(await be.listTree(root)); };
+  const trashName = isWindows ? "回收站" : "废纸篓";
+  /** 改名、移动之后：正在编辑的文件（或它所在的文件夹）跟着换路径 */
+  async function followMove(from: string, to: string) {
+    const cur = live.current.path;
+    if (cur === from || cur.startsWith(from + "/")) {
+      const np = to + cur.slice(from.length);
+      live.current.path = np;
+      setPath(np);
+      if (be) setVersions(await be.listVersions(np).catch(() => []));
+    }
+  }
+  async function renameDone(p: string, name: string | null) {
+    setRenaming(null);
+    if (!be || name === null || name.trim() === baseName(p)) return;
+    try {
+      await flush();
+      const to = await be.renamePath(p, name.trim());
+      await refreshTree();
+      await followMove(p, to);
+    } catch (e) { say(String(e).replace(/^Error:\s*/, "")); }
+  }
+  async function moveTo(node: TreeNode, dir: string) {
+    if (!be) return;
+    try {
+      await flush();
+      const to = await be.movePath(node.path, dir);
+      await refreshTree();
+      await followMove(node.path, to);
+      say(`已移到「${dir === root ? baseName(root) : relative(root, dir)}」`);
+    } catch (e) { say(String(e).replace(/^Error:\s*/, "")); }
+  }
+  async function trash(node: TreeNode) {
+    if (!be) return;
+    try {
+      const cur = live.current.path;
+      const inside = cur === node.path || cur.startsWith(node.path + "/");
+      if (inside) await flush();
+      await be.trashPath(node.path);
+      const t = await be.listTree(root);
+      setTree(t);
+      if (inside) {
+        const next = flatten(t).find((f) => /\.(md|markdown)$/i.test(f.name));
+        if (next) await openFile(next.path);
+        else { live.current = { path: "", text: "", base: "", lastWritten: "", lastVersionAt: 0 }; setPath(""); setText(""); setVersions([]); }
+      }
+      say(`「${node.name}」已移到${trashName}，可以从那里找回`);
+    } catch (e) { say(String(e).replace(/^Error:\s*/, "")); }
+  }
+  async function newFolder(dir: string) {
+    if (!be) return;
+    const p = await be.createDir(dir, "新建文件夹");
+    await refreshTree();
+    setRenaming(p);
+  }
+  async function compareWith(p: string) {
+    if (!be) return;
+    const t = await be.readText(p).catch(() => null);
+    if (t === null) { say("读不到这个文件"); return; }
+    setCmp(null);
+    setFileCmp({ name: root && isInside(root, p) ? relative(root, p) : baseName(p), text: t });
+  }
+  async function compareOther() {
+    if (!be) return;
+    if (be.isDemo) { say("浏览器预览里不能选择本机文件"); return; }
+    const f = await be.pickFile("选择要对比的文稿", ["md", "markdown", "txt"]);
+    if (f) await compareWith(f);
+  }
+  function treeMenuItems(node: TreeNode | null): MenuEntry[] {
+    const reveal = isWindows ? "在资源管理器中显示" : "在访达中显示";
+    if (!node) return [
+      { label: "新建文稿", icon: "doc", hint: "⌘N", run: () => newFile(root) },
+      { label: "新建文件夹", icon: "folder", run: () => newFolder(root) },
+      { sep: true },
+      { label: reveal, icon: "open", run: () => be?.reveal(root) },
+      { label: "刷新", icon: "reset", run: refreshTree },
+    ];
+    const md = /\.(md|markdown)$/i.test(node.name);
+    return [
+      ...(node.dir ? [
+        { label: "新建文稿", icon: "doc", run: () => newFile(node.path) },
+        { label: "新建文件夹", icon: "folder", run: () => newFolder(node.path) },
+        { sep: true } as MenuEntry,
+      ] : md ? [
+        { label: "打开", icon: "doc", run: () => openFile(node.path) },
+        ...(node.path !== path && path ? [{ label: "与当前文稿对比", icon: "compare", run: () => compareWith(node.path) }] : []),
+        { sep: true } as MenuEntry,
+      ] : []),
+      { label: "重命名", icon: "edit", run: () => setRenaming(node.path) },
+      ...(!node.dir ? [{ label: "创建副本", icon: "copy", run: async () => { await be?.duplicatePath(node.path); await refreshTree(); } }] : []),
+      { label: "移到…", icon: "folder", run: () => { setMoving(node); setDlg("move"); } },
+      { sep: true },
+      { label: reveal, icon: "open", run: () => be?.reveal(node.path) },
+      { label: "拷贝路径", icon: "link", run: () => { navigator.clipboard?.writeText(node.path).then(() => say("已拷贝路径")).catch(() => {}); } },
+      { sep: true },
+      { label: `移到${trashName}`, icon: "trash", danger: true, run: () => trash(node) },
+    ];
+  }
+  const folderMenuItems = (): MenuEntry[] => [
+    ...(s.recentFolders.filter((f) => f !== root).length ? [{ head: "最近打开" } as MenuEntry, ...s.recentFolders.filter((f) => f !== root).map((f) => ({ label: baseName(f), hint: shortPath(dirOf(f)), icon: "folder", run: () => openFolder(f).catch(() => say("这个文件夹已经不在了")) }))] : []),
+    ...(s.recentFolders.filter((f) => f !== root).length ? [{ sep: true } as MenuEntry] : []),
+    { label: "打开其他文件夹…", icon: "folder", hint: "⌘O", run: chooseFolder },
+    ...(root ? [{ label: isWindows ? "在资源管理器中显示" : "在访达中显示", icon: "open", run: () => be?.reveal(root) }] : []),
+  ];
+  const folderList = (nodes: TreeNode[]): TreeNode[] => nodes.flatMap((n) => (n.dir ? [n, ...folderList(n.children)] : []));
+  const moveItems: PaletteItem[] = moving ? [
+    { group: "移到", icon: "folder", title: baseName(root) + "（最外层）", run: () => moveTo(moving, root) },
+    ...folderList(tree).filter((d) => d.path !== moving.path && !d.path.startsWith(moving.path + "/") && d.path !== dirOf(moving.path))
+      .map((d) => ({ group: "移到", icon: "folder", title: relative(root, d.path), run: () => moveTo(moving, d.path) })),
+  ] : [];
+  const cmpItems: PaletteItem[] = flatten(tree).filter((f) => /\.(md|markdown)$/i.test(f.name) && f.path !== path)
+    .map((f) => ({ group: "文件夹里的文稿", icon: "doc", title: relative(root, f.path), run: () => compareWith(f.path) }));
+  const cmpPick: PaletteItem = { group: "其他位置", icon: "folder", title: "选择其他位置的文件…", sub: "用系统的文件选择窗口", run: () => { setTimeout(compareOther, 0); } };
+  const noSearch = useCallback(() => [] as PaletteItem[], []);
+
   /* ---------- search ---------- */
   const folderCache = useRef<Map<string, string>>(new Map());
   useEffect(() => { folderCache.current.clear(); }, [root]);
@@ -532,41 +661,25 @@ export default function App() {
       setFolderTexts(new Map(folderCache.current));
     })();
   }, [dlg, be, tree, path]);
-  const snip = (t: string, q: string) => {
-    const i = t.toLowerCase().indexOf(q.toLowerCase());
-    const a = Math.max(0, i - 16), b = Math.min(t.length, i + q.length + 30);
-    return (a ? "…" : "") + esc(t.slice(a, i)) + "<b>" + esc(t.substr(i, q.length)) + "</b>" + esc(t.slice(i + q.length, b)) + (b < t.length ? "…" : "");
-  };
-  const search = useCallback((q: string): PaletteItem[] => {
-    const out: PaletteItem[] = [];
-    const ql = q.toLowerCase();
-    let pos = 0;
-    for (const line of text.split("\n")) {
-      const p = plainText(line);
-      if (p.toLowerCase().includes(ql) && out.length < 6) {
-        const at = pos;
-        const h = [...hs].reverse().find((x) => x.pos <= at);
-        out.push({ group: "当前文件", icon: "doc", title: h ? h.text : baseName(path), sub: snip(p, q), run: () => jump(at) });
-      }
-      pos += line.length + 1;
-    }
-    let n = 0;
-    folderTexts.forEach((t, p) => {
-      const pt = plainText(t);
-      if (n < 6 && (pt.toLowerCase().includes(ql) || baseName(p).toLowerCase().includes(ql))) {
-        n++;
-        out.push({ group: "文件夹", icon: "file", title: relative(root, p), sub: pt.toLowerCase().includes(ql) ? snip(pt, q) : undefined, run: () => openFile(p) });
-      }
-    });
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, hs, folderTexts, root, path]);
+  /** 搜索结果：选中匹配的文字并滚到屏幕中间 */
+  function jumpTo(pos: number, len: number) {
+    const v = view(); if (!v) return;
+    setCmp(null); setFileCmp(null);
+    const at = Math.min(pos, v.state.doc.length);
+    v.dispatch({ selection: { anchor: at, head: Math.min(at + len, v.state.doc.length) }, effects: EditorView.scrollIntoView(at, { y: "center" }) });
+    v.focus();
+  }
+  async function openAt(p: string, pos: number, len: number) {
+    if (p !== live.current.path) await openFile(p);
+    requestAnimationFrame(() => jumpTo(pos, len));
+  }
 
   const commands: PaletteItem[] = [
     { group: "命令", icon: "cmd", title: "保存版本", keys: ["⌘", "S"].map((k) => keyName(k)), run: () => setDlg("save") },
     { group: "命令", icon: "cmd", title: "引用文献或文件", run: () => setTimeout(() => setDlg("cite"), 0) },
     { group: "命令", icon: "cmd", title: "打开文件夹…", keys: ["⌘", "O"].map((k) => keyName(k)), run: chooseFolder },
     { group: "命令", icon: "cmd", title: "新建文稿", keys: ["⌘", "N"].map((k) => keyName(k)), run: newFile },
+    { group: "命令", icon: "cmd", title: "与其他文稿对比…", run: () => setTimeout(() => setDlg("cmpfile"), 0) },
     { group: "命令", icon: "cmd", title: "Markdown 语法速查", run: () => setTimeout(() => setDlg("help_syntax"), 0) },
     { group: "命令", icon: "cmd", title: "导出 Word / PDF / Markdown…", keys: ["⌘", "⇧", "E"].map((k) => keyName(k)), run: () => setTimeout(openExport, 0) },
     { group: "命令", icon: "cmd", title: "设置", keys: ["⌘", ","].map((k) => keyName(k)), run: () => setDlg("settings") },
@@ -595,7 +708,7 @@ export default function App() {
   const MAC_FALLBACK = useMemo(() => new Set(["search", "save_version", "settings", "focus", "toggle_side", "toggle_panel", "new_file", "open_folder"]), []);
   useEffect(() => {
     const f = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !dlg) { if (cmp) setCmp(null); else if (focus) setFocus(false); return; }
+      if (e.key === "Escape" && !dlg) { if (cmp || fileCmp) { setCmp(null); setFileCmp(null); } else if (focus) setFocus(false); return; }
       if (e.defaultPrevented || e.isComposing) return; // 编辑器自己处理过的（如 ⌘B），或正在用输入法
       const id = menuIdFor(e);
       if (!id || (nativeMenu && !MAC_FALLBACK.has(id))) return;
@@ -646,11 +759,12 @@ export default function App() {
       <aside className="side" aria-label="文件夹">
         <div className="side-in">
           <div className="side-scroll">
-            <button className={"folder" + (root ? "" : " none")} onClick={chooseFolder} title={root ? `${root}\n点击打开其他文件夹` : "选择一个放稿件的文件夹"}>
+            <button className={"folder" + (root ? "" : " none")} onClick={(e) => { if (!root) { chooseFolder(); return; } const r = e.currentTarget.getBoundingClientRect(); setFolderMenu({ x: r.left + 8, y: r.bottom }); }} title={root ? root : "选择一个放稿件的文件夹"} aria-haspopup="menu">
               <span className="fname">{root ? baseName(root) : "打开文件夹"}</span>
               <span className="fpath">{root ? shortPath(root) : "选择一个放稿件的文件夹"}</span>
             </button>
-            <FileTree nodes={tree} current={path} onOpen={openFile} showAll={s.showAllFiles} />
+            <FileTree nodes={tree} current={path} onOpen={openFile} showAll={s.showAllFiles} renaming={renaming} onRename={renameDone}
+              onMenu={(e, node) => { if (root) setTreeMenu({ x: e.clientX, y: e.clientY, node }); }} />
           </div>
           {/* Mac 上设置在菜单栏「HolyMark → 设置…」里，左下角不再放 */}
           {!nativeMenu && <div className="side-foot"><button className="tn" onClick={() => setDlg("settings")}><span className="ico"><Icon name="gear" size={14} /></span><span className="nm">设置</span><span className="ext">{kbd("⌘,")}</span></button></div>}
@@ -668,6 +782,8 @@ export default function App() {
           </div>
         </div>
         <FloatingToolbar view={ed.current?.view() ?? null} tick={tick} author={AUTHOR} active={fmt.active} />
+        {fileCmp && <Compare fileLabel={fileCmp.name} oldText={fileCmp.text} newText={live.current.text} against="current" hasPrev={false} prevLabel=""
+          onAgainst={() => {}} onClose={() => setFileCmp(null)} onRestore={() => {}} onPick={() => setDlg("cmpfile")} />}
         {cmp && (
           <Compare version={cmp.v} oldText={cmp.oldText} newText={cmp.newText} against={cmp.against}
             hasPrev={versions.findIndex((x) => x.id === cmp.v.id) < versions.length - 1}
@@ -679,7 +795,7 @@ export default function App() {
       <aside className="panel" aria-label="当前文件">
         <SidePanel tab={tab} setTab={setTab} headings={hs} currentHeading={currentHeading} notes={notes} versions={versions} freshVersion={fresh}
           selectedVersion={cmp?.v.id ?? null} fileName={fileName} onJump={jump} onResolve={resolveNote}
-          onOpenVersion={(id) => openVersion(id)} onSaveVersion={() => setDlg("save")} />
+          onOpenVersion={(id) => openVersion(id)} onSaveVersion={() => setDlg("save")} onCompareFile={() => setDlg("cmpfile")} />
       </aside>
 
       <footer className="statusbar">
@@ -694,9 +810,14 @@ export default function App() {
       <Presence>{dlg === "save" && <SaveVersionDialog changes={saveChanges} fileName={fileName} onSave={saveVersion} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{dlg === "settings" && <SettingsDialog s={s} fonts={fonts} onChange={update} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{(dlg === "help_syntax" || dlg === "help_keys") && <HelpDialog kind={dlg === "help_syntax" ? "syntax" : "keys"} onClose={() => setDlg(null)} />}</Presence>
-      <Presence>{dlg === "palette" && <Palette items={commands} search={search} onClose={() => setDlg(null)} placeholder="搜索全文、文件夹，或输入命令" />}</Presence>
+      <Presence>{dlg === "palette" && <SearchPanel text={live.current.text} path={path} root={root} headings={hs} folderTexts={folderTexts} commands={commands}
+        onJump={jumpTo} onOpenAt={openAt} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{dlg === "cite" && <Palette items={citeItems} search={citeSearch} pinned={pickOther} onClose={() => setDlg(null)} placeholder="搜索文献或文件，回车插入" />}</Presence>
       <Presence>{dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => setDlg(null)} />}</Presence>
+      <Presence>{dlg === "cmpfile" && <Palette items={cmpItems} search={noSearch} pinned={cmpPick} onClose={() => setDlg(null)} placeholder="选一篇文稿，和当前文稿左右对比" />}</Presence>
+      <Presence>{dlg === "move" && moving && <Palette items={moveItems} search={noSearch} onClose={() => { setDlg(null); setMoving(null); }} placeholder={`把「${moving.name}」移到哪个文件夹`} />}</Presence>
+      {treeMenu && <Menu x={treeMenu.x} y={treeMenu.y} items={treeMenuItems(treeMenu.node)} onClose={() => setTreeMenu(null)} />}
+      {folderMenu && <Menu x={folderMenu.x} y={folderMenu.y} items={folderMenuItems()} onClose={() => setFolderMenu(null)} minWidth={232} />}
       <Presence>{dlg === "unsaved" && <UnsavedDialog fileName={fileName} onSave={closeSaving} onDiscard={closeDiscarding} onCancel={() => setDlg(null)} />}</Presence>
       <Presence>{toast && <div className="toast" role="status"><i />{toast.msg}{toast.action && <button className="lnk" onClick={() => { toast.action!.run(); setToast(null); }}>{toast.action.label}</button>}</div>}</Presence>
     </div>

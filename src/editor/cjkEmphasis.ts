@@ -27,6 +27,7 @@ function flank(before: string, after: string) {
 }
 
 const StrikeDelim = { resolve: "Strikethrough", mark: "StrikethroughMark" };
+const HighlightDelim = { resolve: "Highlight", mark: "HighlightMark" };
 
 export const cjkEmphasis: MarkdownConfig = {
   parseInline: [
@@ -54,4 +55,22 @@ export const cjkEmphasis: MarkdownConfig = {
       after: "Emphasis",
     },
   ],
+};
+
+/**
+ * 高亮 ==文字==（Pandoc 的 mark 扩展，导出 Word 是黄色高亮）。
+ * 批注 {==原文==} 里的 == 紧挨着花括号，不算高亮。
+ */
+export const highlight: MarkdownConfig = {
+  defineNodes: [{ name: "Highlight" }, { name: "HighlightMark" }],
+  parseInline: [{
+    name: "Highlight",
+    parse(cx: InlineContext, next: number, pos: number) {
+      if (next != 61 || cx.char(pos + 1) != 61 || cx.char(pos + 2) == 61) return -1;
+      const before = cx.slice(pos - 1, pos), after = cx.slice(pos + 2, pos + 3);
+      const f = flank(before, after);
+      return cx.addDelimiter(HighlightDelim, pos, pos + 2, f.left && before !== "{", f.right && after !== "}");
+    },
+    after: "Emphasis",
+  }],
 };

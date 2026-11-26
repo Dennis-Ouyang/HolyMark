@@ -79,11 +79,11 @@ export function wordCounter() {
 export function stripInline(s: string): string {
   return s
     .replace(/\{==([\s\S]*?)==\}\{>>[\s\S]*?<<\}/g, "$1")
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]*\)(\{[^}]*\})?/g, "$1")
     .replace(/\[@[\w:-]+\]/g, "")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/\$[^$\n]+\$/g, "")
-    .replace(/(\*\*|__|~~|`|\*)/g, "");
+    .replace(/(\*\*|__|~~|==|`|\*|\^)/g, "");
 }
 
 export interface Note { at: number; length: number; quote: string; who: string; date: string; text: string }

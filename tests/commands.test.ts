@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { activeStyles, toggleStyle } from "../src/editor/commands";
+import { activeStyles, indentList, toggleStyle } from "../src/editor/commands";
 import { cjkEmphasis } from "../src/editor/cjkEmphasis";
 
 type S = "bold" | "italic" | "strike";
@@ -127,5 +127,59 @@ describe("toggleStyle：连续切换格式", () => {
     expect([...activeStyles(state, 0, 1)]).toEqual([]);
     const c = state.doc.toString().indexOf("代码");
     expect(activeStyles(state, c, c + 2).has("code")).toBe(true);
+  });
+});
+
+describe("indentList：子列表", () => {
+  const run = (doc: string, at: string, dir: 1 | -1) => {
+    let state = mk(doc);
+    const pos = doc.indexOf(at);
+    state = state.update({ selection: { anchor: pos } }).state;
+    const v = { get state() { return state; }, dispatch: (spec: any) => { state = state.update(spec).state; } };
+    const handled = indentList(v as any, dir);
+    return { handled, text: state.doc.toString() };
+  };
+  it("Tab 变成上一项的子项，缩进对齐到上一项的文字", () => {
+    expect(run("- 甲\n- 乙", "乙", 1).text).toBe("- 甲\n  - 乙");
+    expect(run("1. 甲\n2. 乙", "乙", 1).text).toBe("1. 甲\n   1. 乙");
+    expect(run("- [ ] 甲\n- [x] 乙", "乙", 1).text).toBe("- [ ] 甲\n  - [x] 乙");
+  });
+  it("有序子项接着已有的子项编号", () => {
+    expect(run("1. 甲\n   1. 子一\n2. 乙", "乙", 1).text).toBe("1. 甲\n   1. 子一\n   2. 乙");
+  });
+  it("⇧Tab 回到上一级，有序列表接着上一级编号", () => {
+    expect(run("- 甲\n  - 乙", "乙", -1).text).toBe("- 甲\n- 乙");
+    expect(run("1. 甲\n   1. 乙", "乙", -1).text).toBe("1. 甲\n2. 乙");
+  });
+  it("第一项不能缩进，但吃掉 Tab；不在列表里交给普通 Tab", () => {
+    expect(run("- 甲\n- 乙", "甲", 1)).toEqual({ handled: true, text: "- 甲\n- 乙" });
+    expect(run("正文", "正", 1).handled).toBe(false);
+  });
+});
+
+describe("高亮、上下标、标题级别", async () => {
+  const { highlight } = await import("../src/editor/cjkEmphasis");
+  const { Superscript, Subscript } = await import("@lezer/markdown");
+  const { ensureSyntaxTree } = await import("@codemirror/language");
+  const { shiftHeading } = await import("../src/editor/commands");
+  const names = (doc: string) => {
+    const st = EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage, extensions: [cjkEmphasis, highlight, Superscript, Subscript] })] });
+    const out: string[] = [];
+    ensureSyntaxTree(st, doc.length, 5000)!.iterate({ enter: (n) => { if (["Highlight", "Superscript", "Subscript", "Strikethrough"].includes(n.name)) out.push(`${n.name}:${doc.slice(n.from, n.to)}`); } });
+    return out;
+  };
+  it("识别 ==高亮==、^上标^、~下标~，和 ~~删除线~~ 共存", () => {
+    expect(names("甲==重点==乙 H~2~O x^2^ ~~删~~")).toEqual(["Highlight:==重点==", "Subscript:~2~", "Superscript:^2^", "Strikethrough:~~删~~"]);
+  });
+  it("批注 {==原文==} 里的 == 不算高亮", () => {
+    expect(names("看{==这句==}{>>改一下<<}")).toEqual([]);
+  });
+  it("⌘= 提升、⌘- 降低标题级别，正文和标题 6 之间互转", () => {
+    const step = (doc: string, dir: 1 | -1) => { let st = EditorState.create({ doc }); shiftHeading({ get state() { return st; }, dispatch: (s: any) => { st = st.update(s).state; } } as any, dir); return st.doc.toString(); };
+    expect(step("## 标题", -1)).toBe("# 标题");
+    expect(step("## 标题", 1)).toBe("### 标题");
+    expect(step("正文", -1)).toBe("###### 正文");
+    expect(step("###### 标题", 1)).toBe("标题");
+    expect(step("# 标题", -1)).toBe("# 标题");
   });
 });

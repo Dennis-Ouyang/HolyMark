@@ -121,6 +121,30 @@ impl Store {
         fs::write(self.log_path(file), s)
     }
 
+    /// 文件或文件夹改名、移动后，把它（文件夹时是里面所有文件）的版本记录跟着搬过去。
+    /// 记录文件名是路径的哈希，没法直接按前缀找，所以挨个读一下每个记录文件的第一条。
+    pub fn rename(&self, from: &str, to: &str) -> std::io::Result<usize> {
+        let dir = self.dir.join("versions");
+        let Ok(entries) = fs::read_dir(&dir) else { return Ok(0) };
+        let prefix = format!("{from}/");
+        let mut moved = 0;
+        for e in entries.filter_map(|e| e.ok()) {
+            let Ok(text) = fs::read_to_string(e.path()) else { continue };
+            let mut recs: Vec<Record> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+            let Some(file) = recs.first().map(|r| r.file.clone()) else { continue };
+            let new = if file == from { to.to_string() } else if let Some(rest) = file.strip_prefix(&prefix) { format!("{to}/{rest}") } else { continue };
+            for r in &mut recs {
+                r.file = new.clone();
+            }
+            self.write_records(&new, &recs)?;
+            if self.log_path(&new) != e.path() {
+                fs::remove_file(e.path())?;
+            }
+            moved += 1;
+        }
+        Ok(moved)
+    }
+
     pub fn content(&self, rec: &Record) -> std::io::Result<String> {
         let mut out = String::new();
         for h in &rec.blocks {
@@ -223,5 +247,20 @@ mod tests {
         let recs = s.records("a.md");
         assert_eq!(recs.len(), 1);
         assert_eq!(s.content(&recs[0]).unwrap(), "一二");
+    }
+
+    #[test]
+    fn rename_moves_history_of_file_and_folder() {
+        let d = tempfile::tempdir().unwrap();
+        let st = Store::new(d.path());
+        st.save("a.md", "甲\n", Source::Saved, Some("一".into()), None, 0).unwrap();
+        st.save("稿/b.md", "乙\n", Source::Saved, None, None, 0).unwrap();
+        st.save("稿/c.md", "丙\n", Source::Saved, None, None, 0).unwrap();
+        assert_eq!(st.rename("a.md", "新/a2.md").unwrap(), 1);
+        assert!(st.records("a.md").is_empty());
+        assert_eq!(st.records("新/a2.md")[0].name.as_deref(), Some("一"));
+        assert_eq!(st.rename("稿", "正文").unwrap(), 2);
+        assert_eq!(st.records("正文/b.md").len(), 1);
+        assert_eq!(st.content(&st.records("正文/c.md")[0]).unwrap(), "丙\n");
     }
 }

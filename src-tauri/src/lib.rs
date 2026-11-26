@@ -255,6 +255,94 @@ fn create_file(state: State<AppState>, dir: String, base: String) -> Result<Stri
     Ok(slash(&p))
 }
 
+/* ---------- 文件管理：新建文件夹、改名、副本、移动、删除到废纸篓 ---------- */
+
+/// 改名或移动之后：版本历史跟着搬，编辑器写入记录的键也换成新路径
+fn after_move(state: &State<AppState>, from: &Path, to: &Path) {
+    let mut i = state.inner.lock().unwrap();
+    let moved: Vec<(String, String)> = i
+        .written
+        .keys()
+        .filter_map(|k| {
+            let rest = PathBuf::from(k).strip_prefix(from).ok()?.to_path_buf();
+            Some((k.clone(), if rest.as_os_str().is_empty() { key(to) } else { key(&to.join(rest)) }))
+        })
+        .collect();
+    for (old, new) in moved {
+        if let Some(v) = i.written.remove(&old) {
+            i.written.insert(new, v);
+        }
+    }
+    if let Some(root) = i.root.clone() {
+        if from.starts_with(&root) && to.starts_with(&root) {
+            let _ = Store::new(&root).rename(&rel(&root, from), &rel(&root, to));
+        }
+    }
+}
+
+#[tauri::command]
+fn create_dir(dir: String, base: String) -> Result<String, String> {
+    let p = fsops::unique_in(Path::new(&dir), &base, "");
+    std::fs::create_dir_all(&p).map_err(err)?;
+    Ok(slash(&p))
+}
+
+#[tauri::command]
+fn rename_path(state: State<AppState>, path: String, name: String) -> Result<String, String> {
+    fsops::valid_name(&name)?;
+    let from = PathBuf::from(&path);
+    let to = from.parent().ok_or("没有上一级文件夹")?.join(name.trim());
+    if to == from {
+        return Ok(path);
+    }
+    // 只改大小写时（macOS、Windows 上同一个文件）允许
+    if to.exists() && to.to_string_lossy().to_lowercase() != from.to_string_lossy().to_lowercase() {
+        return Err(format!("已经有一个叫「{}」的文件了", name.trim()));
+    }
+    std::fs::rename(&from, &to).map_err(err)?;
+    after_move(&state, &from, &to);
+    Ok(slash(&to))
+}
+
+#[tauri::command]
+fn duplicate_path(path: String) -> Result<String, String> {
+    let from = PathBuf::from(&path);
+    if from.is_dir() {
+        return Err("文件夹不能直接创建副本".into());
+    }
+    let stem = from.file_stem().and_then(|s| s.to_str()).unwrap_or("副本");
+    let ext = from.extension().and_then(|s| s.to_str()).map(|e| format!(".{e}")).unwrap_or_default();
+    let to = fsops::unique_in(from.parent().ok_or("没有上一级文件夹")?, &format!("{stem} 副本"), &ext);
+    std::fs::copy(&from, &to).map_err(err)?;
+    Ok(slash(&to))
+}
+
+#[tauri::command]
+fn move_path(state: State<AppState>, path: String, dir: String) -> Result<String, String> {
+    let from = PathBuf::from(&path);
+    let dest = PathBuf::from(&dir);
+    if dest.starts_with(&from) {
+        return Err("不能把文件夹移到它自己里面".into());
+    }
+    let name = from.file_name().ok_or("路径不对")?;
+    let to = dest.join(name);
+    if to == from {
+        return Ok(path);
+    }
+    if to.exists() {
+        return Err(format!("「{}」里已经有同名的文件了", dest.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()));
+    }
+    std::fs::rename(&from, &to).map_err(err)?;
+    after_move(&state, &from, &to);
+    Ok(slash(&to))
+}
+
+/// 移到废纸篓（Windows 是回收站），可以从那里找回来
+#[tauri::command]
+fn trash_path(path: String) -> Result<(), String> {
+    trash::delete(&path).map_err(|e| format!("没能移到废纸篓：{e}"))
+}
+
 #[derive(Serialize)]
 struct ExportTools {
     pandoc: Option<export::Tool>,
@@ -372,7 +460,12 @@ pub fn run() {
             export_run,
             read_reference,
             reveal,
-            open_path
+            open_path,
+            create_dir,
+            rename_path,
+            duplicate_path,
+            move_path,
+            trash_path
         ])
         .build(tauri::generate_context!())
         .expect("HolyMark 启动失败");

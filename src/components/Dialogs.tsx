@@ -123,10 +123,10 @@ function EditorPreview({ s }: { s: Settings }) {
 export function UnsavedDialog({ fileName, onSave, onDiscard, onCancel }: { fileName: string; onSave: () => void; onDiscard: () => void; onCancel: () => void }) {
   return (
     <Scrim onClose={onCancel} center>
-      <div className="sheetdlg ask" role="alertdialog" aria-label="保存修改">
-        <div className="ask-ico"><Icon name="doc" size={22} /></div>
-        <div className="dh"><h3>要保存对「{fileName}」的修改吗？</h3></div>
-        <div className="db"><p className="dnote">选「不保存」，文件会回到这次打开时的样子。刚才写的内容不会丢：它会作为一个版本留在右栏的「版本」里，随时可以找回。</p></div>
+      <div className="sheetdlg ask" role="alertdialog" aria-labelledby="ask-t" aria-describedby="ask-d">
+        <h3 id="ask-t">关闭前要保存修改吗？</h3>
+        <div className="ask-file" title={fileName}><Icon name="doc" size={14} /><span>{fileName}</span></div>
+        <p id="ask-d">不保存，文件会回到这次打开时的样子；刚才写的内容会留在「版本」里，随时能找回。</p>
         <div className="df split">
           <button className="btn" onClick={onDiscard}>不保存</button>
           <span className="sp" />
@@ -202,7 +202,7 @@ export function CountPop({ title, text, count, anchor, onClose }: { title: strin
 export const KEYS: [string, string][] = [
   ["搜索与命令", "⌘ K"], ["保存版本", "⌘ S"], ["新建文稿", "⌘ N"], ["打开文件夹", "⌘ O"], ["设置", "⌘ ,"], ["查找", "⌘ F"],
   ["粗体 / 斜体", "⌘ B / ⌘ I"], ["删除线", "⌘ ⇧ X"], ["行内代码", "⌘ E"], ["行内公式", "⌘ ⇧ M"], ["链接", "⌘ ⇧ K"],
-  ["正文 / 标题 1–3", "⌘ 0 / ⌘ 1–3"], ["无序 / 有序 / 任务列表", "⌘ ⇧ 8 / 7 / 9"], ["引用", "⌘ ⇧ ."],
+  ["正文 / 标题 1–6", "⌘ 0 / ⌘ 1–6"], ["提升 / 降低标题级别", "⌘ = / ⌘ -"], ["高亮", "⌘ ⇧ H"], ["无序 / 有序 / 待办列表", "⌘ ⇧ 8 / 7 / 9"], ["子列表 / 回到上一级", "Tab / ⇧ Tab（或 ⌘ ] / ⌘ [）"], ["引用", "⌘ ⇧ ."],
   ["引用文献或文件", "⌘ ⇧ C"], ["导出", "⌘ ⇧ E"], ["添加批注", "⌘ ⌥ M"], ["插入图片", "⌘ ⇧ I"],
   ["专注模式", "⌘ ⇧ F"], ["侧栏 / 右栏", "⌘ \\ / ⌘ /"], ["折叠功能区", "⌘ ⌥ R"], ["大纲 / 批注 / 版本", "⌘ ⌥ 1 / 2 / 3"],
   ["表格里换格", "Tab / ⇧ Tab"], ["离开当前块或表格", "Esc"],
@@ -212,7 +212,7 @@ export function KeyTable() {
 }
 
 const SYNTAX: [string, string][] = [
-  ["# 标题", "一级到六级标题，# 越多级别越低"], ["**粗体**  *斜体*", "强调"], ["~~删除线~~", "删除线"], ["`代码`", "行内代码"],
+  ["# 标题", "一级到六级标题，# 越多级别越低"], ["**粗体**  *斜体*", "强调"], ["~~删除线~~", "删除线"], ["==高亮==", "高亮（导出 Word 是黄色底）"], ["x^2^  H~2~O", "上标、下标"], ["![说明](图.png){width=60%}", "图片宽度（点图片可以直接拖）"], ["`代码`", "行内代码"],
   ["- 项目", "无序列表；1. 是有序列表"], ["- [ ] 待办", "任务列表，点方框可以勾选"], ["> 引用", "引用块"],
   ["[文字](地址)", "链接；地址可以是文件夹里的文件"], ["![说明](图片路径)", "图片"], ["$公式$  $$公式$$", "行内公式与独立公式（LaTeX）"],
   ["```python", "代码块，后面写语言名"], ["```mermaid", "流程图、时序图等图表"], ["| 列 | 列 |", "表格，第二行是 | --- | --- |"],

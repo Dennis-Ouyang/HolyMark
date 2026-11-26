@@ -6,7 +6,10 @@ import { Icon } from "./Icons";
 import { Segmented } from "./Segmented";
 
 interface Props {
-  version: VersionMeta;
+  version?: VersionMeta;
+  /** 和另一个文件对比时，那个文件的名字（这时没有版本、不能恢复） */
+  fileLabel?: string;
+  onPick?: () => void;
   oldText: string;
   newText: string;
   against: "current" | "prev";
@@ -18,7 +21,7 @@ interface Props {
 }
 
 /** 整篇对照：左边是那个版本，右边是现在（或下一个版本），逐块对齐，红删绿增 */
-export function Compare({ version, oldText, newText, against, hasPrev, prevLabel, onAgainst, onClose, onRestore }: Props) {
+export function Compare({ version, fileLabel, onPick, oldText, newText, against, hasPrev, prevLabel, onAgainst, onClose, onRestore }: Props) {
   const [mode, setMode] = useState<"side" | "merge">("side");
   const rows = useMemo(() => alignBlocks(oldText, newText), [oldText, newText]);
   const stats = useMemo(() => {
@@ -26,8 +29,8 @@ export function Compare({ version, oldText, newText, against, hasPrev, prevLabel
     rows.forEach((r) => { if (r.ops) { changed++; r.ops.forEach(([t, s]) => { if (t === "+") plus += countWords(s, false); if (t === "-") minus += countWords(s, false); }); } });
     return { changed, plus, minus };
   }, [rows]);
-  const t = fmtTime(version.at);
-  const title = `${versionTitle(version)} · ${t.day} ${t.hm}`;
+  const t = version ? fmtTime(version.at) : null;
+  const title = fileLabel ? fileLabel : `${versionTitle(version!)} · ${t!.day} ${t!.hm}`;
   const leftLabel = against === "prev" ? prevLabel : title;
   const rightLabel = against === "prev" ? title : "现在";
   const cls = (s: string | null) => (!s ? "" : /^```|^\$\$|^\|/.test(s) ? " mono" : /^#{1,6} /.test(s) ? " h" : "");
@@ -38,10 +41,10 @@ export function Compare({ version, oldText, newText, against, hasPrev, prevLabel
     <div className="cmp">
       <div className="cmp-h">
         <button className="ib" onClick={onClose} title="返回编辑 Esc"><Icon name="back" />返回编辑</button>
-        <div className="ttl"><b>{title}</b><small>{against === "prev" ? "与上一个版本相比" : "与现在相比"}：{stats.changed} 处改动 · <span className="p">+{stats.plus}</span> <span className="m">−{stats.minus}</span> 字{version.note ? ` · ${version.note}` : ""}</small></div>
+        <div className="ttl"><b>{fileLabel ? `「${fileLabel}」和当前文稿` : title}</b><small>{fileLabel ? "左边是那个文件，右边是现在" : against === "prev" ? "与上一个版本相比" : "与现在相比"}：{stats.changed} 处不同 · <span className="p">+{stats.plus}</span> <span className="m">−{stats.minus}</span> 字{version?.note ? ` · ${version.note}` : ""}</small></div>
         <Segmented label="显示方式" value={mode} options={[["side", "并排"], ["merge", "合并"]]} onChange={setMode} />
-        {hasPrev && <Segmented label="对比对象" value={against} options={[["current", "对比现在"], ["prev", "对比上一版"]]} onChange={onAgainst} />}
-        <button className="btn" onClick={onRestore}>恢复到这个版本</button>
+        {hasPrev && !fileLabel && <Segmented label="对比对象" value={against} options={[["current", "对比现在"], ["prev", "对比上一版"]]} onChange={onAgainst} />}
+        {fileLabel ? onPick && <button className="btn" onClick={onPick}>换一个文件…</button> : <button className="btn" onClick={onRestore}>恢复到这个版本</button>}
       </div>
       <div className="cmp-b">
         <div className={"cmp-grid" + (mode === "merge" ? " merged" : "")}>
