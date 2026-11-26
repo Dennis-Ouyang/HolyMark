@@ -84,6 +84,10 @@ import i_moveTo from "@tabler/icons/outline/folder-symlink.svg?raw";
 import i_folderPlus from "@tabler/icons/outline/folder-plus.svg?raw";
 import i_filePlus from "@tabler/icons/outline/file-plus.svg?raw";
 import i_pencil from "@tabler/icons/outline/pencil.svg?raw";
+import i_alignLeft from "@tabler/icons/outline/align-left.svg?raw";
+import i_alignCenter from "@tabler/icons/outline/align-center.svg?raw";
+import i_alignRight from "@tabler/icons/outline/align-right.svg?raw";
+import i_rows from "@tabler/icons/outline/layout-rows.svg?raw";
 
 const RAW: Record<string, string> = {
   side: i_side,
@@ -167,6 +171,10 @@ const RAW: Record<string, string> = {
   folderPlus: i_folderPlus,
   filePlus: i_filePlus,
   pencil: i_pencil,
+  alignLeft: i_alignLeft,
+  alignCenter: i_alignCenter,
+  alignRight: i_alignRight,
+  rows: i_rows,
 };
 
 /** 去掉外层 svg 和 Tabler 用来占位的透明方块，只留下线条 */

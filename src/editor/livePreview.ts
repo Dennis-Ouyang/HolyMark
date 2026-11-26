@@ -133,9 +133,12 @@ class ImageWidget extends WidgetType {
     img.src = this.opts.resolveImage(this.src);
     img.alt = this.alt;
     img.draggable = false;
-    if (this.width) img.style.width = /^\d+(\.\d+)?$/.test(this.width) ? this.width + "px" : this.width;
     img.onerror = () => { el.classList.add("missing"); el.setAttribute("data-missing", `找不到图片 ${this.src}`); };
-    el.appendChild(img);
+    // 块级图片包在一个贴着图片本身的盒子里：选中框、缩放手柄、工具条都贴着图片，不是整栏宽（B12）
+    const box = document.createElement("span");
+    box.className = this.block ? "hm-imgbox" : "";
+    if (this.width) (this.block ? box : img).style.width = /^\d+(\.\d+)?$/.test(this.width) ? this.width + "px" : this.width;
+    if (this.block) { box.appendChild(img); el.appendChild(box); } else el.appendChild(img);
     if (this.block && this.alt) {
       const cap = document.createElement("figcaption");
       cap.textContent = this.alt;
@@ -150,6 +153,7 @@ class ImageWidget extends WidgetType {
     bar.className = "hm-itools";
     bar.setAttribute("role", "toolbar");
     bar.setAttribute("aria-label", "图片");
+    // 拖动缩放时的读数，只在拖的时候出现（平时宽度由按钮的选中状态表达，不再重复写一遍）
     const label = document.createElement("span");
     label.className = "hm-iw";
     const sizes: [string, string][] = [["25%", "25%"], ["50%", "50%"], ["75%", "75%"], ["100%", "100%"], ["", "原始大小"]];
@@ -162,15 +166,12 @@ class ImageWidget extends WidgetType {
     };
     for (const [w, t] of sizes) bar.appendChild(btn(t, w ? `宽度设为版心的 ${w}` : "按图片本身的大小显示", () => commit(w), w === this.width ? "on" : ""));
     const sep = document.createElement("span"); sep.className = "sep"; bar.appendChild(sep);
-    bar.appendChild(label);
-    const sep2 = document.createElement("span"); sep2.className = "sep"; bar.appendChild(sep2);
     bar.appendChild(btn("源代码", "显示这张图片的 Markdown 源码", () => { close(); focusAt(view, el, new Event("x"), 2); }, "src"));
     const grip = document.createElement("span");
     grip.className = "hm-igrip";
     grip.title = "拖动缩放";
     grip.innerHTML = iconSvg("resize", 12);
-    el.append(bar, grip);
-    label.textContent = this.width || "原始大小";
+    box.append(bar, grip, label);
 
     const commit = (w: string) => {
       const from = view.posAtDOM(el);
@@ -182,8 +183,6 @@ class ImageWidget extends WidgetType {
     };
     const outside = (e: MouseEvent) => { if (!el.contains(e.target as Node)) close(); };
     const open = () => {
-      // 没设宽度时，读数显示图片实际占版心多宽
-      if (!this.width) label.textContent = `${Math.round((img.getBoundingClientRect().width / Math.max(1, el.clientWidth - 16)) * 100)}%`;
       el.classList.add("editing");
       addEventListener("mousedown", outside, true);
     };
@@ -197,14 +196,14 @@ class ImageWidget extends WidgetType {
     el.addEventListener("dblclick", (e) => { if (!(e.target as HTMLElement).closest(".hm-itools, .hm-igrip")) { close(); focusAt(view, el, e, 2); } });
     grip.addEventListener("mousedown", (e) => {
       e.preventDefault(); e.stopPropagation();
-      const full = el.clientWidth - 16; // figure 两侧各 8px 内边距
-      const x0 = e.clientX, w0 = img.getBoundingClientRect().width;
+      const full = el.clientWidth;
+      const x0 = e.clientX, w0 = box.getBoundingClientRect().width;
       let pct = Math.round((w0 / full) * 100);
       el.classList.add("resizing");
       const move = (ev: MouseEvent) => {
         // 图片居中，往右拖一像素两边各长一像素
         pct = Math.max(10, Math.min(100, Math.round(((w0 + 2 * (ev.clientX - x0)) / full) * 100)));
-        img.style.width = pct + "%";
+        box.style.width = pct + "%";
         label.textContent = pct + "%";
       };
       const up = () => { removeEventListener("mousemove", move); removeEventListener("mouseup", up); el.classList.remove("resizing"); commit(pct + "%"); };

@@ -372,7 +372,9 @@ export function typstTemplate(o: ExportOptions, title: string): string {
     "  #text(weight: \"bold\")[#it.term]",
     "  #block(inset: (left: 1.5em, top: -0.4em))[#it.description]",
     "]",
-    "#set table(inset: 6pt, stroke: 0.5pt)",
+    // 三线表：顶线、表头下线、底线，没有竖线（和编辑器里的表格一致）
+    "#set table(inset: 6pt, stroke: (x, y) => if y == 0 { (bottom: 0.5pt) } else { none })",
+    "#show table: it => block(stroke: (top: 1pt, bottom: 1pt), inset: (y: 0pt), it)",
     ...(o.eqNum ? ["#set math.equation(numbering: \"(1)\")"] : []),
     "#show figure.where(kind: table): set figure.caption(position: top)",
     "#show figure.where(kind: image): set figure.caption(position: bottom)",
