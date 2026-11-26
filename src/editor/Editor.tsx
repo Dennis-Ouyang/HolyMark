@@ -1,18 +1,20 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { Compartment, EditorState, Extension } from "@codemirror/state";
 import { EditorView, keymap, drawSelection, highlightActiveLine } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, undo, redo } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 import { searchKeymap, openSearchPanel } from "@codemirror/search";
 import { tags as t } from "@lezer/highlight";
 import { flash, livePreview, PreviewOptions } from "./livePreview";
-import { continueList, indentList, toggleInline } from "./commands";
+import { continueList, toggleInline } from "./commands";
 import { autoPair } from "./autoPair";
 import { cjkEmphasis, highlight } from "./cjkEmphasis";
 import { mathTools } from "./mathTools";
 import { notes } from "./notes";
+import { tabKeymap } from "./keys";
+import { emptyPairs } from "./emptyPairs";
 import { avatarColor } from "../components/SidePanel";
 import { Subscript, Superscript } from "@lezer/markdown";
 
@@ -72,16 +74,15 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial,
           notes(avatarColor),
           keymap.of([
             { key: "Enter", run: continueList },
-            { key: "Tab", run: (v) => indentList(v, 1) },
-            { key: "Shift-Tab", run: (v) => indentList(v, -1) },
+            ...tabKeymap,
             { key: "Mod-b", run: (v) => (toggleInline(v, "bold"), true) },
             { key: "Mod-i", run: (v) => (toggleInline(v, "italic"), true) },
             { key: "Mod-e", run: (v) => (toggleInline(v, "code"), true) },
             ...searchKeymap,
             ...historyKeymap,
             ...defaultKeymap,
-            indentWithTab,
           ]),
+          emptyPairs(),
           EditorView.updateListener.of((u) => {
             if (u.docChanged && !silent.current) cb.current.onChange(u.state.doc.toString());
             if (u.selectionSet || u.docChanged || u.focusChanged) cb.current.onSelection(u.view);

@@ -21,6 +21,7 @@ import { baseName, dirOf, isInside, join, normalize, relative, toPosix } from ".
 import { isMac, isWindows, kbd, keyName } from "./lib/platform";
 import { menuIdFor } from "./lib/shortcuts";
 import { ExportDialog } from "./components/ExportDialog";
+import { setNotifier } from "./editor/notice";
 
 const AUTHOR = "我";
 /** macOS 有原生菜单负责快捷键；Windows 和浏览器预览里由前端处理 */
@@ -99,6 +100,8 @@ export default function App() {
     window.clearTimeout((say as unknown as { t: number }).t);
     (say as unknown as { t: number }).t = window.setTimeout(() => setToast(null), action ? 6000 : 2600);
   }, []);
+
+  useEffect(() => { setNotifier((m, _kind, action) => say(m, action)); }, [say]);
 
   /* ---------- settings & theme ---------- */
   const update = (p: Partial<Settings>) => setS((old) => { const n = { ...old, ...p }; saveSettings(n); return n; });
