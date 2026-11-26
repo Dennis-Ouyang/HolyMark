@@ -76,6 +76,10 @@ export interface Backend {
   movePath(path: string, dir: string): Promise<string>;
   /** 移到废纸篓 / 回收站 */
   trashPath(path: string): Promise<void>;
+  /** 可撤销的删除：先挪到 .holymark/trash/ 暂存，返回暂存路径；restore 挪回原处，commit 真正移到废纸篓 */
+  stageDelete(path: string): Promise<string>;
+  restoreStaged(staged: string, original: string): Promise<void>;
+  commitStaged(staged: string): Promise<void>;
   takePendingOpen(): Promise<string[]>;
   onOpenFile(cb: () => void): () => void;
   onMenu(cb: (id: string) => void): () => void;
@@ -131,6 +135,9 @@ async function tauriBackend(): Promise<Backend> {
     duplicatePath: (path) => invoke("duplicate_path", { path }),
     movePath: (path, dir) => invoke("move_path", { path, dir }),
     trashPath: (path) => invoke("trash_path", { path }),
+    stageDelete: (path) => invoke("stage_delete", { path }),
+    restoreStaged: (staged, original) => invoke("restore_staged", { staged, original }),
+    commitStaged: (staged) => invoke("commit_staged", { staged }),
     takePendingOpen: () => invoke("take_pending_open"),
     onOpenFile(cb) {
       let un: (() => void) | null = null;
@@ -181,8 +188,9 @@ function demoBackend(): Backend {
         cur = n;
       });
     };
-    for (const p of [...files.keys()].sort()) add(p, false);
-    for (const d of dirs) add(d, true);
+    const hidden = (p: string) => p.slice(DEMO_ROOT.length + 1).split("/").some((x) => x.startsWith("."));
+    for (const p of [...files.keys()].sort()) if (!hidden(p)) add(p, false);
+    for (const d of dirs) if (!hidden(d)) add(d, true);
     const sort = (ns: TreeNode[]) => { ns.sort((a, b) => (+b.dir - +a.dir) || a.name.localeCompare(b.name, "zh")); ns.forEach((n) => sort(n.children)); };
     sort(root.children);
     return root.children;
@@ -261,6 +269,12 @@ function demoBackend(): Backend {
       for (const k of [...files.keys()]) if (k === path || k.startsWith(path + "/")) files.delete(k);
       for (const d of [...dirs]) if (d === path || d.startsWith(path + "/")) dirs.delete(d);
     },
+    async stageDelete(path) {
+      const staged = `${DEMO_ROOT}/.holymark/trash/${Date.now()}/${path.slice(path.lastIndexOf("/") + 1)}`;
+      return moveTo(path, staged);
+    },
+    async restoreStaged(staged, original) { moveTo(staged, original); },
+    async commitStaged(staged) { for (const k of [...files.keys()]) if (k === staged || k.startsWith(staged + "/")) files.delete(k); for (const d of [...dirs]) if (d === staged || d.startsWith(staged + "/")) dirs.delete(d); },
     async takePendingOpen() { return []; },
     onOpenFile() { return () => {}; },
     onMenu() { return () => {}; },

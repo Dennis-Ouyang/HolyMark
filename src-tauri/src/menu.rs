@@ -87,7 +87,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&item("sub", "下标", None)?)
         .item(&item("link", "链接", Some("CmdOrCtrl+Shift+K"))?)
         .separator()
-        .item(&item("cite", "引用文献或文件…", Some("CmdOrCtrl+Shift+C"))?)
+        .item(&item("cite", "插入文件链接…", Some("CmdOrCtrl+Shift+C"))?)
         .item(&item("note", "添加批注", Some("CmdOrCtrl+Alt+M"))?)
         .build()?;
 

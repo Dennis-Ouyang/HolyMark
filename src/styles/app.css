@@ -532,7 +532,6 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .epv-col::before { left: -1px; } .epv-col::after { right: -1px; }
 .epv-h { font-size: 1.375em; line-height: 1.4; font-weight: 600; margin-bottom: .45em; }
 .epv-b { margin: 0; text-align: justify; }
-.epv-meta { display: flex; gap: 14px; padding: 7px 14px; border-top: 1px solid var(--line); font-size: 12px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
 .switch { position: relative; width: 32px; height: 18px; border-radius: 9px; background: var(--line-2); transition: background 180ms; flex: none; }
 .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform 180ms var(--ease); }
 .switch.on { background: var(--accent); } .switch.on::after { transform: translateX(14px); }
@@ -582,9 +581,6 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 /* 关闭前询问：标题是问题本身，文件名单独一行放在灰色小条里，说明文字最弱，按钮靠右、「不保存」单独放左边 */
 .sheetdlg.ask { width: min(400px, 100%); padding: 22px 22px 18px; }
 .ask h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.4; }
-.ask-file { display: flex; align-items: center; gap: 8px; margin: 14px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; color: var(--fg); min-width: 0; }
-.ask-file svg { color: var(--fg-3); flex: none; }
-.ask-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .ask p { margin: 12px 0 0; font-size: 13px; line-height: 1.65; color: var(--fg-2); }
 .ask .df { padding: 20px 0 0; }
 .df.split .sp { flex: 1; }
@@ -816,3 +812,56 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .s-foot { display: flex; gap: 16px; height: 36px; align-items: center; padding: 0 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--fg-3); flex: none; }
 .win .s-list { background-color: var(--raised); }
 @media (max-width: 860px) { .s-list { width: 100%; border-right: 0; } .s-pv { display: none; } }
+
+/* 导出选项两端对齐：每一行的控件从左边缘撑到右边缘（数字框、成对的输入、页边距四格、开关行都一样） */
+.xopts .orow > .xf, .xopts .orow > .pair, .xopts .orow > .quad, .xopts .orow > .tin { width: 100%; min-width: 0; }
+.xopts .numfield { display: flex; }
+.xopts .numfield input { flex: 1 1 auto; width: 0; min-width: 36px; }
+.xopts .orow > .xf > .numfield, .xopts .orow > .xf > .select-btn { flex: 1 1 auto; }
+.xopts .pair > .xf, .xopts .pair > .tin { flex: 1 1 0; min-width: 0; }
+.xopts .pair > .xf > .numfield { flex: 1 1 auto; }
+/* 页边距那一行的预设单选撑满；和数字框、输入框并排的单选保持自身宽度，让输入的那一侧去撑 */
+.xopts .pair.mseg > .segm { display: flex; flex: 1 1 auto; }
+.xopts .pair.mseg > .segm button { flex: 1 1 0; }
+.xopts .pair > .segm { flex: none; }
+.xopts .quad { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.xopts .quad label { min-width: 0; }
+.xopts .quad label > .xf { display: flex; flex: 1 1 auto; min-width: 0; }
+.xopts .quad label > .xf > .numfield { flex: 1 1 auto; }
+.xopts .pair.spread { justify-content: space-between; cursor: pointer; }
+
+/* ---------- 插入文件链接（⌘⇧C）：光标处的小浮层 ---------- */
+.ins { position: fixed; z-index: 60; width: 420px; max-width: calc(100vw - 16px); border-radius: 10px; background: var(--raised); box-shadow: var(--pop); overflow: hidden; font-size: 13px;
+  animation: insIn 140ms var(--ease); }
+.ins.up { animation-name: insInUp; }
+@keyframes insIn { from { opacity: 0; transform: translateY(-4px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes insInUp { from { opacity: 0; transform: translateY(4px) scale(.97); } to { opacity: 1; transform: none; } }
+.leaving .ins { animation: insOut 100ms var(--ease-out) forwards; }
+@keyframes insOut { to { opacity: 0; transform: scale(.98); } }
+.ins-q { display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 12px; border-bottom: 1px solid var(--line); color: var(--fg-3); }
+.ins-q input { flex: 1; min-width: 0; border: 0; outline: none; background: none; font-size: 14px; color: var(--fg); }
+.ins-n { font-size: 12px; color: var(--fg-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ins-list { padding: 4px; max-height: 340px; overflow-y: auto; }
+.ins-gh { padding: 6px 8px 3px; font-size: 11px; color: var(--fg-3); }
+.ins-row { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; height: 34px; padding: 0 40px 0 8px; border-radius: 6px; text-align: left; color: var(--fg); }
+.ins-row.sel { background: var(--hover); }
+.ins-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ins-row .nm b { font-weight: 600; background: var(--anno); border-radius: 2px; }
+.ins-row .nm .dim { color: var(--fg-3); }
+.ins-row .dir { font-size: 12px; color: var(--fg-3); white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.ins-row .ret { position: absolute; right: 8px; visibility: hidden; }
+.ins-row.sel .ret { visibility: visible; }
+/* 文件类型小标签：同色系浅底深字 */
+.ft { width: 34px; flex: none; text-align: center; font: 600 10px/17px var(--f-ui); text-transform: uppercase; border-radius: 4px; color: var(--fg-2); background: var(--hover); }
+.ft.md { color: var(--accent-fg); background: var(--accent-soft); }
+.ft.pdf { color: var(--del); background: var(--del-bg); }
+.ft.sheet { color: var(--ins); background: var(--ins-bg); }
+.ft.img { color: var(--anno-line); background: var(--anno); }
+.ft.doc { color: #2F6FEB; background: rgba(47,111,235,.12); }
+.ft.bib { color: var(--accent-fg); background: var(--accent-soft); text-transform: none; }
+.ins-empty, .ins-more { padding: 8px 10px; font-size: 12px; color: var(--fg-3); }
+.ins-foot { padding: 4px; border-top: 1px solid var(--line); }
+.ins-foot button { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border-radius: 6px; color: var(--fg); }
+.ins-foot button svg { color: var(--fg-2); }
+.ins-foot button span { margin-left: auto; font-size: 12px; color: var(--fg-3); }
+.ins-foot button:hover { background: var(--hover); }

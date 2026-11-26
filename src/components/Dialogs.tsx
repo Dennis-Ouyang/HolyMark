@@ -4,7 +4,7 @@ import type { FontFamily } from "../lib/backend";
 import { FontSelect } from "./Select";
 import { NumberField } from "./NumberField";
 import { Icon } from "./Icons";
-import { isWindows, kbd } from "../lib/platform";
+import { kbd } from "../lib/platform";
 import { Segmented } from "./Segmented";
 
 function Scrim({ onClose, center, children }: { onClose: () => void; center?: boolean; children: React.ReactNode }) {
@@ -47,7 +47,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 }
 
 export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; fonts: FontFamily[]; onChange: (p: Partial<Settings>) => void; onClose: () => void }) {
-  const [pane, setPane] = useState<Pane>("editor");
+  const [pane, setPane] = useState<Pane>(PANES[0][0]);
   const num = (k: keyof Settings, attrs: { min: number; max?: number; step?: number; disabled?: boolean }, unit?: string) => (
     <NumberField value={String(s[k])} {...attrs} unit={unit} ariaLabel={String(k)} onCommit={(v) => { const n = parseFloat(v); if (!Number.isNaN(n)) onChange({ [k]: n } as Partial<Settings>); }} />
   );
@@ -81,7 +81,7 @@ export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; f
           </>}
           {pane === "editor" && <>
             <EditorPreview s={s} />
-            <Row label="标题字体" hint={isWindows ? "列出的是这台电脑上装的字体" : "列出的是这台 Mac 上装的字体"}><FontSelect value={s.headingFont} fonts={fonts} ariaLabel="标题字体" onChange={(v) => onChange({ headingFont: v })} /></Row>
+            <Row label="标题字体"><FontSelect value={s.headingFont} fonts={fonts} ariaLabel="标题字体" onChange={(v) => onChange({ headingFont: v })} /></Row>
             <Row label="正文字体"><FontSelect value={s.bodyFont} fonts={fonts} ariaLabel="正文字体" onChange={(v) => onChange({ bodyFont: v })} /></Row>
             <Row label="字号">{num("fontSize", { min: 12, max: 28 }, "px")}</Row>
             <Row label="行距">{num("lineHeight", { min: 1.2, max: 2.6, step: 0.05 }, "倍")}</Row>
@@ -114,7 +114,6 @@ function EditorPreview({ s }: { s: Settings }) {
           <p className="epv-b" style={{ fontFamily: fontStack(s.bodyFont) }}>这是正文部分的预览。你在此设置的是 HolyMark 打开所有文件时的默认值，如果你只想设置单个文件的显示方式，请在功能区“版式”中单独设置。</p>
         </div>
       </div>
-      <div className="epv-meta"><span>字号 {s.fontSize} px</span><span>行距 {s.lineHeight}</span><span>版心 {s.measure} 字 · {width} px</span></div>
     </div>
   );
 }
@@ -125,7 +124,6 @@ export function UnsavedDialog({ fileName, onSave, onDiscard, onCancel }: { fileN
     <Scrim onClose={onCancel} center>
       <div className="sheetdlg ask" role="alertdialog" aria-labelledby="ask-t" aria-describedby="ask-d">
         <h3 id="ask-t">关闭前要保存修改吗？</h3>
-        <div className="ask-file" title={fileName}><Icon name="doc" size={14} /><span>{fileName}</span></div>
         <p id="ask-d">不保存，文件会回到这次打开时的样子；刚才写的内容会留在「版本」里，随时能找回。</p>
         <div className="df split">
           <button className="btn" onClick={onDiscard}>不保存</button>
@@ -203,7 +201,7 @@ export const KEYS: [string, string][] = [
   ["搜索与命令", "⌘ K"], ["保存版本", "⌘ S"], ["新建文稿", "⌘ N"], ["打开文件夹", "⌘ O"], ["设置", "⌘ ,"], ["查找", "⌘ F"],
   ["粗体 / 斜体", "⌘ B / ⌘ I"], ["删除线", "⌘ ⇧ X"], ["行内代码", "⌘ E"], ["行内公式", "⌘ ⇧ M"], ["链接", "⌘ ⇧ K"],
   ["正文 / 标题 1–6", "⌘ 0 / ⌘ 1–6"], ["提升 / 降低标题级别", "⌘ = / ⌘ -"], ["高亮", "⌘ ⇧ H"], ["无序 / 有序 / 待办列表", "⌘ ⇧ 8 / 7 / 9"], ["子列表 / 回到上一级", "Tab / ⇧ Tab（或 ⌘ ] / ⌘ [）"], ["引用", "⌘ ⇧ ."],
-  ["引用文献或文件", "⌘ ⇧ C"], ["导出", "⌘ ⇧ E"], ["添加批注", "⌘ ⌥ M"], ["插入图片", "⌘ ⇧ I"],
+  ["插入文件链接", "⌘ ⇧ C"], ["导出", "⌘ ⇧ E"], ["添加批注", "⌘ ⌥ M"], ["插入图片", "⌘ ⇧ I"],
   ["专注模式", "⌘ ⇧ F"], ["侧栏 / 右栏", "⌘ \\ / ⌘ /"], ["折叠功能区", "⌘ ⌥ R"], ["大纲 / 批注 / 版本", "⌘ ⌥ 1 / 2 / 3"],
   ["表格里换格", "Tab / ⇧ Tab"], ["离开当前块或表格", "Esc"],
 ];

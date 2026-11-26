@@ -66,6 +66,10 @@ fn open_folder(app: tauri::AppHandle, state: State<AppState>, root: String) -> R
     let rootp = PathBuf::from(&root);
     let tree = fsops::tree(&rootp).map_err(err)?;
     {
+        let r = rootp.clone();
+        std::thread::spawn(move || purge_staged(&r));
+    }
+    {
         let mut i = state.inner.lock().unwrap();
         i.root = Some(rootp.clone());
         i.written.clear();
@@ -343,6 +347,64 @@ fn trash_path(path: String) -> Result<(), String> {
     trash::delete(&path).map_err(|e| format!("没能移到废纸篓：{e}"))
 }
 
+/* 删除可以撤销：先挪到文件夹里的 .holymark/trash/<时间>/ 暂存，提示条消失后再移到废纸篓；撤销就挪回原处。
+   macOS 的废纸篓不能用程序恢复，所以不直接丢进去。 */
+
+/// 暂存要删除的文件或文件夹，返回暂存后的路径
+#[tauri::command]
+fn stage_delete(state: State<AppState>, path: String) -> Result<String, String> {
+    let root = state.inner.lock().unwrap().root.clone().ok_or("还没有打开文件夹")?;
+    let from = PathBuf::from(&path);
+    let name = from.file_name().ok_or("路径不对")?;
+    let hold = root.join(".holymark").join("trash").join(versions::now_ms().to_string());
+    std::fs::create_dir_all(&hold).map_err(err)?;
+    let to = hold.join(name);
+    std::fs::rename(&from, &to).map_err(err)?;
+    Ok(slash(&to))
+}
+
+/// 撤销删除：挪回原处
+#[tauri::command]
+fn restore_staged(staged: String, original: String) -> Result<(), String> {
+    let to = PathBuf::from(&original);
+    if to.exists() {
+        return Err("原来的位置已经有同名的文件了".into());
+    }
+    let from = PathBuf::from(&staged);
+    std::fs::rename(&from, &to).map_err(err)?;
+    if let Some(d) = from.parent() {
+        let _ = std::fs::remove_dir(d);
+    }
+    Ok(())
+}
+
+/// 真正删除暂存的文件：移到废纸篓，再清掉暂存用的空文件夹
+#[tauri::command]
+fn commit_staged(staged: String) -> Result<(), String> {
+    let p = PathBuf::from(&staged);
+    if p.exists() {
+        trash::delete(&p).map_err(|e| format!("没能移到废纸篓：{e}"))?;
+    }
+    if let Some(d) = p.parent() {
+        let _ = std::fs::remove_dir(d);
+    }
+    Ok(())
+}
+
+/// 上次没来得及处理的暂存（比如应用被强行关掉），打开文件夹时移到废纸篓
+fn purge_staged(root: &Path) {
+    let dir = root.join(".holymark").join("trash");
+    let Ok(entries) = std::fs::read_dir(&dir) else { return };
+    for e in entries.filter_map(|e| e.ok()) {
+        if let Ok(kids) = std::fs::read_dir(e.path()) {
+            for k in kids.filter_map(|k| k.ok()) {
+                let _ = trash::delete(k.path());
+            }
+        }
+        let _ = std::fs::remove_dir(e.path());
+    }
+}
+
 #[derive(Serialize)]
 struct ExportTools {
     pandoc: Option<export::Tool>,
@@ -465,7 +527,10 @@ pub fn run() {
             rename_path,
             duplicate_path,
             move_path,
-            trash_path
+            trash_path,
+            stage_delete,
+            restore_staged,
+            commit_staged
         ])
         .build(tauri::generate_context!())
         .expect("HolyMark 启动失败");

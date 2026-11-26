@@ -244,7 +244,7 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
         <div className="orow"><span>纸张</span>{xf("paper", <Select value={o.paper} ariaLabel="纸张" onChange={(v) => set({ paper: v as ExportOptions["paper"] })}
           options={[{ value: "", label: `默认（${D.paper}）` }, ...Object.keys(PAPERS).map((k) => ({ value: k, label: k === "16K" ? "16 开" : k, hint: `${PAPERS[k][0]}×${PAPERS[k][1]} mm` })), { value: "custom", label: "自定义尺寸" }]} />)}</div>
         {o.paper === "custom" && <div className="orow"><span>宽 × 高</span><div className="pair">{numf("pw", "宽", { min: 50, max: 1000 }, "mm", "210")}{numf("ph", "高", { min: 50, max: 1000 }, "mm", "297")}</div></div>}
-        <div className="orow"><span>页边距<small>厘米</small></span><div className="pair">
+        <div className="orow"><span>页边距<small>厘米</small></span><div className="pair mseg">
           <Seg label="页边距预设" value={marginPreset} options={[["", "默认"], ...MARGINS.map(([k, l]) => [k, l] as [string, string])]}
             onChange={(k) => { const m = MARGINS.find(([x]) => x === k)?.[2] ?? ["", "", "", ""]; set({ mt: m[0], mb: m[1], ml: m[2], mr: m[3] }); }} />
           {marginPreset === "custom" && <span className="dnote">自定义</span>}</div></div>
@@ -288,7 +288,7 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
         <div className="orow"><span>文中批注</span><Seg label="文中批注" value={o.notes} options={[["comment", "变成 Word 批注"], ["drop", "不导出"]]} onChange={(v) => set({ notes: v })} /></div>
       </div>}
       <div className="og"><h5>其他</h5>
-        <div className="orow"><span>目录</span><label className="pair">{/* 开关 */}<button type="button" className={"switch" + (o.toc ? " on" : "")} role="switch" aria-checked={o.toc} aria-label="生成目录" onClick={() => set({ toc: !o.toc })} /><span className="dnote">在正文前生成目录</span></label></div>
+        <div className="orow"><span>目录</span><label className="pair spread"><span className="dnote">在正文前生成目录</span><button type="button" className={"switch" + (o.toc ? " on" : "")} role="switch" aria-checked={o.toc} aria-label="生成目录" onClick={() => set({ toc: !o.toc })} /></label></div>
         <div className="orow top"><span>Pandoc 参数</span><textarea className="xa" value={o.extra} placeholder="额外的参数，例如 --number-sections" aria-label="额外的 Pandoc 参数" onChange={(e) => set({ extra: e.target.value })} /></div>
       </div>
     </>

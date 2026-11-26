@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorView } from "@codemirror/view";
 import { Editor, EditorHandle } from "./editor/Editor";
-import { esc } from "./editor/livePreview";
 import { Backend, demoImages, demoStartFile, FontFamily, getBackend, isTauri, TreeNode, VersionMeta } from "./lib/backend";
 import { alignBlocks, changedLines, countWords, docLayout, headings, Note, parseNotes, plainText, setDocLayout, wordCounter } from "./lib/markdown";
 import { applyAccent, loadSettings, saveSettings, Settings, fontStack } from "./lib/settings";
@@ -17,6 +16,7 @@ import { Presence } from "./components/Presence";
 import { WindowControls } from "./components/WindowControls";
 import { Menu, MenuEntry } from "./components/Menu";
 import { SearchPanel } from "./components/Search";
+import { InsertFile, InsertPick, linkFor } from "./components/InsertFile";
 import { baseName, dirOf, isInside, join, normalize, relative, toPosix } from "./lib/paths";
 import { isMac, isWindows, kbd, keyName } from "./lib/platform";
 import { menuIdFor } from "./lib/shortcuts";
@@ -53,7 +53,7 @@ export default function App() {
   const [showSide, setShowSide] = useState(true);
   const [showPanel, setShowPanel] = useState(true);
   const [focus, setFocus] = useState(false);
-  const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "cite" | "help_syntax" | "help_keys" | "export" | "unsaved" | "cmpfile" | "move">(null);
+  const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "help_syntax" | "help_keys" | "export" | "unsaved" | "cmpfile" | "move">(null);
   const [fonts, setFonts] = useState<FontFamily[]>([]);
   const [scrollHeading, setScrollHeading] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
@@ -134,9 +134,11 @@ export default function App() {
   }, [be, root]);
   async function newFile(dir?: string) {
     if (!be || !root) { await chooseFolder(); return; }
+    const prev = live.current.path;
     const p = await be.createFile(dir ?? (path ? dirOf(path) : root), "未命名");
     setTree(await be.listTree(root));
     await openFile(p);
+    undoable(`已新建「${baseName(p)}」`, async () => { await be.trashPath(p); if (prev) await openFile(prev); });
     const v = view();
     if (v) { v.focus(); v.dispatch({ selection: { anchor: v.state.doc.length } }); }
   }
@@ -224,6 +226,8 @@ export default function App() {
   const closing = useRef(false);
   async function reallyClose() {
     closing.current = true;
+    await Promise.all([...staged.current.keys()].map((p) => { window.clearTimeout(staged.current.get(p)); return be?.commitStaged(p).catch(() => {}); }));
+    staged.current.clear();
     setDlg(null);
     if (!isTauri) { closing.current = false; say("浏览器预览里不会真的关闭窗口"); return; }
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
@@ -306,8 +310,8 @@ export default function App() {
     citeLabel: (k: string) => { const b = bibMap.get(k); return b ? `${shortAuthor(b.author)}, ${b.year}` : "@" + k; },
     resolveImage: (src: string) => {
       if (/^(https?:|data:)/.test(src)) return src;
-      let raw = src;
-      try { raw = decodeURI(src); } catch { /* 原样使用 */ }
+      let raw = src.replace(/^<(.*)>$/, "$1");
+      try { raw = decodeURI(raw); } catch { /* 原样使用 */ }
       const abs = /^(\/|[A-Za-z]:[\\/])/.test(raw) ? toPosix(raw) : normalize(join(dirOf(live.current.path), raw));
       if (!isTauri && demoImages.has(abs)) return demoImages.get(abs)!;
       if (isTauri) return (window as unknown as { __TAURI_INTERNALS__: { convertFileSrc: (p: string) => string } }).__TAURI_INTERNALS__.convertFileSrc(abs);
@@ -378,7 +382,7 @@ export default function App() {
       case "find": ed.current?.find(); break;
       case "search": setDlg((d) => (d === "palette" ? null : "palette")); break;
       case "link": if (v) insertLink(v); break;
-      case "cite": setDlg("cite"); break;
+      case "cite": openInsert(); break;
       case "note": if (v && !insertNote(v, AUTHOR)) say("先选中要批注的文字"); break;
       case "insert_table": if (v) insertBlock(v, tableMarkdown(2, 3), 2); break;
       case "insert_code": if (v) insertBlock(v, "```\n\n```", 4); break;
@@ -535,6 +539,15 @@ export default function App() {
 
   /* ---------- 文件管理（右键菜单）---------- */
   const refreshTree = async () => { if (be && root) setTree(await be.listTree(root)); };
+  /** 先做后撤销：提示条右边带「撤销」 */
+  const undoable = (msg: string, undo: () => Promise<unknown>) => say(msg, { label: "撤销", run: async () => {
+    try { await undo(); await refreshTree(); } catch (e) { say(String(e).replace(/^Error:\s*/, "")); }
+  } });
+  /** 删除后还没真正移到废纸篓的（提示条消失、或者关窗口时才移） */
+  const staged = useRef(new Map<string, number>());
+  const commitStaged = (p: string) => { window.clearTimeout(staged.current.get(p)); staged.current.delete(p); be?.commitStaged(p).catch(() => {}); };
+  /** 刚新建的文件夹：改完名再提示 */
+  const justCreated = useRef("");
   const trashName = isWindows ? "回收站" : "废纸篓";
   /** 改名、移动之后：正在编辑的文件（或它所在的文件夹）跟着换路径 */
   async function followMove(from: string, to: string) {
@@ -548,14 +561,18 @@ export default function App() {
   }
   async function renameDone(p: string, name: string | null) {
     setRenaming(null);
+    if (be && justCreated.current === p && (name === null || name.trim() === baseName(p))) { justCreated.current = ""; newFolderToast(p); return; }
     if (!be || name === null || name.trim() === baseName(p)) return;
     try {
       await flush();
       const to = await be.renamePath(p, name.trim());
       await refreshTree();
       await followMove(p, to);
+      if (justCreated.current === p) { justCreated.current = ""; newFolderToast(to); return; }
+      undoable(`已改名为「${baseName(to)}」`, async () => { await be.renamePath(to, baseName(p)); await followMove(to, p); });
     } catch (e) { say(String(e).replace(/^Error:\s*/, "")); }
   }
+  const newFolderToast = (p: string) => undoable(`已新建文件夹「${baseName(p)}」`, () => be!.trashPath(p));
   async function moveTo(node: TreeNode, dir: string) {
     if (!be) return;
     try {
@@ -563,7 +580,8 @@ export default function App() {
       const to = await be.movePath(node.path, dir);
       await refreshTree();
       await followMove(node.path, to);
-      say(`已移到「${dir === root ? baseName(root) : relative(root, dir)}」`);
+      const from = dirOf(node.path);
+      undoable(`已把「${node.name}」移到「${dir === root ? baseName(root) : relative(root, dir)}」`, async () => { await be.movePath(to, from); await followMove(to, node.path); });
     } catch (e) { say(String(e).replace(/^Error:\s*/, "")); }
   }
   async function trash(node: TreeNode) {
@@ -572,7 +590,8 @@ export default function App() {
       const cur = live.current.path;
       const inside = cur === node.path || cur.startsWith(node.path + "/");
       if (inside) await flush();
-      await be.trashPath(node.path);
+      const hold = await be.stageDelete(node.path);
+      staged.current.set(hold, window.setTimeout(() => commitStaged(hold), 6500));
       const t = await be.listTree(root);
       setTree(t);
       if (inside) {
@@ -580,13 +599,18 @@ export default function App() {
         if (next) await openFile(next.path);
         else { live.current = { path: "", text: "", base: "", lastWritten: "", lastVersionAt: 0 }; setPath(""); setText(""); setVersions([]); }
       }
-      say(`「${node.name}」已移到${trashName}，可以从那里找回`);
+      undoable(`已把「${node.name}」移到${trashName}`, async () => {
+        window.clearTimeout(staged.current.get(hold)); staged.current.delete(hold);
+        await be.restoreStaged(hold, node.path);
+        if (inside) { await refreshTree(); await openFile(cur); }
+      });
     } catch (e) { say(String(e).replace(/^Error:\s*/, "")); }
   }
   async function newFolder(dir: string) {
     if (!be) return;
     const p = await be.createDir(dir, "新建文件夹");
     await refreshTree();
+    justCreated.current = p;
     setRenaming(p);
   }
   async function compareWith(p: string) {
@@ -623,7 +647,7 @@ export default function App() {
         { sep: true } as MenuEntry,
       ] : []),
       { label: "重命名", icon: "edit", run: () => setRenaming(node.path) },
-      ...(!node.dir ? [{ label: "创建副本", icon: "copy", run: async () => { await be?.duplicatePath(node.path); await refreshTree(); } }] : []),
+      ...(!node.dir ? [{ label: "创建副本", icon: "copy", run: async () => { if (!be) return; const c = await be.duplicatePath(node.path); await refreshTree(); undoable(`已创建「${baseName(c)}」`, () => be.trashPath(c)); } }] : []),
       { label: "移到…", icon: "folder", run: () => { setMoving(node); setDlg("move"); } },
       { sep: true },
       { label: reveal, icon: "open", run: () => be?.reveal(node.path) },
@@ -676,7 +700,7 @@ export default function App() {
 
   const commands: PaletteItem[] = [
     { group: "命令", icon: "cmd", title: "保存版本", keys: ["⌘", "S"].map((k) => keyName(k)), run: () => setDlg("save") },
-    { group: "命令", icon: "cmd", title: "引用文献或文件", run: () => setTimeout(() => setDlg("cite"), 0) },
+    { group: "命令", icon: "cmd", title: "插入文件链接…", keys: ["⌘", "⇧", "C"].map((k) => keyName(k)), run: () => setTimeout(openInsert, 0) },
     { group: "命令", icon: "cmd", title: "打开文件夹…", keys: ["⌘", "O"].map((k) => keyName(k)), run: chooseFolder },
     { group: "命令", icon: "cmd", title: "新建文稿", keys: ["⌘", "N"].map((k) => keyName(k)), run: newFile },
     { group: "命令", icon: "cmd", title: "与其他文稿对比…", run: () => setTimeout(() => setDlg("cmpfile"), 0) },
@@ -686,20 +710,35 @@ export default function App() {
     { group: "命令", icon: "cmd", title: "专注模式", keys: ["⌘", "⇧", "F"].map((k) => keyName(k)), run: () => setFocus((f) => !f) },
     ...hs.filter((h) => h.level >= 2).map((h) => ({ group: "跳转", icon: "go", title: h.text, run: () => jump(h.pos) })),
   ];
+  /* ---------- 插入文件链接（⌘⇧C）：光标处的小浮层 ---------- */
+  const [insertAt, setInsertAt] = useState<{ left: number; top: number; bottom: number } | null>(null);
+  const RECENT_KEY = "holymark-recent-insert";
+  const [recentIns, setRecentIns] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); } catch { return []; } });
+  const rememberInsert = (p: string) => setRecentIns((r) => {
+    const n = [p, ...r.filter((x) => x !== p)].slice(0, 12);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(n)); } catch { /* 存不了就算了 */ }
+    return n;
+  });
+  function openInsert() {
+    const v = view(); if (!v || !path) return;
+    const c = v.coordsAtPos(v.state.selection.main.head);
+    const r = c ?? (() => { const b = v.contentDOM.getBoundingClientRect(); return { left: b.left, top: b.top + 40, bottom: b.top + 60 }; })();
+    setInsertAt({ left: Math.round(r.left), top: Math.round(r.top), bottom: Math.round(r.bottom) });
+  }
+  function pickInsert(p: InsertPick) {
+    setInsertAt(null);
+    if (p.kind === "bib") { insertAtCursor(`[@${p.key}]`); return; }
+    const l = linkFor(p.path, path);
+    insertAtCursor(l.text, l.block);
+    rememberInsert(p.path);
+  }
   /** 引用文件夹以外的文件：用系统的文件选择窗口，插入相对路径链接 */
   async function citeOtherFile() {
     if (!be || !path) return;
     if (be.isDemo) { say("浏览器预览里不能选择本机文件"); return; }
-    const f = await be.pickFile("选择要引用的文件");
-    if (f) insertAtCursor(`[${baseName(f)}](${encodeURI(relative(dirOf(path), f))})`);
+    const f = await be.pickFile("选择要插入链接的文件");
+    if (f) { const l = linkFor(f, path); insertAtCursor(l.text, l.block); }
   }
-  const pickOther: PaletteItem = { group: "其他位置", icon: "folder", title: "选择其他文件…", sub: "不在当前文件夹里的文件，插入相对路径链接", run: () => { setTimeout(citeOtherFile, 0); } };
-  const citeItems: PaletteItem[] = [
-    ...bib.map((b) => ({ group: "文献", icon: "cite", title: `${shortAuthor(b.author)}, ${b.year}`, sub: esc(`@${b.key} · ${b.title}`), run: () => insertAtCursor(`[@${b.key}]`) })),
-    ...flatten(tree).filter((f) => f.path !== path).map((f) => ({ group: "文件夹里的文件", icon: "file", title: relative(root, f.path), run: () => insertAtCursor(`[${f.name}](${encodeURI(relative(dirOf(path), f.path))})`) })),
-    pickOther,
-  ];
-  const citeSearch = useCallback(() => [] as PaletteItem[], []);
 
   /* ---------- keyboard ---------- */
   // 没有原生菜单时（Windows、浏览器预览），菜单里的快捷键都在这里处理；
@@ -774,7 +813,7 @@ export default function App() {
       <main className="main">
         <Ribbon view={ed.current?.view() ?? null} author={AUTHOR} settings={s} fonts={fonts} layout={layout} onLayout={applyLayout}
           collapsed={s.ribbonCollapsed} setCollapsed={(c) => update({ ribbonCollapsed: c })}
-          onPickImage={pickImage} onCite={() => setDlg("cite")} active={fmt.active} block={fmt.block} />
+          onPickImage={pickImage} onCite={openInsert} active={fmt.active} block={fmt.block} />
         <div className="scroller" ref={scroller} onScroll={() => window.requestAnimationFrame(syncScrollHeading)} onMouseDown={clickBelow}>
           <div className="doc">
             {!path && <div className="welcome"><h2>HolyMark</h2><p>打开一个放稿件的文件夹开始写作。文件就是普通的 Markdown，换任何编辑器都能打开。</p><button className="btn acc" onClick={chooseFolder}>打开文件夹</button></div>}
@@ -812,7 +851,8 @@ export default function App() {
       <Presence>{(dlg === "help_syntax" || dlg === "help_keys") && <HelpDialog kind={dlg === "help_syntax" ? "syntax" : "keys"} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{dlg === "palette" && <SearchPanel text={live.current.text} path={path} root={root} headings={hs} folderTexts={folderTexts} commands={commands}
         onJump={jumpTo} onOpenAt={openAt} onClose={() => setDlg(null)} />}</Presence>
-      <Presence>{dlg === "cite" && <Palette items={citeItems} search={citeSearch} pinned={pickOther} onClose={() => setDlg(null)} placeholder="搜索文献或文件，回车插入" />}</Presence>
+      <Presence ms={100}>{insertAt && <InsertFile at={insertAt} files={flatten(tree)} docPath={path} root={root} bib={bib} recent={recentIns}
+        onPick={pickInsert} onPickOther={() => { setInsertAt(null); setTimeout(citeOtherFile, 0); }} onClose={() => { setInsertAt(null); view()?.focus(); }} />}</Presence>
       <Presence>{dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{dlg === "cmpfile" && <Palette items={cmpItems} search={noSearch} pinned={cmpPick} onClose={() => setDlg(null)} placeholder="选一篇文稿，和当前文稿左右对比" />}</Presence>
       <Presence>{dlg === "move" && moving && <Palette items={moveItems} search={noSearch} onClose={() => { setDlg(null); setMoving(null); }} placeholder={`把「${moving.name}」移到哪个文件夹`} />}</Presence>
