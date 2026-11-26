@@ -139,3 +139,11 @@ describe("导出提示的归并", async () => {
     ]);
   });
 });
+
+describe("列表紧跟段落（B6）", () => {
+  it("Pandoc 的读法允许列表前没有空行，和编辑器、导出预览一致", () => {
+    const y = defaultsYaml(opts(), { bibliography: [], docDir: "/x" });
+    expect(y).toMatch(/^from: markdown\+east_asian_line_breaks\+mark\+lists_without_preceding_blankline$/m);
+  });
+});
+

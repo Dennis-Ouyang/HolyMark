@@ -70,4 +70,8 @@ describe("previewHTML 不执行文稿里的脚本", () => {
     expect(html(md, "pdf")).toContain("甲乙丙丁<mark>戊</mark>己");
     expect(html("甲{==乙==}{>>@我 2026-01-01：一<<}丙丁戊{==己==}{>>@我 2026-01-01：二<<}庚。", "docx")).not.toMatch(/<mark>/);
   });
+  it("列表紧跟段落时预览也是列表（和 Pandoc 的 lists_without_preceding_blankline 一致）", () => {
+    const h = html("基于此，本章提出三个具体问题：\n- 第一层的一项\n- [ ] 待办\n", "pdf");
+    expect(h).toMatch(/<p>基于此，本章提出三个具体问题：<\/p>\s*<ul>/);
+  });
 });
