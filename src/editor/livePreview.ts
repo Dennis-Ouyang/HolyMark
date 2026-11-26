@@ -70,7 +70,8 @@ class MermaidWidget extends WidgetType {
     import("mermaid").then(async ({ default: mermaid }) => {
       const dark = document.documentElement.dataset.theme === "dark" ||
         (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
-      mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "neutral", securityLevel: "strict" });
+      // 标签用纯 SVG 文字：mermaid 10.9 + dompurify 3.5 在 strict 下会把 HTML 标签里的文字清掉（和导出一致，见 mermaidImage.ts）
+      mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "neutral", securityLevel: "strict", htmlLabels: false, flowchart: { htmlLabels: false } });
       try {
         const { svg } = await mermaid.render("hm-mm-" + ++mermaidSeq, this.code);
         el.innerHTML = svg;
