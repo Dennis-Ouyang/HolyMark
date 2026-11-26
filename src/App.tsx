@@ -26,6 +26,7 @@ import { features, FeatureHooks } from "./editor/features";
 import { useTidy } from "./features/useTidy";
 import { useWritingStats } from "./features/useWritingStats";
 import { useSymbols } from "./features/useSymbols";
+import { foldHeadings, foldToLevel, unfoldAll } from "./editor/sectionFold";
 
 const AUTHOR = "我";
 /** macOS 有原生菜单负责快捷键；Windows 和浏览器预览里由前端处理 */
@@ -426,6 +427,7 @@ export default function App() {
   const openSettings = (pane?: Pane) => { setSettingsPane(pane); setDlg("settings"); };
   const wstats = useWritingStats({ be, tree, livePath: () => live.current.path, liveText: () => live.current.text, withPunct: s.countPunct });
   const symbols = useSymbols(view);
+  featureHooks.current.withPunct = () => s.countPunct;
   const tidy = useTidy({ view, rules: s.tidy, text, say, openSettings: () => openSettings("tidy") });
 
   /* ---------- 菜单 ---------- */
@@ -446,6 +448,9 @@ export default function App() {
       case "settings": openSettings(); break;
       case "tidy": if (path) tidy.open(); break;
       case "math_symbols": if (path) symbols.open(); break;
+      case "fold_all": if (v) foldHeadings(v, 1); break;
+      case "unfold_all": if (v) unfoldAll(v); break;
+      case "fold_h2": if (v) foldToLevel(v, 2); break;
       case "new_file": newFile(); break;
       case "open_folder": chooseFolder(); break;
       case "close_folder": closeFolder(); break;
@@ -781,6 +786,11 @@ export default function App() {
     { group: "命令", icon: "cmd", title: "Markdown 语法速查", run: () => setTimeout(() => setDlg("help_syntax"), 0) },
     { group: "命令", icon: "cmd", title: "导出 Word / PDF / Markdown…", keys: ["⌘", "⇧", "E"].map((k) => keyName(k)), run: () => setTimeout(openExport, 0) },
     { group: "命令", icon: "cmd", title: "设置", keys: ["⌘", ","].map((k) => keyName(k)), run: () => setDlg("settings") },
+    ...(path ? [
+      { group: "命令", icon: "chevr", title: "折叠全部章节", run: () => onMenu("fold_all") },
+      { group: "命令", icon: "chev", title: "展开全部章节", run: () => onMenu("unfold_all") },
+      { group: "命令", icon: "chevr", title: "折叠到二级标题", sub: "只显示一、二级标题", run: () => onMenu("fold_h2") },
+    ] : []),
     ...(path ? [{ group: "命令", icon: "symbols", title: "公式符号…", run: () => setTimeout(() => symbols.open(), 0) }] : []),
     ...(path ? [{ group: "命令", icon: "typography", title: "中文排版整理", sub: "选中的文字或全文", run: () => setTimeout(() => tidy.open(), 0) }] : []),
     { group: "命令", icon: "cmd", title: "专注模式", keys: ["⌘", "⇧", "F"].map((k) => keyName(k)), run: () => setFocus((f) => !f) },

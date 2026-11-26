@@ -3,6 +3,7 @@ import type { Heading, Note } from "../lib/markdown";
 import type { VersionMeta } from "../lib/backend";
 import { Icon } from "./Icons";
 import { kbd } from "../lib/platform";
+import { hasChildren, hiddenByCollapse, outlineKeys } from "../lib/outlineFold";
 
 export type PanelTab = "outline" | "notes" | "versions";
 const SRC = { saved: "你保存的", external: "外部修改", auto: "自动" } as const;
@@ -58,6 +59,10 @@ export function SidePanel(p: Props) {
   }, [p.tab, p.notes.length, p.freshVersion]);
   const noteCounts = countNotesPerHeading(p.headings, p.notes);
   const outlineRef = useRef<HTMLDivElement>(null);
+  // 目录自己的折叠（和正文的折叠各管各的）
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const okeys = outlineKeys(p.headings), kids = hasChildren(p.headings), hidden = hiddenByCollapse(p.headings, okeys, collapsed);
+  const toggleKids = (k: string) => setCollapsed((c) => { const n = new Set(c); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   useEffect(() => { outlineRef.current?.querySelector(".oi.cur")?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [p.currentHeading]);
 
   return (
@@ -73,8 +78,10 @@ export function SidePanel(p: Props) {
         <div className="pane">
           {p.headings.length ? (
             <div className="ol" ref={outlineRef}>
-              {p.headings.map((h, i) => (
+              {p.headings.map((h, i) => hidden[i] ? null : (
                 <button key={i} className={"oi" + (h.level === 1 ? " l1" : "") + (i === p.currentHeading ? " cur" : "")} style={{ "--lv": Math.max(0, h.level - 2) } as React.CSSProperties} onClick={() => p.onJump(h.pos)}>
+                  {kids[i] && <span className={"ofold" + (collapsed.has(okeys[i]) ? " shut" : "")} role="button" aria-label={collapsed.has(okeys[i]) ? "展开子级" : "收起子级"}
+                    onClick={(e) => { e.stopPropagation(); toggleKids(okeys[i]); }}><Icon name="chev" size={12} /></span>}
                   <span className="t">{h.text}</span>
                   {noteCounts[i] > 0 && <span className="cm"><Icon name="note" size={12} />{noteCounts[i]}</span>}
                 </button>

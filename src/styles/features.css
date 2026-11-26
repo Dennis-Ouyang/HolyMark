@@ -96,3 +96,19 @@
 .sp-sym .katex { font-size: 1em; }
 /* 正在选补全时，公式还没打完，不要同时冒出「公式有误」 */
 .cm-editor:has(.hm-ac) .hm-mathtip.err { display: none; }
+
+/* ---------- 按章节折叠 ---------- */
+/* 标题行开头一个零宽的锚点，小三角挂在版心外面；悬停这一行才出现，折起来的一直显示 */
+.hm-fold-anchor { display: inline-block; position: relative; width: 0; height: 0; vertical-align: baseline; }
+.hm-fold { position: absolute; left: -28px; top: calc(-.36em - 10px); width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; color: var(--fg-3); cursor: pointer; opacity: 0;
+  transition: opacity 120ms, background 120ms, color 120ms, rotate 180ms var(--ease); }
+.cm-line:hover .hm-fold, .hm-fold.folded { opacity: 1; }
+.hm-fold:hover { background: var(--hover); color: var(--fg); }
+.hm-fold.folded { rotate: -90deg; }
+.hm-folded { margin-left: 12px; padding: 1px 6px; border-radius: 6px; font: 400 12px/1.6 var(--f-ui); color: var(--fg-3); font-variant-numeric: tabular-nums; cursor: pointer; vertical-align: middle; white-space: nowrap; transition: background 120ms, color 120ms; }
+.hm-folded:hover { background: var(--hover); color: var(--fg-2); }
+/* 目录里收起子级的小三角：悬停这一行出现，收起的一直显示 */
+.oi .ofold { position: absolute; left: calc(var(--lv,0) * 14px - 9px); top: calc(50% - 8px); width: 16px; height: 16px; display: grid; place-items: center; border-radius: 4px; color: var(--fg-3); opacity: 0; transition: opacity 120ms, rotate 180ms var(--ease), background 120ms; }
+.oi:hover .ofold, .oi .ofold.shut { opacity: 1; }
+.oi .ofold:hover { background: var(--line); color: var(--fg); }
+.oi .ofold.shut { rotate: -90deg; }

@@ -6,14 +6,18 @@ import type { Extension } from "@codemirror/state";
 import { autocompletion } from "@codemirror/autocomplete";
 import { tidyMarks } from "./tidyMarks";
 import { mathCompletions, texPreviewOption } from "./mathComplete";
+import { sectionFolding } from "./sectionFold";
 
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
-export interface FeatureHooks {}
+export interface FeatureHooks {
+  /** 字数口径：含不含标点（跟设置走） */
+  withPunct?: () => boolean;
+}
 
-export function features(_hooks: { current: FeatureHooks }): Extension {
+export function features(hooks: { current: FeatureHooks }): Extension {
   return [
     tidyMarks,
     // 补全只在特定位置出现（公式里的 \），各个来源自己判断，正文里打字不会弹出
     autocompletion({ override: [mathCompletions], icons: false, addToOptions: [texPreviewOption], tooltipClass: () => "hm-ac", maxRenderedOptions: 40 }),
+    sectionFolding(() => hooks.current.withPunct?.() ?? false),
   ];
 }

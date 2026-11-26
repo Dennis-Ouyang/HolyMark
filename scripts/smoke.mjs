@@ -94,6 +94,35 @@ step("N12 公式补全、Tab 跳参数、符号面板", async (page) => {
   await page.waitForSelector(".hm-float.symp", { state: "detached" });
   await page.evaluate((b) => { const v = window.__hm.view(); v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: b } }); }, before);
 });
+step("N6 按章节折叠：小三角、占位、命令、跳进去自动展开、目录收起", async (page) => {
+  await page.hover(".hm-h2 >> nth=0");
+  await page.dispatchEvent(".hm-h2 >> nth=0 >> .hm-fold", "mousedown");
+  await page.waitForSelector(".hm-folded");
+  const t = await page.textContent(".hm-folded");
+  if (!/^已折叠 [\d,]+ 字$/.test(t)) throw new Error("占位文字不对：" + t);
+  await page.click(".hm-folded");
+  await page.waitForTimeout(150);
+  if (await page.$(".hm-folded")) throw new Error("点占位没有展开");
+  await menu(page, "fold_h2");
+  await page.waitForTimeout(150);
+  if ((await page.$$(".hm-folded")).length < 3) throw new Error("折叠到二级标题不对");
+  // 跳到某个折起来的地方：自动展开
+  await page.evaluate(() => { const v = window.__hm.view(); const p = v.state.doc.toString().indexOf("招募"); v.dispatch({ selection: { anchor: p } }); });
+  await page.waitForTimeout(150);
+  const n = (await page.$$(".hm-folded")).length;
+  await menu(page, "unfold_all");
+  await page.waitForTimeout(150);
+  if (await page.$(".hm-folded")) throw new Error("展开全部没有展开");
+  if (n >= 4) throw new Error("跳进折叠区域没有自动展开");
+  // 目录：收起子级只影响目录
+  const before = (await page.$$(".ol .oi")).length;
+  await page.hover(".ol .oi:has-text('分析框架')");
+  await page.click(".ol .oi:has-text('分析框架') .ofold");
+  const after = (await page.$$(".ol .oi")).length;
+  if (after !== before - 2) throw new Error(`目录收起不对：${before} → ${after}`);
+  if (await page.$(".hm-folded")) throw new Error("目录收起影响了正文");
+  await page.click(".ol .oi:has-text('分析框架') .ofold");
+});
 
 async function run(theme) {
   const browser = await chromium.launch();
