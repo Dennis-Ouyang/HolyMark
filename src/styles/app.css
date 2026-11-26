@@ -389,10 +389,17 @@ kbd { font: 500 11px var(--f-ui); padding: 1px 5px; border-radius: 4px; border: 
 /* ---------- 对照视图 ---------- */
 .cmp { position: absolute; inset: 0; background: var(--bg); display: flex; flex-direction: column; z-index: 12; animation: fade 160ms ease; }
 @keyframes fade { from { opacity: 0; } }
-.cmp-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
-.cmp-h .ttl { display: flex; flex-direction: column; min-width: 0; margin-right: auto; }
-.cmp-h .ttl b { font-weight: 500; font-size: 14px; }
-.cmp-h .ttl small { font-size: 12px; color: var(--fg-3); }
+.cmp-h { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.cmp-h > :not(.ttl) { flex: none; }
+.cmp-h .ttl { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.cmp-h .tl { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.cmp-h .tl b { font-weight: 500; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.cmp-h .tm { flex: none; font-size: 12px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.cmp-h .sub { display: flex; align-items: baseline; gap: 8px; font-size: 12px; color: var(--fg-2); white-space: nowrap; overflow: hidden; }
+.cmp-h .sub .n { color: var(--fg); }
+.cmp-h .sub .same { padding: 0 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent-fg); }
+.cmp-h .note { font-size: 12px; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmp-h .p, .cmp-h .m { font-variant-numeric: tabular-nums; }
 .cmp-h .p { color: var(--ins); } .cmp-h .m { color: var(--del); }
 .cmp-b { flex: 1; overflow: auto; padding: 20px 24px 80px; }
 .cmp-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); column-gap: 28px; max-width: 1100px; margin: 0 auto; font-family: var(--ed-b); font-size: 15px; line-height: 1.85; }

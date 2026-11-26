@@ -63,7 +63,8 @@ export default function App() {
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
   const [versions, setVersions] = useState<VersionMeta[]>([]);
   const [fresh, setFresh] = useState<string | null>(null);
-  const [cmp, setCmp] = useState<{ v: VersionMeta; against: "current" | "prev"; oldText: string; newText: string } | null>(null);
+  /** same：这个版本和现在的内容一样 */
+  const [cmp, setCmp] = useState<{ v: VersionMeta; against: "current" | "prev"; same?: boolean; oldText: string; newText: string } | null>(null);
   /** 和另一个文件对比 */
   const [fileCmp, setFileCmp] = useState<{ name: string; text: string } | null>(null);
   /** 文件树：右键菜单、改名中的路径、移动中的路径 */
@@ -515,14 +516,19 @@ export default function App() {
     setDlg(null);
     say(`已保存版本「${name}」`, "success");
   }
-  async function openVersion(id: string, against: "current" | "prev" = "current") {
+  /** against 不给时：默认对比现在；版本和现在一样就改成对比上一版。用户在分段控件里明确选了就照选的来 */
+  async function openVersion(id: string, pick?: "current" | "prev") {
+    let against = pick ?? "current";
     if (!be) return;
     const i = versions.findIndex((x) => x.id === id);
     const v = versions[i];
     const content = await be.readVersion(path, id);
     if (fresh === id) setFresh(null);
-    if (against === "prev" && versions[i + 1]) setCmp({ v, against, oldText: await be.readVersion(path, versions[i + 1].id), newText: content });
-    else setCmp({ v, against: "current", oldText: content, newText: live.current.text });
+    // 所选版本和现在一模一样（比如最新的那个版本）：对比现在只会是「0 处不同」，自动改成和上一版比
+    const same = content === live.current.text;
+    if (same && !pick && versions[i + 1]) against = "prev";
+    if (against === "prev" && versions[i + 1]) setCmp({ v, against, same, oldText: await be.readVersion(path, versions[i + 1].id), newText: content });
+    else setCmp({ v, against: "current", same, oldText: content, newText: live.current.text });
   }
   async function restore() {
     if (!be || !cmp) return;
@@ -954,7 +960,7 @@ export default function App() {
         {fileCmp && <Compare fileLabel={fileCmp.name} oldText={fileCmp.text} newText={live.current.text} against="current" hasPrev={false} prevLabel=""
           onAgainst={() => {}} onClose={() => setFileCmp(null)} onRestore={() => {}} onPick={() => setDlg("cmpfile")} />}
         {cmp && (
-          <Compare version={cmp.v} oldText={cmp.oldText} newText={cmp.newText} against={cmp.against}
+          <Compare version={cmp.v} oldText={cmp.oldText} newText={cmp.newText} against={cmp.against} sameAsNow={cmp.same}
             hasPrev={versions.findIndex((x) => x.id === cmp.v.id) < versions.length - 1}
             prevLabel={(() => { const p = versions[versions.findIndex((x) => x.id === cmp.v.id) + 1]; if (!p) return ""; const t = fmtTime(p.at); return `${versionTitle(p)} · ${t.day} ${t.hm}`; })()}
             onAgainst={(a) => openVersion(cmp.v.id, a)} onClose={() => setCmp(null)} onRestore={restore} />
