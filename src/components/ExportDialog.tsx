@@ -269,7 +269,6 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
       </div>
       <div className="og"><h5>标题</h5>
         <div className="lvtabs"><Seg full label="标题级别" value={lv} options={LEVELS} onChange={setLv} /></div>
-        <p className="dnote flush">每一级标题分别设置，切换上面的级别即可；空着的项沿用{o.fmt === "docx" ? (o.ref ? "参考文档" : "Word 默认样式") : "默认值"}。</p>
         <div className="orow"><span>字体</span>{xf(hk("font"), <FontSelect value={H.font} fonts={fonts} allowDefault defaultLabel="同正文" ariaLabel="标题字体" onChange={(v) => setH({ font: v })} />)}</div>
         <div className="orow"><span>字号</span>{xf(hk("size"), <Select value={H.size} options={withCustom(sizeOpts(D.H[lv].size), H.size)} ariaLabel="标题字号" onChange={(v) => setH({ size: v })} />)}</div>
         <div className="orow"><span>加粗</span>{xf(hk("bold"), <Seg label="加粗" value={H.bold} options={[["", "默认"], ["1", "加粗"], ["0", "不加粗"]]} onChange={(v) => setH({ bold: v })} />)}</div>
@@ -287,7 +286,6 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
       </div>
       {o.fmt === "docx" && <div className="og"><h5>批注</h5>
         <div className="orow"><span>文中批注</span><Seg label="文中批注" value={o.notes} options={[["comment", "变成 Word 批注"], ["drop", "不导出"]]} onChange={(v) => set({ notes: v })} /></div>
-        <p className="dnote">指你用「批注」功能加在正文里的批注（右栏「批注」里能看到）。可以变成 Word 页面右侧的批注气泡，方便别人在 Word 里继续审阅；选「不导出」只留原文。</p>
       </div>}
       <div className="og"><h5>其他</h5>
         <div className="orow"><span>目录</span><label className="pair">{/* 开关 */}<button type="button" className={"switch" + (o.toc ? " on" : "")} role="switch" aria-checked={o.toc} aria-label="生成目录" onClick={() => set({ toc: !o.toc })} /><span className="dnote">在正文前生成目录</span></label></div>

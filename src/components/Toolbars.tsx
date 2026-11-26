@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { NumberField } from "./NumberField";
 import type { EditorView } from "@codemirror/view";
-import { BlockKind, currentBlock, InlineKind, insertBlock, insertLink, insertNote, setBlock, tableMarkdown, toggleInline } from "../editor/commands";
+import { BlockKind, currentBlock, indentList, InlineKind, insertBlock, insertLink, insertNote, setBlock, tableMarkdown, toggleInline } from "../editor/commands";
 import { Icon } from "./Icons";
 import { FontSelect, Select } from "./Select";
 import type { Settings } from "../lib/settings";
@@ -11,6 +11,7 @@ import { kbd } from "../lib/platform";
 
 export const BLOCKS: { value: BlockKind; label: string }[] = [
   { value: "p", label: "正文" }, { value: "h1", label: "标题 1" }, { value: "h2", label: "标题 2" }, { value: "h3", label: "标题 3" },
+  { value: "h4", label: "标题 4" }, { value: "h5", label: "标题 5" }, { value: "h6", label: "标题 6" },
   { value: "quote", label: "引用" }, { value: "ul", label: "无序列表" }, { value: "ol", label: "有序列表" }, { value: "task", label: "任务列表" },
 ];
 const keep = (e: React.MouseEvent) => e.preventDefault(); // 点按钮不让编辑器失去选区
@@ -27,6 +28,12 @@ const INLINE: { k: InlineKind; title: string; icon: React.ReactNode }[] = [
   { k: "strike", title: "删除线 ⌘⇧X", icon: <s className="gl-s">S</s> },
   { k: "code", title: "行内代码 ⌘E", icon: <Icon name="code" /> },
   { k: "math", title: "行内公式 ⌘⇧M", icon: <Icon name="math" /> },
+];
+/** 功能区里多出来的：高亮、上标、下标 */
+const MORE_INLINE: { k: InlineKind; title: string; icon: React.ReactNode }[] = [
+  { k: "highlight", title: "高亮 ⌘⇧H", icon: <Icon name="highlight" /> },
+  { k: "sup", title: "上标（x^2^）", icon: <span className="gl-sup">x<sup>2</sup></span> },
+  { k: "sub", title: "下标（H~2~O）", icon: <span className="gl-sup">x<sub>2</sub></span> },
 ];
 
 /* ---------------- 选中文字时的浮动工具栏 ---------------- */
@@ -55,7 +62,7 @@ export function FloatingToolbar({ view, tick, author, active }: { view: EditorVi
     <div className="ftb" ref={ref} style={{ left: pos.left, top: pos.top }} role="toolbar" aria-label="格式">
       <Select value={kind} options={BLOCKS} onChange={(k) => setBlock(view, k)} ariaLabel="段落类型" keepFocus className="ghost" />
       <span className="sep" />
-      {INLINE.map((x) => <TB key={x.k} title={x.title} on={active.has(x.k)} onClick={() => toggleInline(view, x.k, true)}>{x.icon}</TB>)}
+      {[...INLINE, MORE_INLINE[0]].map((x) => <TB key={x.k} title={x.title} on={active.has(x.k)} onClick={() => toggleInline(view, x.k, true)}>{x.icon}</TB>)}
       <TB title="链接 ⌘⇧K" onClick={() => insertLink(view)}><Icon name="link" /></TB>
       <span className="sep" />
       <TB title="批注 ⌘⌥M" onClick={() => insertNote(view, author)}><Icon name="note" /><span>批注</span></TB>
@@ -83,7 +90,6 @@ interface RibbonProps {
 const STYLE_CHIPS: { value: BlockKind; label: string; title: string }[] = [
   { value: "p", label: "正文", title: "正文 ⌘0" }, { value: "h1", label: "标题 1", title: "标题 1 ⌘1" },
   { value: "h2", label: "标题 2", title: "标题 2 ⌘2" }, { value: "h3", label: "标题 3", title: "标题 3 ⌘3" },
-  { value: "quote", label: "引用", title: "引用 ⌘⇧." },
 ];
 
 /** 功能区放不下时（窗口窄、两侧栏都开着）可以横向滚动：两头出现箭头，滚轮也能左右滚 */
@@ -131,6 +137,7 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
   }, [gridOpen]);
   const hasLayout = ["heading-font", "body-font", "font-size", "line-height", "measure"].some((k) => layout[k]);
   const ov = useOverflow(tab);
+  const isList = block === "ul" || block === "ol" || block === "task";
   return (
     <div className={"ribbon" + (collapsed ? " collapsed" : "")}>
       <div className="rtabs" role="tablist">
@@ -150,17 +157,25 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
                 <button key={c.value} type="button" className={"chip " + c.value + (block === c.value ? " on" : "")} title={kbd(c.title)} aria-pressed={block === c.value}
                   onMouseDown={keep} onClick={run((x) => setBlock(x, c.value))}><span>{c.label}</span></button>
               ))}
+              <div className="chipmore">
+                <Select value={/^h[456]$/.test(block) ? block : ("" as BlockKind)} placeholder="4–6" ariaLabel="标题 4 到 6" keepFocus className={"ghost" + (/^h[456]$/.test(block) ? " on" : "")}
+                  options={[{ value: "h4", label: "标题 4", hint: kbd("⌘4") }, { value: "h5", label: "标题 5", hint: kbd("⌘5") }, { value: "h6", label: "标题 6", hint: kbd("⌘6") }]}
+                  onChange={(k) => { if (v) setBlock(v, k); }} />
+              </div>
             </Group>
             <Group label="文字">
-              {INLINE.map((x) => <TB key={x.k} title={x.title} on={active.has(x.k)} onClick={run((y) => toggleInline(y, x.k))}>{x.icon}</TB>)}
+              {[...INLINE, ...MORE_INLINE].map((x) => <TB key={x.k} title={x.title} on={active.has(x.k)} onClick={run((y) => toggleInline(y, x.k))}>{x.icon}</TB>)}
               <TB title="链接 ⌘⇧K" onClick={run((x) => insertLink(x))}><Icon name="link" /></TB>
             </Group>
-            <Group label="列表">
+            <Group label="列表与引用">
               <TB title="无序列表 ⌘⇧8" on={block === "ul"} onClick={run((x) => setBlock(x, block === "ul" ? "p" : "ul"))}><Icon name="ul" /></TB>
               <TB title="有序列表 ⌘⇧7" on={block === "ol"} onClick={run((x) => setBlock(x, block === "ol" ? "p" : "ol"))}><Icon name="ol" /></TB>
-              <TB title="任务列表 ⌘⇧9" on={block === "task"} onClick={run((x) => setBlock(x, block === "task" ? "p" : "task"))}><Icon name="task" /></TB>
+              <TB title="引用 ⌘⇧." on={block === "quote"} onClick={run((x) => setBlock(x, block === "quote" ? "p" : "quote"))}><Icon name="quote" /></TB>
+              <TB title="待办列表 ⌘⇧9" on={block === "task"} onClick={run((x) => setBlock(x, block === "task" ? "p" : "task"))}><Icon name="task" /></TB>
+              <span className="vsep" />
+              <TB title="减少缩进（回到上一级） ⌘[" disabled={!isList} onClick={run((x) => indentList(x, -1))}><Icon name="outdent" /></TB>
+              <TB title="增加缩进（变成上一项的子项） ⌘]" disabled={!isList} onClick={run((x) => indentList(x, 1))}><Icon name="indent" /></TB>
             </Group>
-            <Group label="审阅">{big("note", "批注", "给选中文字加批注 ⌘⌥M", run((x) => insertNote(x, author)))}</Group>
           </>}
           {tab === "insert" && <>
             <Group label="块">
@@ -181,6 +196,7 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
               {big("hr", "分隔线", "分隔线", run((x) => insertBlock(x, "---")))}
             </Group>
             <Group label="引用与链接">{big("cite", "引用", "引用文献或文件 ⌘⇧C", onCite)}{big("link", "链接", "插入链接 ⌘⇧K", run((x) => insertLink(x)))}</Group>
+            <Group label="审阅">{big("note", "批注", "给选中文字加批注 ⌘⌥M", run((x) => insertNote(x, author)))}</Group>
           </>}
           {tab === "layout" && <>
             <Group label="字体" className="stack">

@@ -105,3 +105,28 @@ describe("wordCounter", () => {
     expect(count("---\ntitle: 不算\n---\n正文四字", false)).toBe(4);
   });
 });
+
+describe("表格列宽", async () => {
+  const { columnWidths, setColumnWidths } = await import("../src/editor/tableWidget");
+  it("短横线一样长是自动列宽；写进比例后能读回来，保留对齐冒号", () => {
+    const m = parseTable("| 名 | 值 |\n| :--- | ---: |\n| a | 1 |");
+    expect(columnWidths(m)).toBeNull();
+    setColumnWidths(m, [70, 30]);
+    expect(m.align).toEqual([":" + "-".repeat(70), "-".repeat(30) + ":"]);
+    expect(columnWidths(m)!.map(Math.round)).toEqual([70, 30]);
+    expect(serializeTable(m).split("\n")[1].length).toBeGreaterThan(72); // 超过 72 个字符，Pandoc 才按比例排
+    setColumnWidths(m, null);
+    expect(m.align).toEqual([":---", "---:"]);
+  });
+});
+
+describe("图片宽度", async () => {
+  const { setImageWidth, imageWidth } = await import("../src/editor/livePreview");
+  it("写进、改掉、去掉 {width=…}，保留别的属性", () => {
+    expect(setImageWidth("![图 1](a.png)", "60%")).toBe("![图 1](a.png){width=60%}");
+    expect(setImageWidth("![图 1](a.png){width=60%}", "25%")).toBe("![图 1](a.png){width=25%}");
+    expect(setImageWidth("![图 1](a.png){#fig:a width=60%}", "")).toBe("![图 1](a.png){#fig:a}");
+    expect(setImageWidth("![图 1](a.png){width=60%}", "")).toBe("![图 1](a.png)");
+    expect(imageWidth("#fig:a width=40%")).toBe("40%");
+  });
+});

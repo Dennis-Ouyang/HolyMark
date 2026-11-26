@@ -8,9 +8,10 @@ import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 import { searchKeymap, openSearchPanel } from "@codemirror/search";
 import { tags as t } from "@lezer/highlight";
 import { flash, livePreview, PreviewOptions } from "./livePreview";
-import { continueList, toggleInline } from "./commands";
+import { continueList, indentList, toggleInline } from "./commands";
 import { autoPair } from "./autoPair";
-import { cjkEmphasis } from "./cjkEmphasis";
+import { cjkEmphasis, highlight } from "./cjkEmphasis";
+import { Subscript, Superscript } from "@lezer/markdown";
 
 export interface EditorHandle {
   view: () => EditorView | null;
@@ -60,12 +61,14 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial,
           drawSelection(),
           highlightActiveLine(),
           EditorView.lineWrapping,
-          markdown({ base: markdownLanguage, codeLanguages: languages, extensions: [cjkEmphasis] }),
+          markdown({ base: markdownLanguage, codeLanguages: languages, extensions: [cjkEmphasis, highlight, Superscript, Subscript] }),
           syntaxHighlighting(codeHighlight),
           previewCompartment.current.of(livePreview(preview)),
           autoPair(),
           keymap.of([
             { key: "Enter", run: continueList },
+            { key: "Tab", run: (v) => indentList(v, 1) },
+            { key: "Shift-Tab", run: (v) => indentList(v, -1) },
             { key: "Mod-b", run: (v) => (toggleInline(v, "bold"), true) },
             { key: "Mod-i", run: (v) => (toggleInline(v, "italic"), true) },
             { key: "Mod-e", run: (v) => (toggleInline(v, "code"), true) },

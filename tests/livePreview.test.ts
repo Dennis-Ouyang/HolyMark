@@ -43,8 +43,8 @@ describe("livePreview 增量装饰", () => {
         if (syntaxTree(state).length < state.doc.length) continue; // 还没解析完的状态不比较
         const fresh = build(state, o, newMemo());
         const sets = decoSet(state);
-        // 第一个是实时预览，第二个是改动高亮（这里是空的）
-        expect(sets).toHaveLength(2);
+        // 第一个是实时预览，后面是改动高亮和父项闪亮（这里都是空的）
+        expect(sets).toHaveLength(3);
         maxSize = Math.max(maxSize, fresh.size);
         if (!RangeSet.eq([sets[0]], [fresh])) throw new Error(`第 ${i} 步不一致`);
         compared++;
@@ -91,5 +91,20 @@ describe("段间空行", () => {
     // 编辑器没有焦点时不显示光标，空行保持收窄
     state = state.update({ selection: { anchor: doc.indexOf("\n\n") + 1 }, effects: setFocus.of(false) }).state;
     expect(gapLines(state)).toEqual([2, 4]);
+  });
+});
+
+describe("待办父项进度", () => {
+  it("按子项完成比例铺底色，行尾显示完成数", () => {
+    const doc = "- [ ] 收拾行李\n  - [x] 护照\n  - [x] 充电器\n  - [ ] 防晒\n- [ ] 别的";
+    const state = EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage }), livePreview(opts("active"))] });
+    const found: string[] = [];
+    decoSet(state)[0].between(0, doc.length, (from, _to, v) => {
+      const spec = v.spec as { class?: string; attributes?: { style?: string }; widget?: { text?: string } };
+      if (spec.class?.includes("hm-task-parent")) found.push(`line${state.doc.lineAt(from).number}:${spec.attributes?.style}`);
+      if (spec.widget?.text) found.push(spec.widget.text);
+    });
+    expect(found).toContain("line1:--prog:67%");
+    expect(found).toContain("2/3");
   });
 });

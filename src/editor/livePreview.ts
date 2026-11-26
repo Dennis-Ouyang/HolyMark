@@ -97,15 +97,30 @@ class FrontMatterWidget extends WidgetType {
   ignoreEvent() { return false; }
 }
 
+/** 图片宽度写在 Pandoc 的属性里：![说明](图.png){width=60%}；返回改好宽度的源码，width 为空表示去掉 */
+export function setImageWidth(src: string, width: string): string {
+  const m = src.match(/^(\s*!\[[^\]]*\]\([^)]*\))(\{([^}]*)\})?(.*)$/s);
+  if (!m) return src;
+  const attrs = (m[3] || "").split(/\s+/).filter((x) => x && !/^width=/.test(x));
+  if (width) attrs.unshift(`width=${width}`);
+  return m[1] + (attrs.length ? `{${attrs.join(" ")}}` : "") + m[4];
+}
+export const imageWidth = (attrs: string) => attrs.match(/(?:^|\s)width=([^\s}]+)/)?.[1] ?? "";
+
+/** 改完宽度后新画出来的图片要接着显示控制条 */
+let reopenImage = "";
+
 class ImageWidget extends WidgetType {
-  constructor(readonly src: string, readonly alt: string, readonly block: boolean, readonly opts: PreviewOptions) { super(); }
-  eq(o: ImageWidget) { return o.src === this.src && o.alt === this.alt && o.block === this.block; }
+  constructor(readonly src: string, readonly alt: string, readonly block: boolean, readonly opts: PreviewOptions, readonly width = "") { super(); }
+  eq(o: ImageWidget) { return o.src === this.src && o.alt === this.alt && o.block === this.block && o.width === this.width; }
   toDOM(view: EditorView) {
     const el = document.createElement(this.block ? "figure" : "span");
     el.className = this.block ? "hm-figure" : "hm-img-inline";
     const img = document.createElement("img");
     img.src = this.opts.resolveImage(this.src);
     img.alt = this.alt;
+    img.draggable = false;
+    if (this.width) img.style.width = /^\d+(\.\d+)?$/.test(this.width) ? this.width + "px" : this.width;
     img.onerror = () => { el.classList.add("missing"); el.setAttribute("data-missing", `找不到图片 ${this.src}`); };
     el.appendChild(img);
     if (this.block && this.alt) {
@@ -113,10 +128,74 @@ class ImageWidget extends WidgetType {
       cap.textContent = this.alt;
       el.appendChild(cap);
     }
-    el.addEventListener("mousedown", (e) => focusAt(view, el, e, 2));
+    if (!this.block) {
+      el.addEventListener("mousedown", (e) => focusAt(view, el, e, 2));
+      return el;
+    }
+    // 块级图片：点一下先出控制条（缩放、源代码），不直接切到源码
+    const bar = document.createElement("div");
+    bar.className = "hm-itools";
+    bar.setAttribute("role", "toolbar");
+    bar.setAttribute("aria-label", "图片");
+    const label = document.createElement("span");
+    label.className = "hm-iw";
+    const sizes: [string, string][] = [["25%", "25%"], ["50%", "50%"], ["75%", "75%"], ["100%", "100%"], ["", "原始大小"]];
+    const btn = (text: string, title: string, run: () => void, cls = "") => {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = text; b.title = title; if (cls) b.className = cls;
+      b.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); });
+      b.addEventListener("click", (e) => { e.stopPropagation(); run(); });
+      return b;
+    };
+    for (const [w, t] of sizes) bar.appendChild(btn(t, w ? `宽度设为版心的 ${w}` : "按图片本身的大小显示", () => commit(w), w === this.width ? "on" : ""));
+    const sep = document.createElement("span"); sep.className = "sep"; bar.appendChild(sep);
+    bar.appendChild(label);
+    const sep2 = document.createElement("span"); sep2.className = "sep"; bar.appendChild(sep2);
+    bar.appendChild(btn("源代码", "显示这张图片的 Markdown 源码", () => { close(); focusAt(view, el, new Event("x"), 2); }, "src"));
+    const grip = document.createElement("span");
+    grip.className = "hm-igrip";
+    grip.title = "拖动缩放";
+    el.append(bar, grip);
+    label.textContent = this.width || "原始大小";
+
+    const commit = (w: string) => {
+      const from = view.posAtDOM(el);
+      const line = view.state.doc.lineAt(from);
+      const next = setImageWidth(line.text, w);
+      if (next === line.text) return;
+      reopenImage = this.src;
+      view.dispatch({ changes: { from: line.from, to: line.to, insert: next } });
+    };
+    const outside = (e: MouseEvent) => { if (!el.contains(e.target as Node)) close(); };
+    const open = () => { el.classList.add("editing"); addEventListener("mousedown", outside, true); };
+    const close = () => { el.classList.remove("editing"); removeEventListener("mousedown", outside, true); };
+    el.addEventListener("mousedown", (e) => {
+      if ((e.target as HTMLElement).closest(".hm-itools, .hm-igrip")) return;
+      e.preventDefault();
+      if (el.classList.contains("editing")) return;
+      open();
+    });
+    el.addEventListener("dblclick", (e) => { if (!(e.target as HTMLElement).closest(".hm-itools, .hm-igrip")) { close(); focusAt(view, el, e, 2); } });
+    grip.addEventListener("mousedown", (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const full = el.clientWidth - 16; // figure 两侧各 8px 内边距
+      const x0 = e.clientX, w0 = img.getBoundingClientRect().width;
+      let pct = Math.round((w0 / full) * 100);
+      el.classList.add("resizing");
+      const move = (ev: MouseEvent) => {
+        // 图片居中，往右拖一像素两边各长一像素
+        pct = Math.max(10, Math.min(100, Math.round(((w0 + 2 * (ev.clientX - x0)) / full) * 100)));
+        img.style.width = pct + "%";
+        label.textContent = pct + "%";
+      };
+      const up = () => { removeEventListener("mousemove", move); removeEventListener("mouseup", up); el.classList.remove("resizing"); commit(pct + "%"); };
+      addEventListener("mousemove", move);
+      addEventListener("mouseup", up);
+    });
+    if (reopenImage === this.src) { reopenImage = ""; requestAnimationFrame(open); }
     return el;
   }
-  ignoreEvent() { return false; }
+  ignoreEvent() { return true; }
 }
 
 class CiteWidget extends WidgetType {
@@ -133,6 +212,26 @@ class CiteWidget extends WidgetType {
   ignoreEvent() { return false; }
 }
 
+/** 勾掉最后一个子项时，父项闪亮一下 */
+function glowParentIfDone(view: EditorView, pos: number) {
+  const st = view.state;
+  let n: SyntaxNode | null = syntaxTree(st).resolveInner(pos, 1);
+  while (n && n.name !== "ListItem") n = n.parent;
+  const parent = n?.parent?.parent; // ListItem → 列表 → 父 ListItem
+  if (!parent || parent.name !== "ListItem" || !parent.getChild("Task")) return;
+  let total = 0, done = 0;
+  for (const k of [...parent.getChildren("BulletList"), ...parent.getChildren("OrderedList")]) k.cursor().iterate((c) => {
+    if (c.name !== "TaskMarker") return;
+    total++;
+    if (/x/i.test(st.sliceDoc(c.from, c.to))) done++;
+  });
+  if (total && done === total) {
+    const line = st.doc.lineAt(parent.from).number;
+    view.dispatch({ effects: glowLine.of(line) });
+    window.setTimeout(() => view.dispatch({ effects: glowLine.of(0) }), 1100);
+  }
+}
+
 class CheckboxWidget extends WidgetType {
   constructor(readonly checked: boolean) { super(); }
   eq(o: CheckboxWidget) { return o.checked === this.checked; }
@@ -146,6 +245,7 @@ class CheckboxWidget extends WidgetType {
       e.preventDefault();
       const pos = view.posAtDOM(el);
       view.dispatch({ changes: { from: pos + 1, to: pos + 2, insert: this.checked ? " " : "x" } });
+      if (!this.checked) glowParentIfDone(view, pos);
     });
     return el;
   }
@@ -443,20 +543,71 @@ function blockDecos(state: EditorState, b: Block, active: boolean, decos: Range<
     return;
   }
   // 只有一张图片的段落：显示为带图注的插图
-  if (b.kind === "Paragraph" && /^!\[[^\]]*\]\([^)]*\)\s*$/.test(text)) {
+  if (b.kind === "Paragraph" && /^!\[[^\]]*\]\([^)]*\)(\{[^}]*\})?\s*$/.test(text)) {
     if (!active) {
-      const m = text.match(/^!\[([^\]]*)\]\(([^)]*)\)/)!;
-      blockReplace(b, new ImageWidget(m[2], m[1], true, opts));
+      const m = text.match(/^!\[([^\]]*)\]\(([^)]*)\)(\{([^}]*)\})?/)!;
+      blockReplace(b, new ImageWidget(m[2], m[1], true, opts, imageWidth(m[4] || "")));
     }
     return;
   }
   if (/^ATXHeading(\d)/.test(b.kind)) {
-    const lv = Math.min(3, +b.kind.slice(-1));
+    const lv = +b.kind.slice(-1);
     decos.push(lineCls(`hm-h hm-h${lv}`).range(doc.lineAt(b.from).from));
   }
   if (b.kind === "Blockquote") linesOf(b, "hm-quote");
-  if (b.kind === "BulletList" || b.kind === "OrderedList") linesOf(b, "hm-list");
+  if (b.kind === "BulletList" || b.kind === "OrderedList") listDecos(state, b, active, decos);
   inlineDecos(state, b, active, decos, opts);
+}
+
+const LIST_LINE = /^(\s*)([-*+]|\d+[.)])(\s|$)/;
+
+/**
+ * 列表：按缩进算出每一项在第几层，渲染时把行首的空格藏起来、用左边距表示层级（悬挂缩进才对得齐）；
+ * 待办的父项按子项完成的比例从左往右铺一层底色，行尾显示 3/5。
+ */
+function listDecos(state: EditorState, b: Block, active: boolean, decos: Range<Decoration>[]) {
+  const doc = state.doc;
+  const a = doc.lineAt(b.from).number, z = doc.lineAt(b.to).number;
+  const stack: number[] = [];
+  let depth = 0;
+  for (let n = a; n <= z; n++) {
+    const line = doc.line(n);
+    const m = line.text.match(LIST_LINE);
+    let cls = "hm-list";
+    if (m) {
+      const ind = m[1].replace(/\t/g, "    ").length;
+      while (stack.length && stack[stack.length - 1] >= ind) stack.pop();
+      stack.push(ind);
+      depth = stack.length - 1;
+      if (!active && m[1].length) decos.push(hide.range(line.from, line.from + m[1].length));
+    } else if (line.text.trim()) {
+      cls += " hm-cont"; // 同一项里换行接着写的文字：和上面的文字对齐，不悬挂
+      const ws = line.text.match(/^\s*/)![0].length;
+      if (!active && ws) decos.push(hide.range(line.from, line.from + ws));
+    }
+    decos.push(Decoration.line({ class: cls, attributes: !active && depth ? { style: `--d:${depth}` } : undefined }).range(line.from));
+  }
+  // 待办父项的进度
+  syntaxTree(state).iterate({
+    from: b.from, to: b.to,
+    enter: (nd) => {
+      if (nd.name !== "ListItem") return;
+      const task = nd.node.getChild("Task");
+      if (!task) return;
+      const kids = [...nd.node.getChildren("BulletList"), ...nd.node.getChildren("OrderedList")];
+      let total = 0, done = 0;
+      for (const k of kids) k.cursor().iterate((c) => {
+        if (c.name !== "TaskMarker") return;
+        total++;
+        if (/x/i.test(doc.sliceString(c.from, c.to))) done++;
+      });
+      if (!total) return;
+      const line = doc.lineAt(nd.from);
+      const pct = Math.round((done / total) * 100);
+      decos.push(Decoration.line({ class: "hm-task-parent" + (done === total ? " all" : ""), attributes: { style: `--prog:${pct}%` } }).range(line.from));
+      decos.push(Decoration.widget({ widget: new TextWidget(`${done}/${total}`, "hm-task-count" + (done === total ? " all" : "")), side: 1 }).range(line.to));
+    },
+  });
 }
 
 /** 行内：强调、代码、链接、图片、任务框、引用、公式、批注 */
@@ -475,10 +626,13 @@ function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range
       if (name === "StrongEmphasis") decos.push(markCls("hm-strong").range(n.from, n.to));
       if (name === "Emphasis") decos.push(markCls("hm-em").range(n.from, n.to));
       if (name === "Strikethrough") decos.push(markCls("hm-strike").range(n.from, n.to));
+      if (name === "Superscript") decos.push(markCls("hm-sup").range(n.from, n.to));
+      if (name === "Subscript") decos.push(markCls("hm-sub").range(n.from, n.to));
+      if (name === "Highlight") decos.push(markCls("hm-hl").range(n.from, n.to));
       // [@key] 是文献引用，不按链接处理
       if (name === "Link" && /^\[@[\w:-]+\]$/.test(doc.sliceString(n.from, n.to))) return false;
       if (name === "Link") decos.push(markCls("hm-link").range(n.from, n.to));
-      const marker = ["EmphasisMark", "CodeMark", "StrikethroughMark", "LinkMark", "URL", "LinkTitle"].includes(name);
+      const marker = ["EmphasisMark", "CodeMark", "StrikethroughMark", "SuperscriptMark", "SubscriptMark", "HighlightMark", "LinkMark", "URL", "LinkTitle"].includes(name);
       if (marker) {
         const parent = n.node.parent?.name;
         if (name === "CodeMark" && parent !== "InlineCode") return;
@@ -501,6 +655,11 @@ function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range
           taken.push([n.from, end]);
         }
       } else if (name === "ListMark" && active) decos.push(markCls("hm-mark").range(n.from, n.to));
+      if (name === "TaskMarker") {
+        const checked = /x/i.test(doc.sliceString(n.from, n.to));
+        const task = n.node.parent;
+        if (checked && task && task.to > n.to + 1) decos.push(markCls("hm-done").range(n.to + 1, task.to));
+      }
       if (name === "TaskMarker" && !active) {
         const checked = /x/i.test(doc.sliceString(n.from, n.to));
         decos.push(Decoration.replace({ widget: new CheckboxWidget(checked) }).range(n.from, n.to));
@@ -555,6 +714,17 @@ function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range
 
 /* ---------- 改动高亮：外部修改或恢复版本后，变动的行铺一层绿色再慢慢褪去 ---------- */
 export const flashLines = StateEffect.define<number[]>();
+/** 闪亮某一行（行号），0 表示清除 */
+const glowLine = StateEffect.define<number>();
+const glowField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(v, tr) {
+    v = v.map(tr.changes);
+    for (const e of tr.effects) if (e.is(glowLine)) v = e.value > 0 && e.value <= tr.state.doc.lines ? Decoration.set([lineCls("hm-glow").range(tr.state.doc.line(e.value).from)]) : Decoration.none;
+    return v;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
 const clearFlash = StateEffect.define<null>();
 const flashField = StateField.define<DecorationSet>({
   create: () => Decoration.none,
@@ -586,5 +756,5 @@ export function livePreview(opts: PreviewOptions): Extension {
     },
     provide: (f) => EditorView.decorations.from(f),
   });
-  return [focusField, field, flashField, EditorView.focusChangeEffect.of((_s, focusing) => setFocus.of(focusing))];
+  return [focusField, field, flashField, glowField, EditorView.focusChangeEffect.of((_s, focusing) => setFocus.of(focusing))];
 }

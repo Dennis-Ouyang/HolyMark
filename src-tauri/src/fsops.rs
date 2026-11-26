@@ -47,6 +47,29 @@ pub fn tree(root: &Path) -> std::io::Result<Vec<Node>> {
     Ok(out)
 }
 
+/// 目录里不重名的路径：重名时在名字后面加「 2」「 3」……（扩展名保留）
+pub fn unique_in(dir: &Path, stem: &str, ext: &str) -> PathBuf {
+    let mut p = dir.join(format!("{stem}{ext}"));
+    let mut n = 2;
+    while p.exists() {
+        p = dir.join(format!("{stem} {n}{ext}"));
+        n += 1;
+    }
+    p
+}
+
+/// 文件名里不能有的字符（Windows 的规矩最严，按它来）
+pub fn valid_name(name: &str) -> Result<(), String> {
+    let t = name.trim();
+    if t.is_empty() || t == "." || t == ".." {
+        return Err("名字不能为空".into());
+    }
+    if let Some(c) = t.chars().find(|c| matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')) {
+        return Err(format!("名字里不能有「{c}」"));
+    }
+    Ok(())
+}
+
 pub fn read_text(path: &Path) -> std::io::Result<String> {
     fs::read_to_string(path)
 }

@@ -19,6 +19,8 @@ export interface Settings {
   autoMinutes: number;
   mergeSeconds: number;
   lastFolder: string;
+  /** 最近打开的文件夹，最新的在前 */
+  recentFolders: string[];
   ribbonCollapsed: boolean;
   /** 文件树里是否显示 Markdown 以外的文件 */
   showAllFiles: boolean;
@@ -45,6 +47,7 @@ export const DEFAULTS: Settings = {
   autoMinutes: 10,
   mergeSeconds: 5,
   lastFolder: "",
+  recentFolders: [],
   ribbonCollapsed: false,
   showAllFiles: false,
   v: 2,

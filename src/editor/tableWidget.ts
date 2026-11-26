@@ -3,6 +3,9 @@
  * - 单元格平时显示渲染后的内容；点进去显示这一格的 Markdown 源码，离开后再渲染。
  * - 停止输入片刻就把整张表写回文档。写回时保留现有 DOM（见 eq），光标不会丢。
  * - 光标在表格里时，表格上方出现行列工具；「源代码」按钮把整张表切回源码编辑。
+ * - 拖表头单元格右边缘调列宽，双击恢复自动列宽。
+ *   Markdown 表格存不下列宽，这里按 Pandoc 的规则写进分隔行：每列短横线的数量就是它占的比例，
+ *   分隔行超过 72 个字符时 Pandoc 按这个比例排 Word / PDF 里的列宽。行高跟着内容走，存不下来。
  */
 import { EditorView, WidgetType } from "@codemirror/view";
 
@@ -30,6 +33,23 @@ export function parseTable(src: string): TableModel {
   const n = Math.max(head.length, ...rows.map((r) => r.length));
   const pad = (r: string[]) => [...r, ...Array(Math.max(0, n - r.length)).fill("")];
   return { head: pad(head), align: [...align, ...Array(Math.max(0, n - align.length)).fill("---")].slice(0, n), rows: rows.map(pad) };
+}
+
+const dashes = (a: string) => (a.match(/-/g) || []).length;
+/** 自定义过的列宽（百分比）；分隔行都是 --- 这类短的、一样长的，表示自动列宽，返回 null */
+export function columnWidths(m: TableModel): number[] | null {
+  const d = m.align.map(dashes);
+  const total = d.reduce((a, b) => a + b, 0);
+  if (total < 60 || d.every((x) => x === d[0])) return null;
+  return d.map((x) => (x / total) * 100);
+}
+/** 把列宽（百分比）写进分隔行；保留对齐用的冒号。null 表示恢复自动列宽 */
+export function setColumnWidths(m: TableModel, pct: number[] | null) {
+  m.align = m.align.map((a, i) => {
+    const l = a.trim().startsWith(":") ? ":" : "", r = a.trim().endsWith(":") ? ":" : "";
+    const n = pct ? Math.max(3, Math.round(pct[i])) : 3;
+    return l + "-".repeat(n) + r;
+  });
 }
 
 export function serializeTable(m: TableModel): string {
@@ -66,7 +86,10 @@ export class TableWidget extends WidgetType {
     tools.setAttribute("role", "toolbar");
     tools.setAttribute("aria-label", "表格");
     const table = document.createElement("table");
-    wrap.append(tools, table);
+    const scroll = document.createElement("div");
+    scroll.className = "hm-tscroll";
+    scroll.appendChild(table);
+    wrap.append(tools, scroll);
 
     const btns: [string, string, () => void][] = [
       ["在上方插入行", "rowAbove", () => edit((m) => { const at = Math.max(0, cur.r - 1); m.rows.splice(at, 0, m.head.map(() => "")); cur.r = at + 1; })],
@@ -101,12 +124,29 @@ export class TableWidget extends WidgetType {
       return b;
     }
 
+    /** 表头单元格右边缘的列宽拖动手柄（最后一列没有） */
+    function addGrip(td: HTMLElement, r: number, c: number) {
+      if (r !== 0 || c >= model.head.length - 1) return;
+      const h = document.createElement("span");
+      h.className = "hm-colgrip";
+      h.contentEditable = "false";
+      h.title = "拖动调整列宽，双击恢复自动列宽";
+      h.dataset.c = String(c);
+      td.appendChild(h);
+    }
     const cellText = (r: number, c: number) => (r === 0 ? model.head[c] : model.rows[r - 1][c]) ?? "";
     const setCell = (r: number, c: number, v: string) => { if (r === 0) model.head[c] = v; else model.rows[r - 1][c] = v; };
     const cellEl = (r: number, c: number) => table.querySelector<HTMLElement>(`[data-r="${r}"][data-c="${c}"]`);
 
     function render() {
       table.innerHTML = "";
+      const widths = columnWidths(model);
+      table.classList.toggle("fixed", !!widths);
+      if (widths) {
+        const cg = document.createElement("colgroup");
+        widths.forEach((w) => { const col = document.createElement("col"); col.style.width = w + "%"; cg.appendChild(col); });
+        table.appendChild(cg);
+      }
       const all = [model.head, ...model.rows];
       all.forEach((row, r) => {
         const tr = document.createElement("tr");
@@ -121,6 +161,7 @@ export class TableWidget extends WidgetType {
           else if (/-:$/.test(a)) td.style.textAlign = "right";
           td.innerHTML = renderInline(cellText(r, c));
           tr.appendChild(td);
+          addGrip(td, r, c);
         });
         table.appendChild(tr);
       });
@@ -160,6 +201,48 @@ export class TableWidget extends WidgetType {
       focusCell(Math.max(0, Math.min(cur.r, model.rows.length)), Math.max(0, Math.min(cur.c, model.head.length - 1)));
     }
 
+    // 拖动列宽：拖的时候直接改 colgroup，松手后写进分隔行
+    table.addEventListener("mousedown", (e) => {
+      const grip = (e.target as HTMLElement).closest<HTMLElement>(".hm-colgrip");
+      if (!grip) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const c = +grip.dataset.c!;
+      const ths = [...table.querySelectorAll<HTMLElement>("tr:first-child > th")];
+      const px = ths.map((th) => th.getBoundingClientRect().width);
+      const total = px.reduce((a, b) => a + b, 0);
+      const startX = e.clientX, a0 = px[c], b0 = px[c + 1];
+      let cg = table.querySelector("colgroup");
+      if (!cg) { cg = document.createElement("colgroup"); px.forEach(() => cg!.appendChild(document.createElement("col"))); table.prepend(cg); }
+      const cols = [...cg.children] as HTMLElement[];
+      const apply = () => px.forEach((w, i) => { cols[i].style.width = (w / total) * 100 + "%"; });
+      table.classList.add("fixed");
+      apply();
+      wrap.classList.add("resizing");
+      const move = (ev: MouseEvent) => {
+        const min = 36, d = Math.max(min - a0, Math.min(b0 - min, ev.clientX - startX));
+        px[c] = a0 + d; px[c + 1] = b0 - d;
+        apply();
+      };
+      const up = () => {
+        removeEventListener("mousemove", move);
+        removeEventListener("mouseup", up);
+        wrap.classList.remove("resizing");
+        setColumnWidths(model, px.map((w) => (w / total) * 100));
+        render();
+        flush();
+      };
+      addEventListener("mousemove", move);
+      addEventListener("mouseup", up);
+    });
+    table.addEventListener("dblclick", (e) => {
+      if (!(e.target as HTMLElement).closest(".hm-colgrip")) return;
+      e.preventDefault();
+      setColumnWidths(model, null);
+      render();
+      flush();
+    });
+
     table.addEventListener("focusin", (e) => {
       const td = (e.target as HTMLElement).closest<HTMLElement>("[data-r]");
       if (!td) return;
@@ -173,6 +256,7 @@ export class TableWidget extends WidgetType {
       const r = +td.dataset.r!, c = +td.dataset.c!;
       setCell(r, c, (td.textContent || "").replace(/\n/g, " ").trim());
       td.innerHTML = renderInline(cellText(r, c));
+      addGrip(td, r, c);
       if (!wrap.contains(e.relatedTarget as Node)) { wrap.classList.remove("editing"); flush(); }
     });
     table.addEventListener("input", (e) => {

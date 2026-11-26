@@ -29,6 +29,7 @@ interface Props {
   onResolve: (n: Note) => void;
   onOpenVersion: (id: string) => void;
   onSaveVersion: () => void;
+  onCompareFile: () => void;
 }
 
 export function SidePanel(p: Props) {
@@ -81,7 +82,7 @@ export function SidePanel(p: Props) {
 
       {p.tab === "versions" && (
         <div className="pane">
-          <div className="ph"><b>{p.fileName}</b><button className="lnk" onClick={p.onSaveVersion}>{kbd("保存版本 ⌘S")}</button></div>
+          <div className="ph"><b>{p.fileName}</b><span><button className="lnk" onClick={p.onCompareFile} title="选一篇文稿和当前文稿左右对比">与其他文稿对比</button><button className="lnk" onClick={p.onSaveVersion}>{kbd("保存版本 ⌘S")}</button></span></div>
           {p.versions.length ? <VersionList {...p} /> : <div className="empty">还没有版本<br />{kbd("按 ⌘S 保存第一个")}</div>}
         </div>
       )}

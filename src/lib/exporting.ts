@@ -439,7 +439,7 @@ export function defaultsYaml(o: ExportOptions, ctx: DefaultsCtx): string {
   L.push(
     "# HolyMark 导出配置（Pandoc defaults 文件），每次导出时更新。",
     `# 命令行里也能用：pandoc -d .holymark/export/${defaultsName(o.fmt)} 稿件.md -o 稿件.${isPdf ? "pdf" : "docx"}`,
-    "from: markdown+east_asian_line_breaks",
+    "from: markdown+east_asian_line_breaks+mark",
     `to: ${isPdf ? "typst" : "docx"}`,
     "standalone: true",
   );

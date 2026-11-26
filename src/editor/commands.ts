@@ -4,8 +4,8 @@ import type { EditorView } from "@codemirror/view";
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
 
-export type InlineKind = "bold" | "italic" | "strike" | "code" | "math";
-const MARK: Record<InlineKind, string> = { bold: "**", italic: "*", strike: "~~", code: "`", math: "$" };
+export type InlineKind = "bold" | "italic" | "strike" | "code" | "math" | "sup" | "sub" | "highlight";
+const MARK: Record<InlineKind, string> = { bold: "**", italic: "*", strike: "~~", code: "`", math: "$", sup: "^", sub: "~", highlight: "==" };
 
 /* ---------------- 粗体、斜体、删除线：按“带格式的字”来切换 ---------------- */
 // 只看选区两侧紧挨着的符号，遇到嵌套（***~~字~~***）就会判断错、越加越乱。
@@ -174,7 +174,8 @@ export function activeStyles(state: EditorState, from: number, to: number): Set<
     const sel = units.map((u, i) => (!u.raw && u.to > from && u.from < to ? i : -1)).filter((i) => i >= 0);
     for (const s of STYLES) if (allHave(units, sel, s)) out.add(s);
   }
-  for (let n: SyntaxNode | null = treeOf(state, to).resolveInner(from, 1); n; n = n.parent) if (n.name === "InlineCode" && n.from <= from && n.to >= to) out.add("code");
+  const WRAP: Record<string, InlineKind> = { InlineCode: "code", Superscript: "sup", Subscript: "sub", Highlight: "highlight" };
+  for (let n: SyntaxNode | null = treeOf(state, to).resolveInner(from, 1); n; n = n.parent) if (WRAP[n.name] && n.from <= from && n.to >= to) out.add(WRAP[n.name]);
   const line = state.doc.lineAt(from);
   if (line.number === state.doc.lineAt(to).number) {
     for (const m of line.text.matchAll(/(?<![\\$])\$[^$\n]+?\$(?!\$)/g)) {
@@ -240,7 +241,7 @@ export function insertNote(view: EditorView, author: string) {
   return true;
 }
 
-export type BlockKind = "p" | "h1" | "h2" | "h3" | "quote" | "ul" | "ol" | "task";
+export type BlockKind = "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "quote" | "ul" | "ol" | "task";
 const PREFIX = /^(\s*)(#{1,6} |> ?|[-*+] \[[ xX]\] |[-*+] |\d+\. )?/;
 
 /** 把选中的行改成某种段落类型 */
@@ -252,7 +253,7 @@ export function setBlock(view: EditorView, kind: BlockKind) {
   for (let n = a, i = 0; n <= z; n++, i++) {
     const line = state.doc.line(n);
     const m = line.text.match(PREFIX)!;
-    const pre = { p: "", h1: "# ", h2: "## ", h3: "### ", quote: "> ", ul: "- ", ol: `${i + 1}. `, task: "- [ ] " }[kind];
+    const pre = { p: "", h1: "# ", h2: "## ", h3: "### ", h4: "#### ", h5: "##### ", h6: "###### ", quote: "> ", ul: "- ", ol: `${i + 1}. `, task: "- [ ] " }[kind];
     changes.push({ from: line.from + m[1].length, to: line.from + m[0].length, insert: pre });
   }
   const set = state.changes(changes);
@@ -263,13 +264,36 @@ export function setBlock(view: EditorView, kind: BlockKind) {
 
 export function currentBlock(view: EditorView): BlockKind {
   const t = view.state.doc.lineAt(view.state.selection.main.head).text;
-  const m = t.match(/^(#{1,3}) /);
+  const m = t.match(/^(#{1,6}) /);
   if (m) return (`h${m[1].length}`) as BlockKind;
   if (/^\s*> ?/.test(t)) return "quote";
   if (/^\s*[-*+] \[[ xX]\] /.test(t)) return "task";
   if (/^\s*[-*+] /.test(t)) return "ul";
   if (/^\s*\d+\. /.test(t)) return "ol";
   return "p";
+}
+
+/**
+ * 提升（dir = -1，标题 2 → 标题 1）或降低（dir = 1，标题 1 → 标题 2）标题级别，和 Typora 的 ⌘= / ⌘- 一样：
+ * 正文提升成标题 6，标题 6 再降低就回到正文。
+ */
+export function shiftHeading(view: Pick<EditorView, "state" | "dispatch">, dir: 1 | -1) {
+  const { state } = view;
+  const r = state.selection.main;
+  const a = state.doc.lineAt(r.from).number, z = state.doc.lineAt(r.to).number;
+  const changes = [];
+  for (let n = a; n <= z; n++) {
+    const line = state.doc.line(n);
+    if (!line.text.trim()) continue;
+    const m = line.text.match(/^(#{1,6}) +/);
+    const lv = m ? m[1].length : 7;
+    const next = Math.max(1, Math.min(7, lv + dir));
+    if (next === lv) continue;
+    changes.push({ from: line.from, to: line.from + (m ? m[0].length : 0), insert: next === 7 ? "" : "#".repeat(next) + " " });
+  }
+  if (!changes.length) return;
+  const set = state.changes(changes);
+  view.dispatch({ changes: set, selection: EditorSelection.range(set.mapPos(r.anchor, 1), set.mapPos(r.head, 1)) });
 }
 
 /** 在当前块之后插入一个新块，cursorOffset 指定光标在新块里的位置 */
@@ -298,7 +322,61 @@ export function tableMarkdown(rows: number, cols: number) {
   return [head, sep, ...body].join("\n");
 }
 
-/** 在列表里回车时续写编号；空项回车则结束列表 */
+const LIST_ITEM = /^(\s*)([-*+]|(\d+)([.)]))( \[[ xX]\])? /;
+const width = (ws: string) => ws.replace(/\t/g, "    ").length;
+
+/**
+ * 列表项缩进（Tab）和取消缩进（⇧Tab）：变成上一项的子项，或者回到上一级。
+ * 子项的缩进对齐到父项文字的起点（- 是 2 格，1. 是 3 格），这样 Markdown 和 Pandoc 都认得出层级。
+ * 有序列表缩进后从 1 编号，回到上一级时接着上一级的编号。不在列表里时返回 false，交给普通的 Tab。
+ */
+export function indentList(view: Pick<EditorView, "state" | "dispatch">, dir: 1 | -1): boolean {
+  const { state } = view;
+  const r = state.selection.main;
+  const first = state.doc.lineAt(r.from).number, last = state.doc.lineAt(r.to).number;
+  if (!LIST_ITEM.test(state.doc.line(first).text)) return false;
+  const changes: { from: number; to: number; insert: string }[] = [];
+  for (let n = first; n <= last; n++) {
+    const line = state.doc.line(n);
+    const m = line.text.match(LIST_ITEM);
+    if (!m) continue;
+    const ind = width(m[1]);
+    // 往上找：同级的前一项（缩进时用它做父项），或者更浅的一项（取消缩进时回到它那一级）
+    let target = -1, num = 1;
+    for (let k = n - 1; k >= 1; k--) {
+      const t = state.doc.line(k).text;
+      const pm = t.match(LIST_ITEM);
+      if (!pm) { if (t.trim() && !/^\s/.test(t)) break; continue; }
+      const pind = width(pm[1]);
+      if (dir === 1 && pind === ind) { target = pind + pm[2].length + 1; break; }
+      if (dir === 1 && pind < ind) break;
+      if (dir === -1 && pind < ind) { target = pind; num = pm[3] ? +pm[3] + 1 : 1; break; }
+    }
+    if (target < 0) continue;
+    let marker = m[2];
+    if (m[3]) {
+      if (dir === 1) {
+        // 新的一级里已经有前一个子项的话，接着它编号
+        num = 1;
+        for (let k = n - 1; k >= 1; k--) {
+          const pm = state.doc.line(k).text.match(LIST_ITEM);
+          if (!pm) continue;
+          if (width(pm[1]) === target && pm[3]) { num = +pm[3] + 1; break; }
+          if (width(pm[1]) < target) break;
+        }
+      }
+      marker = num + m[4];
+    }
+    changes.push({ from: line.from, to: line.from + m[1].length + m[2].length, insert: " ".repeat(target) + marker });
+  }
+  if (!changes.length) return true; // 第一项没法再缩进，也不让 Tab 插入空格把列表弄乱
+  const set = state.changes(changes);
+  view.dispatch({ changes: set, selection: EditorSelection.range(set.mapPos(r.anchor, 1), set.mapPos(r.head, 1)), userEvent: "input.indent" });
+  return true;
+}
+
+/** 在列表里回车时续写编号；空项回车：子项回到上一级，顶层的结束列表 */
+
 export function continueList(view: EditorView): boolean {
   const { state } = view;
   const r = state.selection.main;
@@ -307,6 +385,7 @@ export function continueList(view: EditorView): boolean {
   const m = line.text.match(/^(\s*)([-*+]|(\d+)\.)( \[[ xX]\])? /);
   if (!m || r.head < line.from + m[0].length) return false;
   if (line.text.trim() === m[0].trim()) {
+    if (m[1].length && indentList(view, -1)) return true;
     view.dispatch({ changes: { from: line.from, to: line.to, insert: "" }, selection: { anchor: line.from } });
     return true;
   }
