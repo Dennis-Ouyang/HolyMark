@@ -65,6 +65,18 @@ import i_ppt from "@tabler/icons/outline/presentation.svg?raw";
 import i_excel from "@tabler/icons/outline/file-spreadsheet.svg?raw";
 import i_markdown from "@tabler/icons/outline/markdown.svg?raw";
 import i_bib from "@tabler/icons/outline/bookmark.svg?raw";
+import i_typography from "@tabler/icons/outline/typography.svg?raw";
+import i_book from "@tabler/icons/outline/book.svg?raw";
+import i_left from "@tabler/icons/outline/arrow-left.svg?raw";
+import i_right from "@tabler/icons/outline/arrow-right.svg?raw";
+import i_chevr from "@tabler/icons/outline/chevron-right.svg?raw";
+import i_replace from "@tabler/icons/outline/replace.svg?raw";
+import i_clip from "@tabler/icons/outline/clipboard-text.svg?raw";
+import i_zoomin from "@tabler/icons/outline/zoom-in.svg?raw";
+import i_zoomout from "@tabler/icons/outline/zoom-out.svg?raw";
+import i_symbols from "@tabler/icons/outline/math-symbols.svg?raw";
+import i_folderOpen from "@tabler/icons/outline/folder-open.svg?raw";
+import i_chart from "@tabler/icons/outline/chart-bar.svg?raw";
 
 const RAW: Record<string, string> = {
   side: i_side,
@@ -129,6 +141,18 @@ const RAW: Record<string, string> = {
   excel: i_excel,
   markdown: i_markdown,
   bib: i_bib,
+  typography: i_typography,
+  book: i_book,
+  left: i_left,
+  right: i_right,
+  chevr: i_chevr,
+  replace: i_replace,
+  clip: i_clip,
+  zoomin: i_zoomin,
+  zoomout: i_zoomout,
+  symbols: i_symbols,
+  folderOpen: i_folderOpen,
+  chart: i_chart,
 };
 
 /** 去掉外层 svg 和 Tabler 用来占位的透明方块，只留下线条 */

@@ -6,6 +6,7 @@ import { NumberField } from "./NumberField";
 import { Icon } from "./Icons";
 import { kbd } from "../lib/platform";
 import { Segmented } from "./Segmented";
+import { TidySettings } from "./FeatureSettings";
 
 function Scrim({ onClose, center, children }: { onClose: () => void; center?: boolean; children: React.ReactNode }) {
   useEffect(() => {
@@ -38,16 +39,16 @@ export function SaveVersionDialog({ changes, fileName, onSave, onClose }: { chan
 }
 
 /* ---------------- 设置 ---------------- */
-type Pane = "general" | "editor" | "count" | "versions" | "keys";
-const PANES: [Pane, string][] = [["general", "通用"], ["editor", "编辑器"], ["count", "字数统计"], ["versions", "版本"], ["keys", "快捷键"]];
+export type Pane = "general" | "editor" | "count" | "tidy" | "versions" | "keys";
+const PANES: [Pane, string][] = [["general", "通用"], ["editor", "编辑器"], ["count", "字数统计"], ["tidy", "排版整理"], ["versions", "版本"], ["keys", "快捷键"]];
 
 /** 设置里的一行：左边名称（可带说明），右边控件 */
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return <div className="prow"><div className="pl">{label}{hint && <small>{hint}</small>}</div><div className="pc">{children}</div></div>;
 }
 
-export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; fonts: FontFamily[]; onChange: (p: Partial<Settings>) => void; onClose: () => void }) {
-  const [pane, setPane] = useState<Pane>(PANES[0][0]);
+export function SettingsDialog({ s, fonts, onChange, onClose, initialPane }: { s: Settings; fonts: FontFamily[]; onChange: (p: Partial<Settings>) => void; onClose: () => void; initialPane?: Pane }) {
+  const [pane, setPane] = useState<Pane>(initialPane ?? PANES[0][0]);
   const num = (k: keyof Settings, attrs: { min: number; max?: number; step?: number; disabled?: boolean }, unit?: string) => (
     <NumberField value={String(s[k])} {...attrs} unit={unit} ariaLabel={String(k)} onCommit={(v) => { const n = parseFloat(v); if (!Number.isNaN(n)) onChange({ [k]: n } as Partial<Settings>); }} />
   );
@@ -98,6 +99,7 @@ export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; f
             <Row label="自动版本间隔">{num("autoMinutes", { min: 1, max: 240 }, "分钟")}</Row>
             <Row label="外部修改合并" hint="这段时间内的连续写入记为一条">{num("mergeSeconds", { min: 1, max: 600 }, "秒")}</Row>
           </>}
+          {pane === "tidy" && <TidySettings s={s} onChange={onChange} />}
           {pane === "keys" && <KeyTable />}
         </div>
       </div>

@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "katex/dist/katex.min.css";
 import "./styles/app.css";
+import "./styles/features.css";
 import App from "./App";
 import { isWindows } from "./lib/platform";
 

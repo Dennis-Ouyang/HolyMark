@@ -27,6 +27,26 @@ step("⌘K 打开再关上", async (page) => {
   await page.waitForSelector(".search", { state: "detached" });
 });
 
+step("N10 中文排版整理：预览、执行、撤销", async (page) => {
+  const before = await docText(page);
+  await page.evaluate(() => { const v = window.__hm.view(); v.dispatch({ changes: { from: v.state.doc.length, insert: "\n\n测试一下,好的...这是是重复\n" } }); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { const v = window.__hm.view(); v.dispatch({ selection: { anchor: 0 } }); });
+  await menu(page, "tidy");
+  await page.waitForSelector(".hm-float.tidy");
+  const sum = await page.textContent(".tp-sum");
+  if (!/将整理/.test(sum)) throw new Error("没有显示将整理几处：" + sum);
+  if (!(await page.$(".tp-hit"))) throw new Error("没有列出重复字词");
+  await page.click(".hm-float.tidy .btn.acc");
+  await page.waitForSelector(".toast");
+  const after = await docText(page);
+  if (!after.includes("测试一下，好的……")) throw new Error("没有整理：" + after.slice(-40));
+  await page.click(".toast .lnk");
+  await page.waitForTimeout(200);
+  const undone = await docText(page);
+  if (!undone.includes("测试一下,好的...")) throw new Error("撤销没有还原");
+  await page.evaluate((t) => { const v = window.__hm.view(); v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: t } }); }, before);
+});
 
 async function run(theme) {
   const browser = await chromium.launch();

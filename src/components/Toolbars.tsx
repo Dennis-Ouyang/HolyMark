@@ -84,6 +84,8 @@ interface RibbonProps {
   onLayout: (l: Record<string, string>) => void;
   onPickImage: () => void;
   onCite: () => void;
+  /** 中文排版整理，anchor 是按钮，浮层从它长出来 */
+  onTidy: (anchor: HTMLElement) => void;
   active: Set<InlineKind>;
   block: BlockKind;
 }
@@ -116,7 +118,7 @@ function Group({ label, children, className }: { label: string; children: React.
   return <div className={"rgrp" + (className ? " " + className : "")} role="group" aria-label={label}><div className="row">{children}</div><span className="gl">{label}</span></div>;
 }
 
-export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCollapsed, onLayout, onPickImage, onCite, active, block }: RibbonProps) {
+export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCollapsed, onLayout, onPickImage, onCite, onTidy, active, block }: RibbonProps) {
   const [tab, setTab] = useState<"home" | "insert" | "layout">("home");
   const [grid, setGrid] = useState<{ r: number; c: number } | null>(null);
   const [gridOpen, setGridOpen] = useState(false);
@@ -177,6 +179,10 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
               <span className="vsep" />
               <TB title="减少缩进（回到上一级） ⌘[" disabled={!isList} onClick={run((x) => indentList(x, -1))}><Icon name="outdent" /></TB>
               <TB title="增加缩进（变成上一项的子项） ⌘]" disabled={!isList} onClick={run((x) => indentList(x, 1))}><Icon name="indent" /></TB>
+            </Group>
+            <Group label="整理">
+              <button type="button" className="rb tall" title="中文排版整理：标点、空格、引号（选中的文字或全文）" aria-label="中文排版整理" onMouseDown={keep}
+                onClick={(e) => onTidy(e.currentTarget)}><Icon name="typography" size={18} /><span>排版整理</span></button>
             </Group>
           </>}
           {tab === "insert" && <>

@@ -36,6 +36,8 @@ interface Props {
   onSelection: (view: EditorView) => void;
   /** 粘贴或拖进来的图片文件，pos 是要插入的位置 */
   onImages: (files: File[], pos: number) => void;
+  /** 新功能的扩展（见 features.ts），建编辑器时装一次 */
+  extra?: Extension;
 }
 
 /** 代码块里的语法高亮颜色走主题变量 */
@@ -47,7 +49,7 @@ const codeHighlight = HighlightStyle.define([
   { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "var(--hl-fn)" },
 ]);
 
-export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial, preview, previewKey, onChange, onSelection, onImages }, ref) {
+export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial, preview, previewKey, onChange, onSelection, onImages, extra }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const previewCompartment = useRef(new Compartment());
@@ -108,6 +110,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial,
             },
           }),
           EditorView.contentAttributes.of({ spellcheck: "false", "aria-label": "正文" }),
+          extra ?? [],
         ];
     const view = new EditorView({ parent: host.current!, state: EditorState.create({ doc: initial, extensions: exts.current }) });
     viewRef.current = view;

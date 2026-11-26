@@ -21,6 +21,9 @@ import { baseName, dirOf, isInside, join, normalize, relative, toPosix } from ".
 import { isMac, isWindows, kbd, keyName } from "./lib/platform";
 import { menuIdFor } from "./lib/shortcuts";
 import { ExportDialog } from "./components/ExportDialog";
+import type { Pane } from "./components/Dialogs";
+import { features, FeatureHooks } from "./editor/features";
+import { useTidy } from "./features/useTidy";
 
 const AUTHOR = "我";
 /** macOS 有原生菜单负责快捷键；Windows 和浏览器预览里由前端处理 */
@@ -76,6 +79,8 @@ export default function App() {
   const [focus, setFocus] = useState(false);
   const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "help_syntax" | "help_keys" | "export" | "unsaved" | "cmpfile" | "move">(null);
   const [fonts, setFonts] = useState<FontFamily[]>([]);
+  /** 设置打开时先显示哪一页 */
+  const [settingsPane, setSettingsPane] = useState<Pane | undefined>(undefined);
   const [scrollHeading, setScrollHeading] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
   const [tick, setTick] = useState(0);
@@ -92,6 +97,9 @@ export default function App() {
   const saveTimer = useRef<number>();
 
   const view = (): EditorView | null => ed.current?.view() ?? null;
+  /** 新功能的编辑器扩展（features.ts）：只建一次，回调经由 featureHooks 换成最新的 */
+  const featureHooks = useRef<FeatureHooks>({});
+  const extra = useMemo(() => features(featureHooks), []);
   // 方便自动化测试读取编辑器状态
   (window as unknown as { __hm: unknown }).__hm = { view, menu: (id: string) => menuRef.current(id) };
   const say = useCallback((m: string, action?: { label: string; run: () => void }) => {
@@ -410,6 +418,10 @@ export default function App() {
     v.focus();
   }
 
+  /* ---------- 新功能 ---------- */
+  const openSettings = (pane?: Pane) => { setSettingsPane(pane); setDlg("settings"); };
+  const tidy = useTidy({ view, rules: s.tidy, text, say, openSettings: () => openSettings("tidy") });
+
   /* ---------- 菜单 ---------- */
   function onMenu(id: string) {
     const v = view();
@@ -425,7 +437,8 @@ export default function App() {
     const inline = { bold: "bold", italic: "italic", strike: "strike", code: "code", math: "math", highlight: "highlight", sup: "sup", sub: "sub" } as const;
     if (id in inline) { if (v) toggleInline(v, inline[id as keyof typeof inline]); return; }
     switch (id) {
-      case "settings": setDlg("settings"); break;
+      case "settings": openSettings(); break;
+      case "tidy": if (path) tidy.open(); break;
       case "new_file": newFile(); break;
       case "open_folder": chooseFolder(); break;
       case "close_folder": closeFolder(); break;
@@ -760,6 +773,7 @@ export default function App() {
     { group: "命令", icon: "cmd", title: "Markdown 语法速查", run: () => setTimeout(() => setDlg("help_syntax"), 0) },
     { group: "命令", icon: "cmd", title: "导出 Word / PDF / Markdown…", keys: ["⌘", "⇧", "E"].map((k) => keyName(k)), run: () => setTimeout(openExport, 0) },
     { group: "命令", icon: "cmd", title: "设置", keys: ["⌘", ","].map((k) => keyName(k)), run: () => setDlg("settings") },
+    ...(path ? [{ group: "命令", icon: "typography", title: "中文排版整理", sub: "选中的文字或全文", run: () => setTimeout(() => tidy.open(), 0) }] : []),
     { group: "命令", icon: "cmd", title: "专注模式", keys: ["⌘", "⇧", "F"].map((k) => keyName(k)), run: () => setFocus((f) => !f) },
     ...hs.filter((h) => h.level >= 2).map((h) => ({ group: "跳转", icon: "go", title: h.text, run: () => jump(h.pos) })),
   ];
@@ -934,11 +948,11 @@ export default function App() {
       <main className="main">
         {path && <Ribbon view={ed.current?.view() ?? null} author={AUTHOR} settings={s} fonts={fonts} layout={layout} onLayout={applyLayout}
           collapsed={s.ribbonCollapsed} setCollapsed={(c) => update({ ribbonCollapsed: c })}
-          onPickImage={pickImage} onCite={openInsert} active={fmt.active} block={fmt.block} />}
+          onPickImage={pickImage} onCite={openInsert} active={fmt.active} block={fmt.block} onTidy={tidy.open} />}
         <div className="scroller" ref={scroller} onScroll={() => window.requestAnimationFrame(syncScrollHeading)} onMouseDown={clickBelow}>
           <div className="doc">
             {!path && <Welcome hasRoot={!!root} recent={s.recentFolders} onOpen={chooseFolder} onNew={() => newFile()} onRecent={(f) => openFolder(f).catch(() => { say("这个文件夹已经不在了"); update({ recentFolders: s.recentFolders.filter((x) => x !== f) }); })} />}
-            <div hidden={!path}><Editor ref={ed} initial="" preview={preview} previewKey={previewKey} onChange={onChange} onSelection={onSelection} onImages={insertImages} /></div>
+            <div hidden={!path}><Editor ref={ed} initial="" preview={preview} previewKey={previewKey} onChange={onChange} onSelection={onSelection} onImages={insertImages} extra={extra} /></div>
           </div>
         </div>
         <FloatingToolbar view={ed.current?.view() ?? null} tick={tick} author={AUTHOR} active={fmt.active} />
@@ -968,12 +982,13 @@ export default function App() {
 
       <Presence>{countPop && <CountPop title={countPop.title} text={countPop.text} count={count} anchor={countPop.rect} onClose={() => setCountPop(null)} />}</Presence>
       <Presence>{dlg === "save" && <SaveVersionDialog changes={saveChanges} fileName={fileName} onSave={saveVersion} onClose={() => setDlg(null)} />}</Presence>
-      <Presence>{dlg === "settings" && <SettingsDialog s={s} fonts={fonts} onChange={update} onClose={() => setDlg(null)} />}</Presence>
+      <Presence>{dlg === "settings" && <SettingsDialog s={s} fonts={fonts} onChange={update} initialPane={settingsPane} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{(dlg === "help_syntax" || dlg === "help_keys") && <HelpDialog kind={dlg === "help_syntax" ? "syntax" : "keys"} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{dlg === "palette" && <SearchPanel text={live.current.text} path={path} root={root} headings={hs} folderTexts={folderTexts} commands={commands}
         onJump={jumpTo} onOpenAt={openAt} onClose={() => setDlg(null)} />}</Presence>
       <Presence ms={100}>{insertAt && <InsertFile at={insertAt} files={flatten(tree)} docPath={path} root={root} bib={bib} recent={recentIns}
         onPick={pickInsert} onPickOther={() => { setInsertAt(null); setTimeout(citeOtherFile, 0); }} onClose={() => { setInsertAt(null); view()?.focus(); }} />}</Presence>
+      {tidy.node}
       <Presence>{dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{dlg === "cmpfile" && <Palette items={cmpItems} search={noSearch} pinned={cmpPick} onClose={() => setDlg(null)} placeholder="选一篇文稿，和当前文稿左右对比" />}</Presence>
       <Presence>{dlg === "move" && moving && <Palette items={moveItems} search={noSearch} onClose={() => { setDlg(null); setMoving(null); }} placeholder={`把「${moving.name}」移到哪个文件夹`} />}</Presence>

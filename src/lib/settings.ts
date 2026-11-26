@@ -1,5 +1,6 @@
 /** 应用设置（所有文件的默认值）。单篇文件的版式写在它自己的属性区里，优先级更高。 */
 import { isWindows } from "./platform";
+import { TIDY_DEFAULTS, TidyRules } from "./tidy";
 
 export interface Settings {
   theme: "system" | "light" | "dark";
@@ -28,6 +29,8 @@ export interface Settings {
   ribbonCollapsed: boolean;
   /** 文件树里是否显示 Markdown 以外的文件 */
   showAllFiles: boolean;
+  /** 中文排版整理的规则 */
+  tidy: TidyRules;
   /** 设置格式版本，用来迁移旧的默认值 */
   v: number;
 }
@@ -56,6 +59,7 @@ export const DEFAULTS: Settings = {
   eqNumbers: false,
   ribbonCollapsed: false,
   showAllFiles: false,
+  tidy: TIDY_DEFAULTS,
   v: 2,
 };
 
@@ -101,6 +105,8 @@ export function loadSettings(): Settings {
     if (saved.measure === 38) delete saved.measure;
   }
   const out = { ...DEFAULTS, ...saved, v: 2 };
+  // 嵌套的设置：新加的规则用默认值
+  out.tidy = { ...TIDY_DEFAULTS, ...(saved.tidy || {}) };
   if (!(out.accent in ACCENTS)) out.accent = "indigo";
   return out;
 }
