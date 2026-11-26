@@ -15,6 +15,7 @@ import { CountPop, HelpDialog, Palette, PaletteItem, SaveVersionDialog, Settings
 import { Icon } from "./components/Icons";
 import { WindowControls } from "./components/WindowControls";
 import { Menu, MenuEntry } from "./components/Menu";
+import { SearchPanel } from "./components/Search";
 import { baseName, dirOf, isInside, join, normalize, relative, toPosix } from "./lib/paths";
 import { isMac, isWindows, kbd, keyName } from "./lib/platform";
 import { menuIdFor } from "./lib/shortcuts";
@@ -649,35 +650,18 @@ export default function App() {
       setFolderTexts(new Map(folderCache.current));
     })();
   }, [dlg, be, tree, path]);
-  const snip = (t: string, q: string) => {
-    const i = t.toLowerCase().indexOf(q.toLowerCase());
-    const a = Math.max(0, i - 16), b = Math.min(t.length, i + q.length + 30);
-    return (a ? "…" : "") + esc(t.slice(a, i)) + "<b>" + esc(t.substr(i, q.length)) + "</b>" + esc(t.slice(i + q.length, b)) + (b < t.length ? "…" : "");
-  };
-  const search = useCallback((q: string): PaletteItem[] => {
-    const out: PaletteItem[] = [];
-    const ql = q.toLowerCase();
-    let pos = 0;
-    for (const line of text.split("\n")) {
-      const p = plainText(line);
-      if (p.toLowerCase().includes(ql) && out.length < 6) {
-        const at = pos;
-        const h = [...hs].reverse().find((x) => x.pos <= at);
-        out.push({ group: "当前文件", icon: "doc", title: h ? h.text : baseName(path), sub: snip(p, q), run: () => jump(at) });
-      }
-      pos += line.length + 1;
-    }
-    let n = 0;
-    folderTexts.forEach((t, p) => {
-      const pt = plainText(t);
-      if (n < 6 && (pt.toLowerCase().includes(ql) || baseName(p).toLowerCase().includes(ql))) {
-        n++;
-        out.push({ group: "文件夹", icon: "file", title: relative(root, p), sub: pt.toLowerCase().includes(ql) ? snip(pt, q) : undefined, run: () => openFile(p) });
-      }
-    });
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, hs, folderTexts, root, path]);
+  /** 搜索结果：选中匹配的文字并滚到屏幕中间 */
+  function jumpTo(pos: number, len: number) {
+    const v = view(); if (!v) return;
+    setCmp(null); setFileCmp(null);
+    const at = Math.min(pos, v.state.doc.length);
+    v.dispatch({ selection: { anchor: at, head: Math.min(at + len, v.state.doc.length) }, effects: EditorView.scrollIntoView(at, { y: "center" }) });
+    v.focus();
+  }
+  async function openAt(p: string, pos: number, len: number) {
+    if (p !== live.current.path) await openFile(p);
+    requestAnimationFrame(() => jumpTo(pos, len));
+  }
 
   const commands: PaletteItem[] = [
     { group: "命令", icon: "cmd", title: "保存版本", keys: ["⌘", "S"].map((k) => keyName(k)), run: () => setDlg("save") },
@@ -815,7 +799,8 @@ export default function App() {
       {dlg === "save" && <SaveVersionDialog changes={saveChanges} fileName={fileName} onSave={saveVersion} onClose={() => setDlg(null)} />}
       {dlg === "settings" && <SettingsDialog s={s} fonts={fonts} onChange={update} onClose={() => setDlg(null)} />}
       {(dlg === "help_syntax" || dlg === "help_keys") && <HelpDialog kind={dlg === "help_syntax" ? "syntax" : "keys"} onClose={() => setDlg(null)} />}
-      {dlg === "palette" && <Palette items={commands} search={search} onClose={() => setDlg(null)} placeholder="搜索全文、文件夹，或输入命令" />}
+      {dlg === "palette" && <SearchPanel text={live.current.text} path={path} root={root} headings={hs} folderTexts={folderTexts} commands={commands}
+        onJump={jumpTo} onOpenAt={openAt} onClose={() => setDlg(null)} />}
       {dlg === "cite" && <Palette items={citeItems} search={citeSearch} pinned={pickOther} onClose={() => setDlg(null)} placeholder="搜索文献或文件，回车插入" />}
       {dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => setDlg(null)} />}
       {dlg === "cmpfile" && <Palette items={cmpItems} search={noSearch} pinned={cmpPick} onClose={() => setDlg(null)} placeholder="选一篇文稿，和当前文稿左右对比" />}

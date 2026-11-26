@@ -723,3 +723,58 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .win ::-webkit-scrollbar-thumb:hover { background-color: var(--fg-3); }
 .win ::-webkit-scrollbar-corner { background: transparent; }
 .flow .pv-fig[style] img { width: 100%; }
+
+/* ---------- ⌘K 搜索 ---------- */
+.search { width: min(960px, 100%); height: min(600px, calc(100vh - 18vh)); display: flex; flex-direction: column; background: var(--raised); border-radius: 12px; box-shadow: var(--pop); overflow: hidden; animation: palIn 160ms var(--ease); }
+.s-top { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 14px 0 18px; border-bottom: 1px solid var(--line); flex: none; color: var(--fg-3); }
+.s-top input { flex: 1; min-width: 0; border: 0; outline: none; background: none; font-size: 16px; color: var(--fg); }
+.s-scope { display: flex; padding: 2px; border-radius: 7px; background: var(--seg-track); flex: none; }
+.s-scope button { height: 26px; padding: 0 10px; border-radius: 5px; font-size: 12px; color: var(--fg-2); display: inline-flex; align-items: center; gap: 5px; }
+.s-scope button span { font-size: 11px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.s-scope button.on { background: var(--seg-thumb); color: var(--fg); font-weight: 500; box-shadow: 0 1px 2px rgba(16,18,30,.12), 0 0 0 .5px rgba(16,18,30,.08); }
+.s-body { flex: 1; min-height: 0; display: flex; }
+.s-list { width: 440px; flex: none; overflow-y: auto; padding: 4px 8px 8px; border-right: 1px solid var(--line); }
+.s-list.wide { width: 100%; border-right: 0; }
+.s-gh { display: flex; justify-content: space-between; padding: 10px 10px 4px; font-size: 12px; color: var(--fg-3); }
+/* 选中：安静的浅灰底，右边出一个回车提示，不加色条 */
+.srow { position: relative; display: block; width: 100%; text-align: left; padding: 7px 36px 7px 10px; border-radius: 8px; color: var(--fg-2); }
+.srow.sel { background: var(--hover); color: var(--fg); }
+.srow.sub { padding-left: 32px; }
+.s-ret { position: absolute; right: 10px; top: 50%; margin-top: -9px; height: 18px; line-height: 16px; visibility: hidden; }
+.srow.sel .s-ret { visibility: visible; }
+.s-where { display: block; font-size: 12px; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s-snip { display: block; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.s-snip mark, .s-pv mark { background: rgba(232,180,40,.32); color: var(--fg); border-radius: 2px; font-weight: 600; }
+.s-file { display: flex; align-items: center; gap: 8px; color: var(--fg-3); }
+.s-file b { font-weight: 500; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s-file small { font-size: 12px; color: var(--fg-3); white-space: nowrap; }
+.s-file em { margin-left: auto; font-style: normal; font-size: 11px; padding: 0 6px; border-radius: 8px; background: var(--hover); color: var(--fg-2); display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+.s-file em.more { cursor: pointer; }
+.srow.sel .s-file em { background: var(--raised); }
+.srow .s-file + .s-snip { margin-left: 22px; font-size: 12px; color: var(--fg-2); }
+.s-cmd { display: flex; align-items: center; gap: 8px; color: var(--fg-3); }
+.s-cmd > span:nth-child(2) { color: var(--fg); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s-cmd .sc { display: flex; gap: 3px; }
+.s-pv { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--surface); }
+.s-pvh { display: flex; align-items: center; gap: 6px; padding: 12px 18px 10px; font-size: 12px; color: var(--fg-3); border-bottom: 1px solid var(--line); min-width: 0; }
+.s-pvh b { color: var(--fg); font-weight: 500; white-space: nowrap; }
+.s-pvh span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s-pvh svg { transform: rotate(-90deg); flex: none; }
+.s-pvh .ln { margin-left: auto; font-variant-numeric: tabular-nums; flex: none; }
+.s-pvb { position: relative; flex: 1; min-height: 0; }
+.s-pvs { position: absolute; inset: 0; overflow-y: auto; padding: 0 40px 0 24px; font-family: var(--ed-b); font-size: 14px; line-height: 1.85; color: var(--fg); scrollbar-width: thin; }
+.s-pvs .pad { height: 45%; }
+.s-pvs p { margin: 0 0 12px; white-space: pre-wrap; word-break: break-word; }
+.s-pvs .s-h { font-family: var(--ed-h); font-weight: 600; font-size: 15px; margin: 16px 0 6px; }
+.s-pvs .s-h.l1 { font-size: 18px; }
+.s-pvs mark { font-weight: inherit; background: rgba(232,180,40,.22); }
+.s-pvs mark.cur { background: rgba(232,180,40,.5); box-shadow: 0 0 0 2px rgba(232,180,40,.5); }
+/* 上下渐隐：匹配处在中间最清楚，越远越淡 */
+.s-fade { position: absolute; inset: 0 14px 0 0; pointer-events: none;
+  background: linear-gradient(180deg, var(--surface) 0%, color-mix(in srgb, var(--surface) 60%, transparent) 22%, transparent 42%, transparent 58%, color-mix(in srgb, var(--surface) 60%, transparent) 78%, var(--surface) 100%); }
+.s-ticks { position: absolute; top: 14px; bottom: 14px; right: 10px; width: 6px; border-radius: 3px; background: var(--seg-track); }
+.s-ticks i { position: absolute; left: 0; right: 0; height: 3px; margin-top: -1px; border-radius: 2px; background: var(--anno-line); opacity: .6; }
+.s-ticks i.cur { background: var(--accent); opacity: 1; height: 5px; margin-top: -2px; }
+.s-foot { display: flex; gap: 16px; height: 36px; align-items: center; padding: 0 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--fg-3); flex: none; }
+.win .s-list { background-color: var(--raised); }
+@media (max-width: 860px) { .s-list { width: 100%; border-right: 0; } .s-pv { display: none; } }
