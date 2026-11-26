@@ -709,7 +709,7 @@ export default function App() {
     ];
   }
   const folderMenuItems = (): MenuEntry[] => [
-    ...(s.recentFolders.filter((f) => f !== root).length ? [{ head: "最近打开" } as MenuEntry, ...s.recentFolders.filter((f) => f !== root).map((f) => ({ label: baseName(f), hint: shortPath(dirOf(f)), icon: "folder", run: () => openFolder(f).catch(() => say("这个文件夹已经不在了")) }))] : []),
+    ...(s.recentFolders.filter((f) => f !== root).length ? [{ head: "最近打开" } as MenuEntry, ...s.recentFolders.filter((f) => f !== root).map((f) => ({ label: baseName(f), hint: shortPath(dirOf(f)), icon: "folder", run: () => openFolder(f).catch((e) => say(String(e).includes("重新选择") ? String(e) : "这个文件夹已经不在了")) }))] : []),
     ...(s.recentFolders.filter((f) => f !== root).length ? [{ sep: true } as MenuEntry] : []),
     { label: "打开其他文件夹…", icon: "folder", hint: "⌘O", run: chooseFolder },
     ...(root ? [{ label: isWindows ? "在资源管理器中显示" : "在访达中显示", icon: "open", run: () => be?.reveal(root) }, { sep: true } as MenuEntry, { label: "关闭文件夹", icon: "close", run: closeFolder }] : []),
@@ -937,7 +937,7 @@ export default function App() {
           onPickImage={pickImage} onCite={openInsert} active={fmt.active} block={fmt.block} />}
         <div className="scroller" ref={scroller} onScroll={() => window.requestAnimationFrame(syncScrollHeading)} onMouseDown={clickBelow}>
           <div className="doc">
-            {!path && <Welcome hasRoot={!!root} recent={s.recentFolders} onOpen={chooseFolder} onNew={() => newFile()} onRecent={(f) => openFolder(f).catch(() => { say("这个文件夹已经不在了"); update({ recentFolders: s.recentFolders.filter((x) => x !== f) }); })} />}
+            {!path && <Welcome hasRoot={!!root} recent={s.recentFolders} onOpen={chooseFolder} onNew={() => newFile()} onRecent={(f) => openFolder(f).catch((e) => { if (String(e).includes("重新选择")) { say(String(e)); return; } say("这个文件夹已经不在了"); update({ recentFolders: s.recentFolders.filter((x) => x !== f) }); })} />}
             <div hidden={!path}><Editor ref={ed} initial="" preview={preview} previewKey={previewKey} onChange={onChange} onSelection={onSelection} onImages={insertImages} /></div>
           </div>
         </div>

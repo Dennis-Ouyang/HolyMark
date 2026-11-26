@@ -168,7 +168,7 @@ export function Palette({ items, search, onClose, placeholder, pinned }: { items
           {list.length ? list.map((c, i) => {
             const head = c.group !== group ? <div className="pg">{(group = c.group)}</div> : null;
             return <div key={i}>{head}<button className={"pi" + (i === sel ? " sel" : "")} onMouseMove={() => setSel(i)} onClick={() => run(i)}>
-              <Icon name={c.icon} /><span className="tx"><div>{c.title}</div>{c.sub && <small dangerouslySetInnerHTML={{ __html: c.sub }} />}</span>
+              <Icon name={c.icon} /><span className="tx"><div>{c.title}</div>{c.sub && <small>{c.sub}</small>}</span>
               {c.keys && <span className="sc">{c.keys.map((k) => <kbd key={k}>{k}</kbd>)}</span>}</button></div>;
           }) : <div className="empty">没有找到相关内容</div>}
         </div>

@@ -99,19 +99,20 @@ const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
 async function tauriBackend(): Promise<Backend> {
   const { invoke } = await import("@tauri-apps/api/core");
   const { listen } = await import("@tauri-apps/api/event");
-  const { open, save } = await import("@tauri-apps/plugin-dialog");
+  const { open } = await import("@tauri-apps/plugin-dialog");
   return {
     isDemo: false,
+    // 选文件夹、选保存位置走 Rust：选中的位置记在后端，写入类命令只认这些位置（见 lib.rs 的 guard）
     async pickFolder() {
-      const r = await open({ directory: true, multiple: false, title: "打开文件夹" });
-      return typeof r === "string" ? toPosix(r) : null;
+      const r = await invoke<string | null>("pick_folder", { title: "打开文件夹" });
+      return r ? toPosix(r) : null;
     },
     async pickFile(title, extensions) {
       const r = await open({ multiple: false, directory: false, title, filters: extensions?.length ? [{ name: title, extensions }] : undefined });
       return typeof r === "string" ? toPosix(r) : null;
     },
     async pickSave(title, defaultPath, extension) {
-      const r = await save({ title, defaultPath, filters: [{ name: extension.toUpperCase(), extensions: [extension] }] });
+      const r = await invoke<string | null>("pick_save", { title, defaultPath, extension });
       return r ? toPosix(r) : null;
     },
     exportTools: () => invoke("export_tools"),

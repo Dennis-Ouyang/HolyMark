@@ -70,6 +70,77 @@ pub fn valid_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 只按字面整理路径：去掉 `.`、按 `..` 回退一级。不碰磁盘，所以不存在的路径也能用。
+pub fn lexical(p: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                // 不能退到根以上
+                if !matches!(out.components().next_back(), None | Some(Component::RootDir) | Some(Component::Prefix(_))) {
+                    out.pop();
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// 比较用的形式：字面整理后统一斜杠；Windows 和 macOS 的文件系统默认不分大小写，按小写比
+fn cmp_form(p: &Path) -> String {
+    let s = slash(&lexical(p));
+    let s = s.trim_end_matches('/').to_string();
+    if cfg!(any(windows, target_os = "macos")) {
+        s.to_lowercase()
+    } else {
+        s
+    }
+}
+
+/// p 是否在 root 里面（含 root 本身）。路径必须是绝对路径；`..` 绕出去的不算。
+/// 先按字面判断；如果 p 或它的上级已经存在，再按真实路径（解开符号链接）判断一次。
+pub fn within(root: &Path, p: &Path) -> bool {
+    if !p.is_absolute() || !root.is_absolute() {
+        return false;
+    }
+    let (r, q) = (cmp_form(root), cmp_form(p));
+    let lexical_ok = q == r || q.starts_with(&format!("{r}/"));
+    if !lexical_ok {
+        return false;
+    }
+    // 符号链接可能指向文件夹外面：找到最近一个存在的上级，按真实路径再比一次
+    let Ok(real_root) = root.canonicalize() else { return lexical_ok };
+    let full = lexical(p);
+    let mut probe = full.as_path();
+    loop {
+        if let Ok(real) = probe.canonicalize() {
+            let rest = full.strip_prefix(probe).unwrap_or(Path::new(""));
+            let (r, q) = (cmp_form(&real_root), cmp_form(&real.join(rest)));
+            return q == r || q.starts_with(&format!("{r}/"));
+        }
+        match probe.parent() {
+            Some(pp) => probe = pp,
+            None => return lexical_ok,
+        }
+    }
+}
+
+/// 用默认程序打开时不放行的类型：可执行程序和脚本。文稿里的链接不该一点就启动程序。
+pub fn is_executable_like(p: &Path) -> bool {
+    const EXEC: &[&str] = &[
+        "app", "command", "tool", "terminal", "sh", "bash", "zsh", "csh", "fish", "pkg", "mpkg", "scpt", "applescript", "workflow", "jar",
+        "exe", "bat", "cmd", "com", "msi", "msp", "ps1", "psm1", "vbs", "vbe", "js", "jse", "wsf", "wsh", "hta", "scr", "pif", "lnk", "reg",
+        "cpl", "inf", "url", "desktop", "appimage", "run", "py", "pl", "rb",
+    ];
+    p.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| EXEC.contains(&e.to_ascii_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
 pub fn read_text(path: &Path) -> std::io::Result<String> {
     fs::read_to_string(path)
 }
@@ -121,6 +192,43 @@ mod tests {
             assert_eq!(slash(Path::new("a\\b.md")), "a\\b.md");
             assert_eq!(slash(&p), "a/b.md");
         }
+    }
+
+    #[test]
+    fn within_checks_folder_bounds() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().join("稿件");
+        fs::create_dir_all(root.join("正文")).unwrap();
+        assert!(within(&root, &root));
+        assert!(within(&root, &root.join("a.md")));
+        assert!(within(&root, &root.join("正文/还没有的.md")));
+        assert!(within(&root, &root.join("正文/../b.md")));
+        assert!(!within(&root, &root.join("../外面.md")));
+        assert!(!within(&root, &root.join("正文/../../外面.md")));
+        assert!(!within(&root, &d.path().join("稿件二/a.md")));
+        assert!(!within(&root, Path::new("相对路径.md")));
+        #[cfg(unix)]
+        {
+            let outside = d.path().join("外面");
+            fs::create_dir(&outside).unwrap();
+            std::os::unix::fs::symlink(&outside, root.join("链接")).unwrap();
+            assert!(!within(&root, &root.join("链接/a.md")));
+        }
+    }
+
+    #[test]
+    fn lexical_never_climbs_above_root() {
+        assert_eq!(lexical(Path::new("/a/b/../../../c")), PathBuf::from("/c"));
+        assert_eq!(lexical(Path::new("/a/./b/../c")), PathBuf::from("/a/c"));
+    }
+
+    #[test]
+    fn executables_are_flagged() {
+        assert!(is_executable_like(Path::new("/x/Calculator.app")));
+        assert!(is_executable_like(Path::new("C:/x/setup.EXE")));
+        assert!(is_executable_like(Path::new("/x/run.command")));
+        assert!(!is_executable_like(Path::new("/x/论文.pdf")));
+        assert!(!is_executable_like(Path::new("/x/数据.xlsx")));
     }
 
     #[test]

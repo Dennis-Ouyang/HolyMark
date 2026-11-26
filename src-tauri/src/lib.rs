@@ -9,7 +9,7 @@ mod xml;
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, State};
@@ -22,6 +22,8 @@ struct Inner {
     /// 编辑器自己最近写入的内容，用来区分外部修改。键用 key() 统一过斜杠方向
     written: HashMap<String, String>,
     merge_ms: u64,
+    /// 用户在「存储为」窗口里亲自选过的保存位置（可以在文件夹以外），只有这些允许写到文件夹外面
+    granted: HashSet<String>,
 }
 
 #[derive(Default)]
@@ -52,6 +54,76 @@ fn key(p: &Path) -> String {
     slash(p)
 }
 
+/* ---------- 路径校验 ----------
+   页面一旦被注入脚本（比如文稿里的恶意 HTML），就能调用这里的全部命令。
+   所以写入、删除、移动类命令只接受当前打开的文件夹里的路径；
+   要写到文件夹外面（导出），必须是用户在系统「存储为」窗口里亲自选的位置（见 pick_save）。
+   读取类命令不限制：预览文件夹外的文件、插入文件夹外的图片都是正常用法。 */
+
+/// 路径必须在当前打开的文件夹里
+fn guard(state: &State<AppState>, p: &Path) -> Result<(), String> {
+    let i = state.inner.lock().unwrap();
+    let root = i.root.as_ref().ok_or("还没有打开文件夹")?;
+    if fsops::within(root, p) {
+        Ok(())
+    } else {
+        Err(format!("不能改动文件夹以外的文件：{}", slash(p)))
+    }
+}
+
+/// 用户亲自选过（系统窗口）或从访达 / 资源管理器打开过的文件夹，存在应用配置目录里。
+/// 只有这些文件夹能作为工作区打开，免得注入的脚本把整个磁盘当成「打开的文件夹」。
+fn known_roots_file(app: &tauri::AppHandle) -> Option<PathBuf> {
+    use tauri::Manager;
+    app.path().app_config_dir().ok().map(|d| d.join("known-folders.json"))
+}
+
+fn read_known_roots(app: &tauri::AppHandle) -> Option<Vec<String>> {
+    let f = known_roots_file(app)?;
+    let s = std::fs::read_to_string(f).ok()?;
+    serde_json::from_str(&s).ok()
+}
+
+fn remember_root(app: &tauri::AppHandle, dir: &Path) {
+    let Some(f) = known_roots_file(app) else { return };
+    let mut list = read_known_roots(app).unwrap_or_default();
+    let k = key(&fsops::lexical(dir));
+    if !list.contains(&k) {
+        list.push(k);
+        if let Some(d) = f.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let _ = std::fs::write(&f, serde_json::to_string(&list).unwrap_or_default());
+    }
+}
+
+/// 第一次运行这个版本时还没有名单（老用户上次打开的文件夹在前端的设置里），这时放行并记下来
+fn root_allowed(app: &tauri::AppHandle, dir: &Path) -> bool {
+    match read_known_roots(app) {
+        None => true,
+        Some(list) => list.contains(&key(&fsops::lexical(dir))),
+    }
+}
+
+/// 在文件夹里，或者是用户亲自选过的保存位置
+fn guard_write(state: &State<AppState>, p: &Path) -> Result<(), String> {
+    if state.inner.lock().unwrap().granted.contains(&key(&fsops::lexical(p))) {
+        return Ok(());
+    }
+    guard(state, p)
+}
+
+/// 删除暂存区（.holymark/trash）里的路径
+fn guard_staged(state: &State<AppState>, p: &Path) -> Result<(), String> {
+    let i = state.inner.lock().unwrap();
+    let root = i.root.as_ref().ok_or("还没有打开文件夹")?;
+    if fsops::within(&root.join(".holymark").join("trash"), p) {
+        Ok(())
+    } else {
+        Err("不是暂存的文件".into())
+    }
+}
+
 fn rel(root: &Path, p: &Path) -> String {
     p.strip_prefix(root).unwrap_or(p).to_string_lossy().replace('\\', "/")
 }
@@ -65,6 +137,13 @@ struct ExternalChange {
 #[tauri::command]
 fn open_folder(app: tauri::AppHandle, state: State<AppState>, root: String) -> Result<Vec<fsops::Node>, String> {
     let rootp = PathBuf::from(&root);
+    if !rootp.is_absolute() || !rootp.is_dir() {
+        return Err("找不到这个文件夹".into());
+    }
+    if !root_allowed(&app, &rootp) {
+        return Err("请用「打开文件夹…」重新选择这个文件夹".into());
+    }
+    remember_root(&app, &rootp);
     let tree = fsops::tree(&rootp).map_err(err)?;
     {
         let r = rootp.clone();
@@ -80,6 +159,11 @@ fn open_folder(app: tauri::AppHandle, state: State<AppState>, root: String) -> R
     }
     let inner = state.inner.clone();
     let handle = app.clone();
+    // 图片、PDF 预览走 asset 协议：打开的文件夹整个放行（静态范围之外的位置，比如另一个磁盘）
+    {
+        use tauri::Manager;
+        let _ = app.asset_protocol_scope().allow_directory(&rootp, true);
+    }
     let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         let Ok(ev) = res else { return };
         if !(ev.kind.is_modify() || ev.kind.is_create()) {
@@ -140,6 +224,7 @@ fn read_text(state: State<AppState>, path: String) -> Result<String, String> {
 #[tauri::command]
 fn write_text(state: State<AppState>, path: String, content: String) -> Result<(), String> {
     let p = PathBuf::from(&path);
+    guard_write(&state, &p)?;
     state.inner.lock().unwrap().written.insert(key(&p), content.clone());
     fsops::write_text(&p, &content).map_err(err)
 }
@@ -190,9 +275,13 @@ fn unique_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
 
 /// 把图片等文件复制进文件夹（默认放在文档旁的 assets/），返回新路径
 #[tauri::command]
-fn copy_into_folder(src: String, dir: String) -> Result<String, String> {
+fn copy_into_folder(state: State<AppState>, src: String, dir: String) -> Result<String, String> {
     let srcp = PathBuf::from(&src);
     let dirp = PathBuf::from(&dir);
+    guard(&state, &dirp)?;
+    if !srcp.is_file() {
+        return Err("只能复制文件".into());
+    }
     std::fs::create_dir_all(&dirp).map_err(err)?;
     let stem = srcp.file_stem().and_then(|s| s.to_str()).unwrap_or("image").to_string();
     let ext = srcp.extension().and_then(|s| s.to_str()).map(|e| format!(".{}", e)).unwrap_or_default();
@@ -203,12 +292,13 @@ fn copy_into_folder(src: String, dir: String) -> Result<String, String> {
 
 /// 保存粘贴或拖进来的图片（base64），返回新路径
 #[tauri::command]
-fn save_image(dir: String, name: String, data: String) -> Result<String, String> {
+fn save_image(state: State<AppState>, dir: String, name: String, data: String) -> Result<String, String> {
     use base64::Engine;
     let bytes = base64::engine::general_purpose::STANDARD.decode(data.as_bytes()).map_err(err)?;
     let dirp = PathBuf::from(&dir);
+    guard(&state, &dirp)?;
     std::fs::create_dir_all(&dirp).map_err(err)?;
-    let np = Path::new(&name);
+    let np = Path::new(Path::new(&name).file_name().ok_or("文件名不对")?);
     let stem = np.file_stem().and_then(|s| s.to_str()).unwrap_or("image");
     let ext = np.extension().and_then(|s| s.to_str()).map(|e| format!(".{}", e)).unwrap_or_else(|| ".png".into());
     let dest = unique_path(&dirp, stem, &ext);
@@ -256,6 +346,8 @@ fn list_fonts(state: State<AppState>) -> Vec<FontFamily> {
 #[tauri::command]
 fn create_file(state: State<AppState>, dir: String, base: String) -> Result<String, String> {
     let d = PathBuf::from(&dir);
+    guard(&state, &d)?;
+    fsops::valid_name(&base)?;
     let mut p = d.join(format!("{}.md", base));
     let mut n = 2;
     while p.exists() {
@@ -295,7 +387,9 @@ fn after_move(state: &State<AppState>, from: &Path, to: &Path) {
 }
 
 #[tauri::command]
-fn create_dir(dir: String, base: String) -> Result<String, String> {
+fn create_dir(state: State<AppState>, dir: String, base: String) -> Result<String, String> {
+    guard(&state, Path::new(&dir))?;
+    fsops::valid_name(&base)?;
     let p = fsops::unique_in(Path::new(&dir), &base, "");
     std::fs::create_dir_all(&p).map_err(err)?;
     Ok(slash(&p))
@@ -306,6 +400,8 @@ fn rename_path(state: State<AppState>, path: String, name: String) -> Result<Str
     fsops::valid_name(&name)?;
     let from = PathBuf::from(&path);
     let to = from.parent().ok_or("没有上一级文件夹")?.join(name.trim());
+    guard(&state, &from)?;
+    guard(&state, &to)?;
     if to == from {
         return Ok(path);
     }
@@ -319,8 +415,9 @@ fn rename_path(state: State<AppState>, path: String, name: String) -> Result<Str
 }
 
 #[tauri::command]
-fn duplicate_path(path: String) -> Result<String, String> {
+fn duplicate_path(state: State<AppState>, path: String) -> Result<String, String> {
     let from = PathBuf::from(&path);
+    guard(&state, &from)?;
     if from.is_dir() {
         return Err("文件夹不能直接创建副本".into());
     }
@@ -335,6 +432,8 @@ fn duplicate_path(path: String) -> Result<String, String> {
 fn move_path(state: State<AppState>, path: String, dir: String) -> Result<String, String> {
     let from = PathBuf::from(&path);
     let dest = PathBuf::from(&dir);
+    guard(&state, &from)?;
+    guard(&state, &dest)?;
     if dest.starts_with(&from) {
         return Err("不能把文件夹移到它自己里面".into());
     }
@@ -353,7 +452,8 @@ fn move_path(state: State<AppState>, path: String, dir: String) -> Result<String
 
 /// 移到废纸篓（Windows 是回收站），可以从那里找回来
 #[tauri::command]
-fn trash_path(path: String) -> Result<(), String> {
+fn trash_path(state: State<AppState>, path: String) -> Result<(), String> {
+    guard(&state, Path::new(&path))?;
     trash::delete(&path).map_err(|e| format!("没能移到废纸篓：{e}"))
 }
 
@@ -365,6 +465,10 @@ fn trash_path(path: String) -> Result<(), String> {
 fn stage_delete(state: State<AppState>, path: String) -> Result<String, String> {
     let root = state.inner.lock().unwrap().root.clone().ok_or("还没有打开文件夹")?;
     let from = PathBuf::from(&path);
+    guard(&state, &from)?;
+    if fsops::lexical(&from) == fsops::lexical(&root) {
+        return Err("不能删除整个文件夹".into());
+    }
     let name = from.file_name().ok_or("路径不对")?;
     let hold = root.join(".holymark").join("trash").join(versions::now_ms().to_string());
     std::fs::create_dir_all(&hold).map_err(err)?;
@@ -375,7 +479,9 @@ fn stage_delete(state: State<AppState>, path: String) -> Result<String, String> 
 
 /// 撤销删除：挪回原处
 #[tauri::command]
-fn restore_staged(staged: String, original: String) -> Result<(), String> {
+fn restore_staged(state: State<AppState>, staged: String, original: String) -> Result<(), String> {
+    guard_staged(&state, Path::new(&staged))?;
+    guard(&state, Path::new(&original))?;
     let to = PathBuf::from(&original);
     if to.exists() {
         return Err("原来的位置已经有同名的文件了".into());
@@ -390,8 +496,9 @@ fn restore_staged(staged: String, original: String) -> Result<(), String> {
 
 /// 真正删除暂存的文件：移到废纸篓，再清掉暂存用的空文件夹
 #[tauri::command]
-fn commit_staged(staged: String) -> Result<(), String> {
+fn commit_staged(state: State<AppState>, staged: String) -> Result<(), String> {
     let p = PathBuf::from(&staged);
+    guard_staged(&state, &p)?;
     if p.exists() {
         trash::delete(&p).map_err(|e| format!("没能移到废纸篓：{e}"))?;
     }
@@ -429,7 +536,10 @@ async fn export_tools() -> ExportTools {
 
 /// 导出过程中每进入一个阶段发一次 "export-progress"，前端据此显示进度
 #[tauri::command]
-async fn export_run(app: tauri::AppHandle, job: export::ExportJob) -> Result<export::ExportResult, String> {
+async fn export_run(app: tauri::AppHandle, state: State<'_, AppState>, job: export::ExportJob) -> Result<export::ExportResult, String> {
+    guard_write(&state, Path::new(&job.output))?;
+    // 配置文件写进文件夹的 .holymark/export/，不允许别处
+    guard(&state, Path::new(&job.defaults_dir))?;
     tauri::async_runtime::spawn_blocking(move || export::run(job, &|stage| {
         let _ = app.emit("export-progress", stage.to_string());
     }))
@@ -457,12 +567,54 @@ async fn file_preview(path: String) -> Result<preview::FilePreview, String> {
 /// 用默认程序打开（导出完成后的「打开」）
 #[tauri::command]
 fn open_path(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.is_absolute() {
+        return Err("路径不对".into());
+    }
+    if fsops::is_executable_like(p) {
+        return Err("为了安全，HolyMark 不直接打开程序和脚本。可以在访达或资源管理器里找到它再打开。".into());
+    }
     export::open_path(&path)
 }
 
+/// 选保存位置（系统「存储为」窗口）。选中的路径记下来，之后允许写到这里，即使在文件夹以外
 #[tauri::command]
-fn take_pending_open(state: State<AppState>) -> Vec<String> {
-    std::mem::take(&mut *state.pending_open.lock().unwrap())
+async fn pick_save(app: tauri::AppHandle, state: State<'_, AppState>, title: String, default_path: String, extension: String) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let def = PathBuf::from(&default_path);
+    let mut d = app.dialog().file().set_title(&title).add_filter(extension.to_uppercase(), &[extension.as_str()]);
+    if let Some(dir) = def.parent().filter(|p| p.is_dir()) {
+        d = d.set_directory(dir);
+    }
+    if let Some(name) = def.file_name().and_then(|n| n.to_str()) {
+        d = d.set_file_name(name);
+    }
+    let Some(fp) = d.blocking_save_file() else { return Ok(None) };
+    let p = fp.into_path().map_err(err)?;
+    state.inner.lock().unwrap().granted.insert(key(&fsops::lexical(&p)));
+    Ok(Some(slash(&p)))
+}
+
+/// 选文件夹（系统窗口）。选中的文件夹记进名单，之后才能作为工作区打开
+#[tauri::command]
+async fn pick_folder(app: tauri::AppHandle, title: String) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let Some(fp) = app.dialog().file().set_title(&title).blocking_pick_folder() else { return Ok(None) };
+    let p = fp.into_path().map_err(err)?;
+    remember_root(&app, &p);
+    Ok(Some(slash(&p)))
+}
+
+/// 从访达 / 资源管理器打开的文件：系统交来的，它所在的文件夹记进名单
+#[tauri::command]
+fn take_pending_open(app: tauri::AppHandle, state: State<AppState>) -> Vec<String> {
+    let files = std::mem::take(&mut *state.pending_open.lock().unwrap());
+    for f in &files {
+        if let Some(d) = Path::new(f).parent() {
+            remember_root(&app, d);
+        }
+    }
+    files
 }
 
 /// 命令行参数里的 Markdown 文件（Windows 上双击 .md、或「打开方式」选 HolyMark 时，文件路径从这里传进来）
@@ -541,6 +693,8 @@ pub fn run() {
             read_reference,
             reveal,
             open_path,
+            pick_save,
+            pick_folder,
             create_dir,
             rename_path,
             duplicate_path,
