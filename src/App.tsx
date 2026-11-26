@@ -390,6 +390,11 @@ export default function App() {
       preview: (abs: string) => (be ? be.filePreview(abs) : Promise.reject(new Error("no backend"))),
       open: (abs: string) => fileHooksRef.current.open(abs),
       reveal: (abs: string) => fileHooksRef.current.reveal(abs),
+      repick: async () => {
+        if (!be || be.isDemo) { say("浏览器预览里不能选择本机文件", "info"); return null; }
+        const p = await be.pickFile("重新选择文件");
+        return p ? relative(dirOf(live.current.path), p) : null;
+      },
     },
     links: {
       docPath: () => live.current.path,

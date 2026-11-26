@@ -983,25 +983,52 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .eqnum .hm-math-block { padding-right: 48px; padding-left: 48px; }
 
 /* ---------- 文件预览卡片：正文里单独成段的 PDF / Word / PPT / Excel / Markdown 链接 ---------- */
-.hm-fcard { --fc: var(--fg-3); position: relative; width: min(360px, 100%); margin: 6px 0; border-radius: 14px; border: 1px solid var(--line); background: var(--raised); font-family: var(--f-ui); cursor: default; text-align: left; transition: border-color 120ms; }
-.hm-fcard.k-word { --fc: #2F6FEB; } .hm-fcard.k-excel { --fc: var(--ins); } .hm-fcard.k-ppt { --fc: #E8590C; } .hm-fcard.k-pdf { --fc: var(--del); } .hm-fcard.k-md { --fc: var(--accent); }
-.hm-fcard:hover, .hm-fcard.editing { border-color: var(--line-2); }
-.hm-fcard.editing { border-color: var(--accent-line); }
-.fc-stage { position: relative; height: 172px; overflow: hidden; border-radius: 13px 13px 0 0; background: color-mix(in srgb, var(--fc) 11%, var(--surface)); }
-/* 一叠纸：后面两张没有字，平时略微错开；最前面那张画文件开头的样子 */
+/* 文件类型的图标容器（fileKind.ts）：按类型约 8% 的浅底 + 发丝内描边 + 同色深字 */
+.fbadge { --fk: var(--fg-3); display: inline-grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 8px;
+  background: color-mix(in srgb, var(--fk) 9%, transparent); box-shadow: inset 0 0 0 .5px color-mix(in srgb, var(--fk) 35%, transparent); color: color-mix(in srgb, var(--fk) 82%, var(--fg)); font: 700 11px/1 var(--f-ui); letter-spacing: -.02em; }
+.fbadge.sm { width: 20px; height: 20px; border-radius: 6px; font-size: 9px; }
+.fbadge b { font-weight: 700; }
+.fbadge.k-pdf { --fk: #D23F4C; } .fbadge.k-word { --fk: #2F6FEB; } .fbadge.k-excel { --fk: #1B9A60; } .fbadge.k-ppt { --fk: #E8590C; }
+.fbadge.k-md { --fk: var(--accent); } .fbadge.k-image { --fk: #8653E6; } .fbadge.k-bib { --fk: #B7791F; }
+.fbadge.k-missing { --fk: var(--fg-3); }
+/* 中间截断（fileKind.ts 的 midNameEl / MidName）：前一段可以省略，后一段（结尾和扩展名）总是显示 */
+.mid { display: inline-flex; min-width: 0; max-width: 100%; white-space: nowrap; vertical-align: bottom; }
+.mid .a { overflow: hidden; text-overflow: ellipsis; min-width: 1.5em; }
+.mid .b { flex: none; }
+/* 文件横条：图标左边缘对齐正文栏，悬停时底色向外伸出 8px（不改变对齐） */
+.hm-fbar { position: relative; display: flex; align-items: center; gap: 10px; min-height: 54px; margin: 0 -8px; padding: 0 8px; border-radius: 10px; font-family: var(--f-ui); text-align: left; cursor: default; transition: background-color 120ms; }
+.hm-fbar:hover { background: var(--hover); }
+.hm-fbar + .hm-gap + .hm-fbar { margin-top: -4px; }
+/* 列表里的文件横条：和这一项的文字左对齐 */
+.hm-fbar.inl { display: inline-flex; width: calc(100% + 16px); margin: 2px -8px; vertical-align: top; text-indent: 0; }
+.fb-ic { display: grid; flex: none; }
+.fb-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.fb-t { display: flex; min-width: 0; font-size: 14px; font-weight: 500; line-height: 20px; color: var(--fg); }
+.fb-s { font-size: 12px; line-height: 17px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hm-fbar.one .fb-s { display: none; }
+.fb-d { flex: none; font-size: 12px; color: var(--fg-3); font-variant-numeric: tabular-nums; opacity: 0; transition: opacity 120ms; }
+.fb-a { flex: none; display: flex; align-items: center; gap: 2px; opacity: 0; transition: opacity 120ms; }
+.hm-fbar:hover .fb-d, .hm-fbar:hover .fb-a, .fb-a:focus-within, .fb-a:has(.open) { opacity: 1; }
+.fb-btn { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; color: var(--fg-2); transition: background-color 120ms, color 120ms; }
+.fb-btn:hover, .fb-btn.open { background: var(--raised); color: var(--fg); box-shadow: inset 0 0 0 .5px var(--line-2); }
+.fb-txtbtn { height: 28px; padding: 0 10px; border-radius: 6px; font-size: 13px; color: var(--accent-fg); }
+.fb-txtbtn:hover { background: var(--accent-soft); }
+.hm-fbar.missing .fb-t { color: var(--fg-2); }
+.hm-fbar.missing .fb-s { color: var(--del); }
+/* 纸张预览浮层：悬停图标时出现 */
+.hm-fpeek { --fc: var(--fg-3); position: fixed; z-index: 60; width: 300px; border-radius: 12px; overflow: hidden; background: var(--raised); box-shadow: var(--float); pointer-events: none; animation: selIn 140ms var(--ease); }
+.hm-fpeek.k-word { --fc: #2F6FEB; } .hm-fpeek.k-excel { --fc: var(--ins); } .hm-fpeek.k-ppt { --fc: #E8590C; } .hm-fpeek.k-pdf { --fc: var(--del); } .hm-fpeek.k-md { --fc: var(--accent); }
+.hm-fpeek.leaving { animation: fadeOut 100ms var(--ease-out) forwards; }
+.fc-stage { position: relative; height: 190px; overflow: hidden; background: color-mix(in srgb, var(--fc) 9%, var(--surface)); }
 .fc-sheet { position: absolute; left: 24px; right: 24px; top: 24px; height: 210px; border-radius: 8px; background: var(--bg); box-shadow: 0 0 0 1px color-mix(in srgb, var(--fc) 18%, var(--line)); transition: transform 240ms var(--ease); }
 .fc-sheet.back2 { transform: translate(-3px, -10px) rotate(-1.2deg); background: color-mix(in srgb, var(--fc) 6%, var(--bg)); }
 .fc-sheet.back1 { transform: translate(5px, -6px) rotate(1.4deg); background: color-mix(in srgb, var(--fc) 3%, var(--bg)); }
 .fc-sheet.front { padding: 14px 16px; overflow: hidden; box-shadow: 0 0 0 1px color-mix(in srgb, var(--fc) 14%, var(--line)), 0 8px 18px -10px rgba(20,22,40,.35); }
-.hm-fcard:hover .fc-sheet.front { transform: translateY(-6px); }
-.hm-fcard:hover .fc-sheet.back1 { transform: translate(14px, -10px) rotate(4deg); }
-.hm-fcard:hover .fc-sheet.back2 { transform: translate(-12px, -12px) rotate(-3.5deg); }
 .fc-sheet.front.img { padding: 0; }
 .fc-sheet.front.img img { display: block; width: 100%; }
 .fc-sheet.front.wide { left: 28px; right: 28px; height: 150px; top: 26px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 6px; padding: 14px 18px; }
 .fc-title { font-size: 17px; line-height: 1.35; font-weight: 600; color: var(--fg); margin-bottom: 6px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .fc-title.small { font-size: 13px; margin-bottom: 8px; }
-.fc-chip { display: inline-block; margin-bottom: 10px; padding: 0 6px; border-radius: 4px; font-size: 11px; line-height: 18px; color: var(--fg-3); background: var(--hover); }
 .fc-h { font-size: 13px; font-weight: 600; color: var(--fg); margin: 4px 0 3px; }
 .fc-p { margin: 0 0 4px; font-size: 12px; line-height: 1.55; color: var(--fg-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .fc-p.lead { color: var(--fg); font-weight: 600; }
@@ -1013,13 +1040,6 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .fc-skel { height: 8px; margin: 10px 0 0; border-radius: 4px; background: var(--hover); }
 .fc-skel.short { width: 60%; }
 .fc-missing { font-size: 12px; color: var(--fg-3); padding-top: 40px; text-align: center; }
-.fc-meta { position: relative; display: flex; flex-direction: column; gap: 1px; padding: 10px 16px 12px; border-top: 1px solid var(--line); border-radius: 0 0 13px 13px; background: var(--raised); }
-.fc-meta b { font-size: 15px; font-weight: 500; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fc-meta small { font-size: 12px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
-.hm-fcard.missing .fc-meta small { color: var(--del); }
-/* 工具条（打开、在访达中显示、源代码）：和图片的同一套 */
-.hm-fcard .hm-itools { top: -36px; left: 0; translate: 0 4px; }
-.hm-fcard.editing .hm-itools { opacity: 1; translate: 0 0; pointer-events: auto; }
 .hm-itools button { display: inline-flex; align-items: center; gap: 5px; }
 .xwarn ul { margin: 8px 0 0; padding: 0 0 0 18px; color: var(--fg-2); line-height: 1.6; }
 .xwarn li .n { margin-left: 6px; color: var(--fg-3); font-variant-numeric: tabular-nums; }

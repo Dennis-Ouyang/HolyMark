@@ -151,7 +151,9 @@ export interface ListRenderInfo {
  * 渲染状态下一个列表块的装饰。inline(from, to, active, out) 由 livePreview 提供，处理行内格式。
  * 不在这里处理的：光标所在行的行内格式显示源码（由 inline 的 active 决定）。
  */
-export function renderList(state: EditorState, from: number, to: number, info: ListRenderInfo, decos: Range<Decoration>[], inline: (from: number, to: number, active: boolean) => void) {
+export function renderList(state: EditorState, from: number, to: number, info: ListRenderInfo, decos: Range<Decoration>[], inline: (from: number, to: number, active: boolean) => void,
+  /** 续行如果只有一个文件链接，显示成文件横条（和这一项的文字左对齐）；处理了返回 true */
+  card?: (from: number, to: number) => boolean) {
   const doc = state.doc;
   const { a, lines } = blockLines(doc, from, to);
   const m = parseList(lines);
@@ -170,6 +172,7 @@ export function renderList(state: EditorState, from: number, to: number, info: L
       // 同一项里换行接着写的文字：和这一项的文字对齐
       decos.push(Decoration.line({ class: "hm-li hm-cont", attributes: { style: `--d:${it.depth}` } }).range(L.from));
       if (ll.ws) decos.push(hide.range(L.from, L.from + Math.min(ll.ws, L.length)));
+      if (!info.cursorLines.has(k) && card?.(L.from + ll.ws, L.to)) continue;
       inline(L.from + ll.ws, L.to, info.cursorLines.has(k));
       continue;
     }

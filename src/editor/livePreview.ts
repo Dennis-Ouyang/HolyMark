@@ -643,7 +643,18 @@ function blockDecos(state: EditorState, b: Block, active: boolean, decos: Range<
     const em = extra.match(/^c([\d,]*)f([\d,]*)/);
     const nums = (x: string | undefined) => new Set((x || "").split(",").filter(Boolean).map(Number));
     renderList(state, b.from, b.to, { cursorLines: nums(em?.[1]), folded: nums(em?.[2]) }, decos,
-      (from, to, act) => { if (to > from) inlineDecos(state, { from, to, kind: "ListLine" }, act, decos, opts, [], true); });
+      (from, to, act) => { if (to > from) inlineDecos(state, { from, to, kind: "ListLine" }, act, decos, opts, [], true); },
+      (from, to) => {
+        const t = state.doc.sliceString(from, to);
+        const m = opts.files && t.match(/^\[([^\]]*)\]\((<[^>]+>|[^)\s]+)\)\s*$/);
+        if (!m) return false;
+        const href = m[2].replace(/^<|>$/g, "");
+        let dec = href;
+        try { dec = decodeURI(href); } catch { /* 原样用 */ }
+        if (/^[a-z][a-z0-9+.-]*:/i.test(href) || !CARD_EXT.test(dec)) return false;
+        decos.push(Decoration.replace({ widget: new FileCardWidget(href, m[1], opts.files!, true) }).range(from, to));
+        return true;
+      });
     return;
   }
   inlineDecos(state, b, active, decos, opts, skip);
