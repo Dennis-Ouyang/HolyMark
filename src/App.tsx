@@ -17,7 +17,8 @@ import { WindowControls } from "./components/WindowControls";
 import { Menu, MenuEntry } from "./components/Menu";
 import { SearchPanel } from "./components/Search";
 import { InsertFile, InsertPick, linkFor } from "./components/InsertFile";
-import { baseName, dirOf, isInside, isMarkdown, join, normalize, relative, toPosix } from "./lib/paths";
+import { baseName, dirOf, isInside, isMarkdown, join, normalize, relative, stripMd, toPosix } from "./lib/paths";
+import { MidName } from "./components/MidName";
 import { isMac, isWindows, kbd, keyName } from "./lib/platform";
 import { menuIdFor } from "./lib/shortcuts";
 import { ExportDialog } from "./components/ExportDialog";
@@ -357,6 +358,8 @@ export default function App() {
     const secs = hs.filter((h) => h.level <= 2);
     let sec = 0;
     const cur = [...secs].reverse().find((h) => h.pos <= cursor);
+    // 光标在第一个标题之前（比如刚打开文件）时没有「本节」，状态栏不显示
+    if (!cur) return { total, sec: -1 };
     if (cur) { const next = secs.find((h) => h.pos > cur.pos); sec = countWords(plainText(text.slice(cur.pos, next ? next.pos : undefined)), s.countPunct); }
     return { total, sec };
   }, [total, text, hs, cursor, s.countPunct]);
@@ -934,9 +937,10 @@ export default function App() {
   }
   const dirty = !!path && text !== live.current.base;
 
-  const appCls = [s.eqNumbers ? "eqnum" : "", "app", showSide ? "" : "no-side", showPanel ? "" : "no-panel", focus ? "focus" : "", isTauri && isMac ? "mac" : "", customFrame ? "framed" : ""].join(" ");
+  const appCls = [s.eqNumbers ? "eqnum" : "", "app", showSide ? "" : "no-side", showPanel && path ? "" : "no-panel", focus ? "focus" : "", isTauri && isMac ? "mac" : "", customFrame ? "framed" : ""].join(" ");
   const fileName = baseName(path);
-  const crumbs = path && root ? relative(root, path).split("/") : [];
+  // 标题栏路径：和文件树一样不显示 .md；中间的文件夹可以省略，最后的文稿名中间截断（F12、F4）
+  const crumbs = path && root ? relative(root, path).split("/").map((c, i, a) => (i === a.length - 1 ? stripMd(c) : c)) : [];
 
   return (
     <div className={appCls} style={editorStyle}>
@@ -944,7 +948,7 @@ export default function App() {
         <button className="ib" title={kbd("切换侧栏 ⌘\\")} aria-label="切换侧栏" onClick={() => setShowSide(!showSide)}><Icon name="side" /></button>
         <div className="crumbs" data-tauri-drag-region>
           {root && <span>{baseName(root)}</span>}
-          {crumbs.map((c, i) => <span key={i} className="crumb"><span className="sep">/</span>{i === crumbs.length - 1 ? <b>{c}</b> : c}</span>)}
+          {crumbs.map((c, i) => <span key={i} className={"crumb" + (i === crumbs.length - 1 ? " last" : "")}><span className="sep">/</span>{i === crumbs.length - 1 ? <b><MidName name={c} tail={6} /></b> : <span className="cn" title={c}>{c}</span>}</span>)}
           {dirty && <span className="dirty" title={kbd("这次打开后有修改（已自动写入文件）。按 ⌘S 保存版本，关闭时也会询问")} aria-label="有修改" />}
         </div>
         <div className="spacer" data-tauri-drag-region />
@@ -995,15 +999,19 @@ export default function App() {
       <aside className="panel" aria-label="当前文件">
         <SidePanel tab={tab} setTab={setTab} headings={hs} currentHeading={currentHeading} notes={notes} versions={versions} freshVersion={fresh}
           selectedVersion={cmp?.v.id ?? null} fileName={fileName} onJump={jump} onResolve={resolveNote} cursorPos={cursor}
+          path={path} readVersion={(p, id) => be ? be.readVersion(p, id) : Promise.resolve("")}
+          onAddHeading={() => { const v = view(); if (v) { setBlock(v, "h1"); v.focus(); } }} onAddNote={() => menuRef.current("note")}
           onOpenVersion={(id) => openVersion(id)} onSaveVersion={() => setDlg("save")} onCompareFile={() => setDlg("cmpfile")} />
       </aside>
 
       <footer className="statusbar">
-        <span className="sb">本节 <b>{stats.sec.toLocaleString()}</b></span>
-        <button className={"sb" + (countPop?.title === "全文" ? " on" : "")} data-countpop aria-expanded={countPop?.title === "全文"} onClick={(e) => toggleCount("全文", plainText(text), e.currentTarget)}>全文 <b>{stats.total.toLocaleString()}</b></button>
+        {/* 没有打开文稿时状态栏不显示字数（F11）；光标在第一个标题之前时不显示「本节」 */}
+        {path && stats.sec >= 0 && <span className="sb">本节 <b>{stats.sec.toLocaleString()}</b></span>}
+        {path && <button className={"sb" + (countPop?.title === "全文" ? " on" : "")} data-countpop aria-expanded={countPop?.title === "全文"} onClick={(e) => toggleCount("全文", plainText(text), e.currentTarget)}>全文 <b>{stats.total.toLocaleString()}</b>{s.goalOn && <span className="goal"> / {s.goal.toLocaleString()}</span>}</button>}
         {selText && <button className={"sb sel" + (countPop?.title === "选中的文字" ? " on" : "")} data-countpop aria-expanded={countPop?.title === "选中的文字"} onMouseDown={(e) => e.preventDefault()} onClick={(e) => toggleCount("选中的文字", plainText(selText), e.currentTarget)}>选中 <b>{countWords(plainText(selText), s.countPunct).toLocaleString()}</b></button>}
-        {s.goalOn && <div className="r"><div className="goalbar"><i style={{ width: `${Math.min(100, (stats.total / s.goal) * 100)}%` }} /></div><span className="sb"><b>{stats.total.toLocaleString()} / {s.goal.toLocaleString()}</b></span></div>}
-        {be?.isDemo && <span className="sb demo-tag">浏览器预览 · 演示文件夹</span>}
+        {/* 写作目标：同一个数只出现一次，进度条跟在「全文」后面（H32） */}
+        {path && s.goalOn && <div className="goalbar" title={`写作目标 ${s.goal.toLocaleString()} 字，已完成 ${Math.min(100, Math.round((stats.total / s.goal) * 100))}%`}><i style={{ width: `${Math.min(100, (stats.total / s.goal) * 100)}%` }} /></div>}
+        {be?.isDemo && <span className="sb demo-tag" title="浏览器里用的是内置的演示文件夹，不会读写你的文件">浏览器预览</span>}
       </footer>
 
       <Presence>{countPop && <CountPop title={countPop.title} text={countPop.text} count={count} anchor={countPop.rect} onClose={() => setCountPop(null)} />}</Presence>
