@@ -12,6 +12,7 @@ import { anchorCompletions } from "./anchorComplete";
 import { writingEnv, EnvHooks } from "./writingEnv";
 import { slashMenu, SlashHooks } from "./slashMenu";
 import { blockMoves } from "./blockMoves";
+import "./tablePaste"; // N11：登记「从 Excel、WPS 粘贴成表格」
 
 export interface FeatureHooks {
   /** 字数口径：含不含标点（跟设置走） */

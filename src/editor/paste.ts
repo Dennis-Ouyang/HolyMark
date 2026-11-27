@@ -1,7 +1,7 @@
 /**
  * 粘贴的统一入口（G9）：按剪贴板里的内容类型分发给不同的处理器，按优先级从高到低试，第一个接手的处理。
  * 内置三个：图片（交给应用存进 assets/）、带格式的内容（网页、Word 的 HTML 转成 Markdown）、纯文本（交给编辑器默认处理）。
- * 以后加 Excel 表格粘贴：registerPasteHandler({ name: "excel-table", priority: 30, ... })。
+ * Excel、WPS 表格粘贴（N11）在 tablePaste.ts：优先级 30，先于图片和普通的带格式内容。
  * 代码块里一律按纯文本粘贴。
  */
 import type { Extension } from "@codemirror/state";
@@ -48,9 +48,16 @@ export function paste(onImages: (files: File[], pos: number) => void): Extension
       const d = e.clipboardData;
       if (!d) return false;
       if (inCodeBlock(view.state, view.state.selection.main.head)) return false; // 代码块里按纯文本
+      // 优先级 30 以上的（表格）先于图片：Excel、WPS 复制单元格时会顺带放一张截图
+      const tryHandlers = (pick: (h: PasteHandler) => boolean) => {
+        for (const h of handlers) if (pick(h) && h.accepts(d, view) && h.handle(d, view)) { e.preventDefault(); return true; }
+        return false;
+      };
+      if (tryHandlers((h) => h.priority >= 30)) return true;
       const files = [...(d.files || [])].filter((f) => f.type.startsWith("image/"));
       if (files.length) { e.preventDefault(); onImages(files, view.state.selection.main.head); return true; }
       for (const h of handlers) {
+        if (h.priority >= 30) continue;
         if (!h.accepts(d, view)) continue;
         if (h.handle(d, view)) { e.preventDefault(); return true; }
       }

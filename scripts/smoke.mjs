@@ -531,6 +531,31 @@ step("N8 块把手：段落菜单下移、标题整节下移带撤销、目录�
   await page.mouse.move(700, 120);
 });
 
+step("N11 从 Excel 粘贴成表格：数字列右对齐、提示条「改为纯文本」", async (page) => {
+  const before = await docText(page);
+  const paste = (html, text) => page.evaluate(([h, t]) => {
+    const v = window.__hm.view(); const n = v.state.doc.length; v.focus();
+    v.dispatch({ changes: { from: n, insert: "\n\n" }, selection: { anchor: n + 2 } });
+    const dt = new DataTransfer(); dt.setData("text/plain", t); if (h) dt.setData("text/html", h);
+    v.contentDOM.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, [html, text]);
+  const tsv = "组别\t人数\t占比\n甲组\t12\t40%\n乙组\t1,036\t60%";
+  await paste(`<html><body><!--StartFragment--><table><tr><td>组别</td><td>人数</td><td>占比</td></tr><tr><td>甲组</td><td>12</td><td>40%</td></tr><tr><td>乙组</td><td>1,036</td><td>60%</td></tr></table><!--EndFragment--></body></html>`, tsv);
+  await page.waitForSelector(".toast:has-text('已粘贴为表格')");
+  let t = await docText(page);
+  if (!t.includes("| 组别 | 人数 | 占比 |\n| --- | ---: | ---: |")) throw new Error("没有粘贴成表格：" + t.slice(-120));
+  await page.click(".toast .lnk:has-text('改为纯文本')");
+  t = await docText(page);
+  if (!t.includes(tsv) || t.includes("| 组别")) throw new Error("没有退回纯文本");
+  // 只有制表符分隔的文字（WPS 有时只给纯文本）
+  await page.evaluate((n) => { const v = window.__hm.view(); v.dispatch({ changes: { from: n, to: v.state.doc.length } }); }, before.length);
+  await paste("", tsv);
+  await page.waitForSelector(".toast:has-text('已粘贴为表格')");
+  if (!(await docText(page)).includes("| 乙组 | 1,036 | 60% |")) throw new Error("纯文本表格没有转换");
+  await page.evaluate((n) => { const v = window.__hm.view(); v.dispatch({ changes: { from: n, to: v.state.doc.length } }); }, before.length);
+  if ((await docText(page)) !== before) throw new Error("没还原");
+});
+
 /* ---------- 全块测试稿、导出、搜索（放在最后：会把正文换成测试稿） ---------- */
 
 step("全块测试稿：渲染、光标走遍所有行", async (page) => {
