@@ -701,6 +701,45 @@ step("N18 文件树手动排序：切到手动、拖动调整顺序、撤销、�
   await page.click(".menu .menu-item:has-text('按名称')");
 });
 
+step("N19 只恢复某一段：对比现在里恢复改过的一段、移除新增的一段、提示条撤销、视图实时刷新", async (page) => {
+  const before = await docText(page);
+  // 改一段、加一段；第一次真正改动时会把打开时的内容存成版本
+  await page.evaluate(() => {
+    const v = window.__hm.view(); const t = v.state.doc.toString();
+    const a = t.indexOf("基于此，本章提出三个具体问题："); v.focus();
+    v.dispatch({ changes: [{ from: a, to: a + "基于此，本章提出三个具体问题：".length, insert: "据此提出问题：" }, { from: t.length, insert: "\n新写的一段，等会儿移除。\n" }] });
+  });
+  await page.waitForTimeout(1200);
+  await menu(page, "panel_versions");
+  await page.waitForSelector(".panel .ver");
+  await page.click(".panel .ver >> nth=0");
+  await page.waitForSelector(".cmp");
+  // 改过的一段：左边悬停「恢复这一段」
+  const left = page.locator(".cmp-grid .cell.ch:has(del)").filter({ hasText: "本章" }).first();
+  await left.hover();
+  await left.locator(".cmp-act").click();
+  await page.waitForSelector(".toast:has-text('已恢复这一段')");
+  let t = await docText(page);
+  if (!t.includes("基于此，本章提出三个具体问题：")) throw new Error("没有恢复这一段");
+  if (!t.includes("新写的一段")) throw new Error("别的改动不该动");
+  // 视图实时刷新：那一行不再是改动
+  if (await page.$(".cmp-grid .cell.ch:has-text('据此提出问题')")) throw new Error("对比视图没有刷新");
+  // 新增的一段：右边悬停「移除这一段」
+  const right = page.locator(".cmp-grid .cell.new").filter({ hasText: "新写的一段" }).first();
+  await right.hover();
+  await right.locator(".cmp-act").click();
+  await page.waitForSelector(".toast:has-text('已移除这一段')");
+  if ((await docText(page)).includes("新写的一段")) throw new Error("没有移除这一段");
+  await page.click(".toast .lnk:has-text('撤销')");
+  await page.waitForTimeout(200);
+  if (!(await docText(page)).includes("新写的一段")) throw new Error("撤销没有放回来");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".cmp", { state: "detached" });
+  await page.evaluate((b) => { const v = window.__hm.view(); v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: b } }); }, before);
+  await page.waitForTimeout(800);
+  await menu(page, "panel_outline");
+});
+
 /* ---------- 全块测试稿、导出、搜索（放在最后：会把正文换成测试稿） ---------- */
 
 step("全块测试稿：渲染、光标走遍所有行", async (page) => {

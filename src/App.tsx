@@ -44,6 +44,7 @@ import { findAnchor } from "./lib/anchors";
 import { LinkHooks, openLink } from "./editor/links";
 import { moveSection } from "./editor/blockMoves";
 import { useTreeOrder } from "./features/useTreeOrder";
+import { alignWithRanges, removeRow, restoreRow } from "./lib/restoreBlock";
 import { merge3 } from "./lib/merge";
 import { noteAuthor, setNoteAuthor } from "./editor/notes";
 import { NoticeAction, NoticeKind, setNotifier } from "./editor/notice";
@@ -941,6 +942,29 @@ export default function App() {
     if (against === "prev" && versions[i + 1]) setCmp({ v, against, same, oldText: await be.readVersion(path, versions[i + 1].id), newText: content });
     else setCmp({ v, against: "current", same, oldText: content, newText: live.current.text });
   }
+  /** 只恢复某一段（N19）：先存一个版本，再在编辑器里改（进撤销历史），对比视图跟着刷新，提示条带「撤销」 */
+  async function restoreBlock(kind: "restore" | "remove", i: number) {
+    const v = view();
+    if (!be || !cmp || !v) return;
+    await flush();
+    const now = live.current.text;
+    const rows = alignWithRanges(cmp.oldText, now);
+    const fix = kind === "restore" ? restoreRow(now, rows, i) : removeRow(now, rows, i);
+    if (!fix) return;
+    await be.saveVersion(path, now, "auto", undefined, kind === "restore" ? "恢复这一段前自动保存" : "移除这一段前自动保存").catch(() => null);
+    v.dispatch({ changes: fix, userEvent: kind === "restore" ? "input.restore" : "delete.restore" });
+    ed.current?.flash(changedLines(now, live.current.text));
+    setText(live.current.text);
+    setCmp((c) => c && { ...c, newText: live.current.text, same: false });
+    await flush();
+    setVersions(await be.listVersions(path).catch(() => []));
+    say(kind === "restore" ? "已恢复这一段" : "已移除这一段", "success", { label: "撤销", run: () => {
+      ed.current?.undo();
+      setText(live.current.text);
+      setCmp((c) => c && { ...c, newText: live.current.text });
+      void flush();
+    } });
+  }
   async function restore() {
     if (!be || !cmp) return;
     await flush();
@@ -1450,7 +1474,7 @@ export default function App() {
           <Compare version={cmp.v} oldText={cmp.oldText} newText={cmp.newText} against={cmp.against} sameAsNow={cmp.same}
             hasPrev={versions.findIndex((x) => x.id === cmp.v.id) < versions.length - 1}
             prevLabel={(() => { const p = versions[versions.findIndex((x) => x.id === cmp.v.id) + 1]; if (!p) return ""; const t = fmtTime(p.at); return `${versionTitle(p)} · ${t.day} ${t.hm}`; })()}
-            onAgainst={(a) => openVersion(cmp.v.id, a)} onClose={() => setCmp(null)} onRestore={restore} />
+            onAgainst={(a) => openVersion(cmp.v.id, a)} onClose={() => setCmp(null)} onRestore={restore} onBlock={(k, i) => { void restoreBlock(k, i); }} />
         )}
       </main>
 

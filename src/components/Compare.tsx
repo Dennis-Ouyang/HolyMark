@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { alignBlocks, countWords, Op } from "../lib/markdown";
+import { countWords, Op } from "../lib/markdown";
+import { alignWithRanges } from "../lib/restoreBlock";
 import type { VersionMeta } from "../lib/backend";
 import { fmtTime, versionTitle } from "./SidePanel";
 import { Icon } from "./Icons";
@@ -20,12 +21,16 @@ interface Props {
   onAgainst: (a: "current" | "prev") => void;
   onClose: () => void;
   onRestore: () => void;
+  /** 只恢复某一段（N19，只在「对比现在」里）：restore 用左边这一段换回 / 插回，remove 删掉右边新增的这一段；i 是对齐后的行号 */
+  onBlock?: (kind: "restore" | "remove", i: number) => void;
 }
 
 /** 整篇对照：左边是那个版本，右边是现在（或下一个版本），逐块对齐，红删绿增 */
-export function Compare({ version, fileLabel, onPick, oldText, newText, against, sameAsNow, hasPrev, prevLabel, onAgainst, onClose, onRestore }: Props) {
+export function Compare({ version, fileLabel, onPick, oldText, newText, against, sameAsNow, hasPrev, prevLabel, onAgainst, onClose, onRestore, onBlock }: Props) {
   const [mode, setMode] = useState<"side" | "merge">("side");
-  const rows = useMemo(() => alignBlocks(oldText, newText), [oldText, newText]);
+  const rows = useMemo(() => alignWithRanges(oldText, newText), [oldText, newText]);
+  // 逐段处理只在「和现在对比」的并排视图里有
+  const perBlock = !!onBlock && against === "current" && !fileLabel && mode === "side";
   const stats = useMemo(() => {
     let changed = 0, plus = 0, minus = 0;
     rows.forEach((r) => { if (r.ops) { changed++; r.ops.forEach(([t, s]) => { if (t === "+") plus += countWords(s, false); if (t === "-") minus += countWords(s, false); }); } });
@@ -70,8 +75,10 @@ export function Compare({ version, fileLabel, onPick, oldText, newText, against,
             if (mode === "merge") return <div key={i} className={"cell" + (r.ops ? " ch" : "") + cls(r.right ?? r.left)}>{r.ops ? render(r.ops, "both") : r.right}</div>;
             if (!r.ops) return [<div key={i + "l"} className={"cell" + cls(r.left)}>{r.left}</div>, <div key={i + "r"} className={"cell" + cls(r.right)}>{r.right}</div>];
             return [
-              <div key={i + "l"} className={"cell" + (r.left === null ? " empty" : r.right === null ? " gone" : " ch") + cls(r.left)}>{r.left !== null && render(r.ops, "-")}</div>,
-              <div key={i + "r"} className={"cell" + (r.right === null ? " empty" : r.left === null ? " new" : " ch") + cls(r.right)}>{r.right !== null && render(r.ops, "+")}</div>,
+              <div key={i + "l"} className={"cell" + (r.left === null ? " empty" : r.right === null ? " gone" : " ch") + cls(r.left)}>{r.left !== null && render(r.ops, "-")}
+                {perBlock && r.left !== null && <button type="button" className="cmp-act" onClick={() => onBlock!("restore", i)} title={r.right === null ? "把这一段插回现在的文稿" : "用这一段换掉现在的写法"}><Icon name="history" size={13} />恢复这一段</button>}</div>,
+              <div key={i + "r"} className={"cell" + (r.right === null ? " empty" : r.left === null ? " new" : " ch") + cls(r.right)}>{r.right !== null && render(r.ops, "+")}
+                {perBlock && r.right !== null && r.left === null && <button type="button" className="cmp-act" onClick={() => onBlock!("remove", i)} title="从现在的文稿里删掉这一段"><Icon name="trash" size={13} />移除这一段</button>}</div>,
             ];
           })}
         </div>
