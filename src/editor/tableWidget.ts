@@ -2,13 +2,15 @@
  * 可直接编辑的表格。
  * - 单元格平时显示渲染后的内容；点进去显示这一格的 Markdown 源码，离开后再渲染。
  * - 停止输入片刻就把整张表写回文档。写回时保留现有 DOM（见 eq），光标不会丢。
- * - 光标在表格里时，表格上方出现行列工具；「源代码」按钮把整张表切回源码编辑。
+ * - 悬停或光标在表格里时，表格内部右上角出现工具条：这一列的对齐、行和列（菜单）、源代码。
+ * - 数字列（规模、金额、百分比）没指定对齐时默认右对齐、等宽数字。
  * - 拖表头单元格右边缘调列宽，双击恢复自动列宽。
  *   Markdown 表格存不下列宽，这里按 Pandoc 的规则写进分隔行：每列短横线的数量就是它占的比例，
  *   分隔行超过 72 个字符时 Pandoc 按这个比例排 Word / PDF 里的列宽。行高跟着内容走，存不下来。
  */
 import { EditorView, WidgetType } from "@codemirror/view";
 import { iconSvg } from "../lib/icons";
+import { openDomMenu } from "./domMenu";
 
 export interface TableModel { head: string[]; align: string[]; rows: string[][] }
 
@@ -53,6 +55,26 @@ export function setColumnWidths(m: TableModel, pct: number[] | null) {
   });
 }
 
+/** 数字列：正文里有内容的格子都是数字（规模、金额、百分比），没指定对齐时默认右对齐、等宽数字 */
+const NUM = /^[-+−]?[¥$€£]?\s*\d[\d,，.\s]*(%|％|万|亿|元|个|人|次|篇|小时|分钟|天|年)?$/;
+export function isNumericColumn(m: TableModel, c: number): boolean {
+  const cells = m.rows.map((r) => (r[c] ?? "").trim()).filter(Boolean);
+  return cells.length > 0 && cells.every((x) => NUM.test(x));
+}
+/** 这一列实际的对齐：分隔行里写了冒号就照写的，没写时数字列靠右、其他靠左 */
+export function columnAlign(m: TableModel, c: number): "left" | "center" | "right" {
+  const a = (m.align[c] || "").trim();
+  if (/^:-+:$/.test(a)) return "center";
+  if (/-:$/.test(a)) return "right";
+  if (/^:-/.test(a)) return "left";
+  return isNumericColumn(m, c) ? "right" : "left";
+}
+/** 设置对齐：写进分隔行的冒号，列宽（短横线的数量）不变 */
+export function setColumnAlign(m: TableModel, c: number, how: "left" | "center" | "right") {
+  const n = Math.max(3, dashes(m.align[c] || "---"));
+  m.align[c] = how === "center" ? ":" + "-".repeat(n) + ":" : how === "right" ? "-".repeat(n) + ":" : ":" + "-".repeat(n);
+}
+
 export function serializeTable(m: TableModel): string {
   const row = (cells: string[]) => "| " + cells.map((c) => c.replace(/\n/g, " ") || " ").join(" | ") + " |";
   return [row(m.head), "| " + m.align.join(" | ") + " |", ...m.rows.map(row)].join("\n");
@@ -92,18 +114,36 @@ export class TableWidget extends WidgetType {
     scroll.appendChild(table);
     wrap.append(tools, scroll);
 
-    const btns: [string, string, () => void][] = [
-      ["在上方插入行", "rowAbove", () => edit((m) => { const at = Math.max(0, cur.r - 1); m.rows.splice(at, 0, m.head.map(() => "")); cur.r = at + 1; })],
-      ["在下方插入行", "rowBelow", () => edit((m) => { const at = Math.max(0, cur.r); m.rows.splice(at, 0, m.head.map(() => "")); cur.r = at + 1; })],
-      ["在左侧插入列", "colLeft", () => edit((m) => { const c = Math.max(0, cur.c); m.head.splice(c, 0, ""); m.align.splice(c, 0, "---"); m.rows.forEach((r) => r.splice(c, 0, "")); })],
-      ["在右侧插入列", "colRight", () => edit((m) => { const c = cur.c + 1; m.head.splice(c, 0, ""); m.align.splice(c, 0, "---"); m.rows.forEach((r) => r.splice(c, 0, "")); cur.c = c; })],
-      ["删除这一行", "delRow", () => edit((m) => { if (cur.r >= 1 && m.rows.length > 1) { m.rows.splice(cur.r - 1, 1); cur.r = Math.min(cur.r, m.rows.length); } })],
-      ["删除这一列", "delCol", () => edit((m) => { if (m.head.length > 1 && cur.c >= 0) { m.head.splice(cur.c, 1); m.align.splice(cur.c, 1); m.rows.forEach((r) => r.splice(cur.c, 1)); cur.c = Math.min(cur.c, m.head.length - 1); } })],
-    ];
-    for (const [title, icon, run] of btns) tools.appendChild(toolButton(title, icon, run));
+    // 工具条放在表格内部的右上角（悬停或编辑时出现），不再浮在上方盖住上一行正文
+    const aligns: ["left" | "center" | "right", string, string][] = [["left", "alignLeft", "左对齐"], ["center", "alignCenter", "居中"], ["right", "alignRight", "右对齐"]];
+    const alignBtns = aligns.map(([how, icon, title]) => {
+      const b = toolButton(title + "（这一列）", icon, () => edit((m) => setColumnAlign(m, Math.max(0, cur.c), how)));
+      b.dataset.align = how;
+      tools.appendChild(b);
+      return b;
+    });
     const sep = document.createElement("span");
     sep.className = "sep";
     tools.appendChild(sep);
+    const rowsBtn = toolButton("行和列", "rows", () => {
+      rowsBtn.classList.add("open");
+      const c = Math.max(0, cur.c);
+      openDomMenu(rowsBtn, [
+        { label: "在上方插入行", icon: "rowAbove", run: () => edit((m) => { const at = Math.max(0, cur.r - 1); m.rows.splice(at, 0, m.head.map(() => "")); cur.r = at + 1; }) },
+        { label: "在下方插入行", icon: "rowBelow", run: () => edit((m) => { const at = Math.max(0, cur.r); m.rows.splice(at, 0, m.head.map(() => "")); cur.r = at + 1; }) },
+        { label: "在左侧插入列", icon: "colLeft", run: () => edit((m) => { m.head.splice(c, 0, ""); m.align.splice(c, 0, "---"); m.rows.forEach((r) => r.splice(c, 0, "")); }) },
+        { label: "在右侧插入列", icon: "colRight", run: () => edit((m) => { m.head.splice(c + 1, 0, ""); m.align.splice(c + 1, 0, "---"); m.rows.forEach((r) => r.splice(c + 1, 0, "")); cur.c = c + 1; }) },
+        { sep: true },
+        { label: "删除这一行", icon: "delRow", danger: true, disabled: cur.r < 1 || model.rows.length <= 1, run: () => edit((m) => { if (cur.r >= 1 && m.rows.length > 1) { m.rows.splice(cur.r - 1, 1); cur.r = Math.min(cur.r, m.rows.length); } }) },
+        { label: "删除这一列", icon: "delCol", danger: true, disabled: model.head.length <= 1, run: () => edit((m) => { if (m.head.length > 1 && c >= 0) { m.head.splice(c, 1); m.align.splice(c, 1); m.rows.forEach((r) => r.splice(c, 1)); cur.c = Math.min(c, m.head.length - 1); } }) },
+      ], { label: "行和列", onClose: () => rowsBtn.classList.remove("open") });
+    });
+    rowsBtn.classList.add("label");
+    rowsBtn.insertAdjacentText("beforeend", "行和列");
+    tools.appendChild(rowsBtn);
+    const sep2 = document.createElement("span");
+    sep2.className = "sep";
+    tools.appendChild(sep2);
     const srcBtn = toolButton("显示源代码", "source", () => {
       flush();
       const from = view.posAtDOM(wrap);
@@ -113,7 +153,7 @@ export class TableWidget extends WidgetType {
     srcBtn.classList.add("label");
     srcBtn.insertAdjacentText("beforeend", "源代码");
     tools.appendChild(srcBtn);
-
+    const syncAlign = () => { const how = cur.c >= 0 ? columnAlign(model, cur.c) : ""; alignBtns.forEach((b) => b.classList.toggle("on", b.dataset.align === how)); };
     function toolButton(title: string, icon: string, run: () => void) {
       const b = document.createElement("button");
       b.type = "button";
@@ -157,9 +197,9 @@ export class TableWidget extends WidgetType {
           td.dataset.c = String(c);
           td.contentEditable = "true";
           td.spellcheck = false;
-          const a = model.align[c] || "";
-          if (/^:-+:$/.test(a)) td.style.textAlign = "center";
-          else if (/-:$/.test(a)) td.style.textAlign = "right";
+          const how = columnAlign(model, c);
+          if (how !== "left") td.style.textAlign = how;
+          if (r > 0 && isNumericColumn(model, c)) td.classList.add("num");
           td.innerHTML = renderInline(cellText(r, c));
           tr.appendChild(td);
           addGrip(td, r, c);
@@ -250,6 +290,7 @@ export class TableWidget extends WidgetType {
       cur = { r: +td.dataset.r!, c: +td.dataset.c! };
       td.textContent = cellText(cur.r, cur.c); // 显示这一格的源码
       wrap.classList.add("editing");
+      syncAlign();
     });
     table.addEventListener("focusout", (e) => {
       const td = (e.target as HTMLElement).closest<HTMLElement>("[data-r]");
@@ -303,4 +344,4 @@ export class TableWidget extends WidgetType {
   }
 }
 
-const ICONS: Record<string, string> = Object.fromEntries(["rowAbove", "rowBelow", "colLeft", "colRight", "delRow", "delCol", "source"].map((k) => [k, iconSvg(k, 15)]));
+const ICONS: Record<string, string> = Object.fromEntries(["alignLeft", "alignCenter", "alignRight", "rows", "source"].map((k) => [k, iconSvg(k, 15)]));

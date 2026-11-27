@@ -6,7 +6,6 @@ import { useCallback, useRef, useState } from "react";
 import type { EditorView } from "@codemirror/view";
 import type { Backend } from "../lib/backend";
 import type { BibEntry } from "../lib/bib";
-import { resolveHref } from "../lib/links";
 import { isReading, ReadingHooks, setReading } from "../editor/readingMode";
 import { Presence } from "../components/Presence";
 import { LightImage, Lightbox } from "../components/Lightbox";
@@ -16,10 +15,8 @@ interface Ctx {
   be: Backend | null;
   livePath: () => string;
   resolveImage: (src: string) => string;
-  /** 在 HolyMark 里打开另一篇 Markdown，reading 表示保持阅读模式 */
-  openMarkdown: (abs: string, opts: { reading: boolean; anchor?: string }) => void;
-  /** 本文里的锚点（N4） */
-  jumpAnchor: (anchor: string) => void;
+  /** 打开链接：和编辑时 ⌘ 点击走同一个入口（App 里的 followLink，见 editor/links.ts） */
+  followLink: (href: string) => void;
   bib: Map<string, BibEntry>;
   say: (m: string) => void;
 }
@@ -49,28 +46,12 @@ export function useReading(ctx: Ctx) {
 
   const hooks: ReadingHooks = {
     openImage: (_v, index, images, rect) => setBox({ images: images.map((x) => ({ url: c.current.resolveImage(x.src), alt: x.alt })), index, origin: rect }),
-    openLink: (href) => {
-      const { be, livePath, say } = c.current;
-      const t = resolveHref(href, livePath());
-      if (!t || !be) { say("打不开这个链接"); return; }
-      if (t.kind === "url") be.openUrl(t.url).catch(() => say("没能打开这个网址"));
-      else if (t.kind === "anchor") c.current.jumpAnchor(t.anchor);
-      else if (t.kind === "md") c.current.openMarkdown(t.path, { reading: !!c.current.view() && isReading(c.current.view()!.state), anchor: t.anchor });
-      else if (be.isDemo) say("浏览器预览里打不开本机文件，桌面版会用默认程序打开");
-      else be.openPath(t.path).catch(() => say("没能打开这个文件"));
-    },
+    openLink: (href) => c.current.followLink(href),
     exitAt: (pos) => {
       const v = c.current.view(); if (!v) return;
       set(false);
       v.focus();
       v.dispatch({ selection: { anchor: Math.min(pos, v.state.doc.length) } });
-    },
-    cite: (key) => {
-      const b = c.current.bib.get(key);
-      if (!b) return null;
-      const names = b.author.split(/\s+and\s+/).map((x) => x.trim()).filter(Boolean);
-      const author = names.join(names.some((n) => /[一-鿿]/.test(n)) ? "、" : "; ");
-      return { author, year: b.year, title: b.title, venue: b.venue || "" };
     },
   };
 

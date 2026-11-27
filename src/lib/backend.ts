@@ -7,6 +7,7 @@ import { longManuscript } from "./stress";
 import { toPosix } from "./paths";
 import { isWindows } from "./platform";
 import { splitBlocks } from "./markdown";
+import { thinVersions } from "./versionThin";
 import type { FileDocument, FilePreview } from "./filePreview";
 
 export interface TreeNode { name: string; path: string; dir: boolean; children: TreeNode[] }
@@ -56,7 +57,13 @@ export interface Backend {
   openPath(path: string): Promise<void>;
   /** 用 DOI 取 BibTeX（向 doi.org 请求，只在用户主动操作时调用） */
   fetchDoi(doi: string): Promise<string>;
-  /** 用系统浏览器打开网页（只接受 http、https、mailto） */
+  /** 从 Word 导入：.docx 转成 dir 里的 .md，图片放进 imageDir，返回新文件路径 */
+  importDocx(src: string, dir: string, imageDir: string): Promise<string>;
+  /** 按命令注册表重建原生菜单（只有 macOS 有菜单栏） */
+  setMenu(sections: unknown, settingsAccel: string | null): Promise<void>;
+  /** 系统用户名（批注署名的默认值），拿不到时是空字符串 */
+  userName(): Promise<string>;
+  /** 用系统浏览器打开网页链接（http、https、mailto） */
   openUrl(url: string): Promise<void>;
   /** 导出进行到哪一步：style → pandoc → typst → write */
   onExportProgress(cb: (stage: string) => void): () => void;
@@ -111,19 +118,20 @@ const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
 async function tauriBackend(): Promise<Backend> {
   const { invoke } = await import("@tauri-apps/api/core");
   const { listen } = await import("@tauri-apps/api/event");
-  const { open, save } = await import("@tauri-apps/plugin-dialog");
   return {
     isDemo: false,
+    // 选文件夹、选保存位置走 Rust：选中的位置记在后端，写入类命令只认这些位置（见 lib.rs 的 guard）
     async pickFolder() {
-      const r = await open({ directory: true, multiple: false, title: "打开文件夹" });
-      return typeof r === "string" ? toPosix(r) : null;
+      const r = await invoke<string | null>("pick_folder", { title: "打开文件夹" });
+      return r ? toPosix(r) : null;
     },
+    // 选文件也走 Rust：选中的文件记在后端，之后允许单独打开它（见 lib.rs 的 open_single）
     async pickFile(title, extensions) {
-      const r = await open({ multiple: false, directory: false, title, filters: extensions?.length ? [{ name: title, extensions }] : undefined });
-      return typeof r === "string" ? toPosix(r) : null;
+      const r = await invoke<string | null>("pick_file", { title, extensions: extensions ?? null });
+      return r ? toPosix(r) : null;
     },
     async pickSave(title, defaultPath, extension) {
-      const r = await save({ title, defaultPath, filters: [{ name: extension.toUpperCase(), extensions: [extension] }] });
+      const r = await invoke<string | null>("pick_save", { title, defaultPath, extension });
       return r ? toPosix(r) : null;
     },
     exportTools: () => invoke("export_tools"),
@@ -133,6 +141,9 @@ async function tauriBackend(): Promise<Backend> {
     openPath: (path) => invoke("open_path", { path }),
     openUrl: (url) => invoke("open_url", { url }),
     fetchDoi: (doi) => invoke("fetch_doi", { doi }),
+    userName: () => invoke("user_name"),
+    setMenu: (sections, settingsAccel) => invoke("set_menu", { sections, settingsAccel }),
+    importDocx: (src, dir, imageDir) => invoke("import_docx", { src, dir, imageDir }),
     onExportProgress(cb) {
       let un: (() => void) | null = null, alive = true;
       listen<string>("export-progress", (e) => cb(e.payload)).then((u) => { if (alive) un = u; else u(); });
@@ -254,13 +265,16 @@ function demoBackend(): Backend {
     async readReference() { throw new Error("浏览器预览里不能读取参考文档"); },
     async reveal() { /* 浏览器里没有 Finder */ },
     async openPath() { /* 浏览器里打不开本机文件 */ },
-    async openUrl(url) { window.open(url, "_blank", "noopener"); },
+    async openUrl(url) { window.open(url, "_blank", "noopener,noreferrer"); },
     async fetchDoi(doi) {
       // 浏览器预览不联网：只认演示用的这一个 DOI（Sweller 1988），其他的给出说明
       await new Promise((r) => setTimeout(r, 600));
       if (doi.toLowerCase() === "10.1207/s15516709cog1202_4") return "@article{Sweller_1988, title={Cognitive Load During Problem Solving: Effects on Learning}, volume={12}, ISSN={1551-6709}, url={http://dx.doi.org/10.1207/s15516709cog1202_4}, DOI={10.1207/s15516709cog1202_4}, number={2}, journal={Cognitive Science}, publisher={Wiley}, author={Sweller, John}, year={1988}, month=apr, pages={257–285} }";
       throw new Error("浏览器预览里不联网；桌面版会向 doi.org 请求。可以试试 10.1207/s15516709cog1202_4");
     },
+    async userName() { return ""; },
+    async setMenu() { /* 浏览器里没有原生菜单 */ },
+    async importDocx() { throw new Error("浏览器预览里不能从 Word 导入"); },
     onExportProgress() { return () => {}; },
     async openFolder(root) { return tree(root); },
     async openSingle(path) { if (!files.has(path)) throw new Error("找不到这个文件"); },
@@ -282,7 +296,7 @@ function demoBackend(): Backend {
       try { localStorage.setItem(key(path), JSON.stringify(recs)); } catch { /* ignore */ }
       return { id: rec.id, at: rec.at, source, name: rec.name, note: rec.note };
     },
-    async listVersions(path) { return load(path).slice().reverse().map(({ blocks: _b, ...m }) => m); },
+    async listVersions(path) { return thinVersions(load(path).slice().reverse().map(({ blocks: _b, ...m }) => m)); },
     async readVersion(path, id) { const r = load(path).find((x) => x.id === id); return r ? content(r) : ""; },
     onExternalChange(cb) { listeners.add(cb); return () => listeners.delete(cb); },
     async listFonts() { return isWindows ? WINDOWS_FONTS : MAC_FONTS; },

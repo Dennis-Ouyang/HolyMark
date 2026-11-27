@@ -36,9 +36,11 @@ export function headingAnchors(md: string): HeadingAnchor[] {
   });
 }
 
-/** 按锚点找标题：先精确匹配，再按标题文字本身（有人直接写 #样本与数据 的原文） */
+/** 按锚点找标题：先精确匹配，再按标题文字本身（有人直接写 #样本与数据 的原文），最后忽略大小写、空格和连字符 */
 export function findAnchor(md: string, anchor: string): HeadingAnchor | null {
   const all = headingAnchors(md);
   const a = anchor.trim();
-  return all.find((h) => h.id === a) ?? all.find((h) => h.id === pandocId(a)) ?? all.find((h) => h.text.trim() === a) ?? null;
+  const loose = (x: string) => x.toLowerCase().replace(/[\s\-_]+/g, "");
+  return all.find((h) => h.id === a) ?? all.find((h) => h.id === pandocId(a)) ?? all.find((h) => h.text.trim() === a)
+    ?? all.find((h) => loose(h.text) === loose(a)) ?? null;
 }

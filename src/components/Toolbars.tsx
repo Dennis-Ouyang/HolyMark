@@ -4,7 +4,8 @@ import { NumberField } from "./NumberField";
 import type { EditorView } from "@codemirror/view";
 import { BlockKind, currentBlock, indentList, InlineKind, insertBlock, insertLink, insertNote, setBlock, tableMarkdown, toggleInline } from "../editor/commands";
 import { Icon } from "./Icons";
-import { FontSelect, Select } from "./Select";
+import { keyText, shortcutOf, tipOf } from "../lib/commandRegistry";
+import { FontSelect, Select, type Option as SelectOption } from "./Select";
 import type { Settings } from "../lib/settings";
 import type { FontFamily } from "../lib/backend";
 import { kbd } from "../lib/platform";
@@ -17,21 +18,21 @@ export const BLOCKS: { value: BlockKind; label: string }[] = [
 const keep = (e: React.MouseEvent) => e.preventDefault(); // 点按钮不让编辑器失去选区
 
 function TB({ title, onClick, children, className, on, disabled }: { title: string; onClick: () => void; children: React.ReactNode; className?: string; on?: boolean; disabled?: boolean }) {
-  return <button type="button" className={"rb" + (className ? " " + className : "") + (on ? " on" : "")} title={kbd(title)} aria-label={title.replace(/\s*[⌘⇧⌥].*$/, "")}
+  return <button type="button" className={"rb" + (className ? " " + className : "") + (on ? " on" : "")} title={kbd(title)} aria-label={title.replace(/\s*([⌘⇧⌥]|Ctrl\+|Alt\+|Shift\+).*$/, "")}
     aria-pressed={on === undefined ? undefined : on} disabled={disabled} onMouseDown={keep} onClick={onClick}>{children}</button>;
 }
 
 /** 行内格式按钮：粗体、斜体、删除线、行内代码、公式 */
 const INLINE: { k: InlineKind; title: string; icon: React.ReactNode }[] = [
-  { k: "bold", title: "粗体 ⌘B", icon: <Icon name="bold" /> },
-  { k: "italic", title: "斜体 ⌘I", icon: <Icon name="italic" /> },
-  { k: "strike", title: "删除线 ⌘⇧X", icon: <Icon name="strike" /> },
-  { k: "code", title: "行内代码 ⌘E", icon: <Icon name="code" /> },
-  { k: "math", title: "行内公式 ⌘⇧M", icon: <Icon name="math" /> },
+  { k: "bold", title: tipOf("bold"), icon: <Icon name="bold" /> },
+  { k: "italic", title: tipOf("italic"), icon: <Icon name="italic" /> },
+  { k: "strike", title: tipOf("strike"), icon: <Icon name="strike" /> },
+  { k: "code", title: tipOf("code"), icon: <Icon name="code" /> },
+  { k: "math", title: tipOf("math"), icon: <Icon name="math" /> },
 ];
 /** 功能区里多出来的：高亮、上标、下标 */
 const MORE_INLINE: { k: InlineKind; title: string; icon: React.ReactNode }[] = [
-  { k: "highlight", title: "高亮 ⌘⇧H", icon: <Icon name="highlight" /> },
+  { k: "highlight", title: tipOf("highlight"), icon: <Icon name="highlight" /> },
   { k: "sup", title: "上标（x^2^）", icon: <Icon name="sup" /> },
   { k: "sub", title: "下标（H~2~O）", icon: <Icon name="sub" /> },
 ];
@@ -65,9 +66,9 @@ export function FloatingToolbar({ view, tick, author, active }: { view: EditorVi
       <Select value={kind} options={BLOCKS} onChange={(k) => setBlock(view, k)} ariaLabel="段落类型" keepFocus className="ghost" />
       <span className="sep" />
       {[...INLINE, MORE_INLINE[0]].map((x) => <TB key={x.k} title={x.title} on={active.has(x.k)} onClick={() => toggleInline(view, x.k, true)}>{x.icon}</TB>)}
-      <TB title="链接 ⌘⇧K" onClick={() => insertLink(view)}><Icon name="link" /></TB>
+      <TB title={tipOf("link")} onClick={() => insertLink(view)}><Icon name="link" /></TB>
       <span className="sep" />
-      <TB title="批注 ⌘⌥M" onClick={() => insertNote(view, author)}><Icon name="note" /><span>批注</span></TB>
+      <TB title={tipOf("note")} onClick={() => insertNote(view, author)}><Icon name="note" /><span>批注</span></TB>
     </div>
   );
 }
@@ -92,8 +93,8 @@ interface RibbonProps {
 
 /** 段落样式：每一项按它自己的样子画出来，像 Word 的样式库 */
 const STYLE_CHIPS: { value: BlockKind; label: string; title: string }[] = [
-  { value: "p", label: "正文", title: "正文 ⌘0" }, { value: "h1", label: "标题 1", title: "标题 1 ⌘1" },
-  { value: "h2", label: "标题 2", title: "标题 2 ⌘2" }, { value: "h3", label: "标题 3", title: "标题 3 ⌘3" },
+  { value: "p", label: "正文", title: tipOf("block_p") }, { value: "h1", label: "标题 1", title: tipOf("block_h1") },
+  { value: "h2", label: "标题 2", title: tipOf("block_h2") }, { value: "h3", label: "标题 3", title: tipOf("block_h3") },
 ];
 
 /** 功能区放不下时（窗口窄、两侧栏都开着）可以横向滚动：两头出现箭头，滚轮也能左右滚 */
@@ -125,7 +126,7 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
   const v = view;
   const run = (f: (v: EditorView) => void) => () => { if (v) f(v); };
   const big = (icon: string, label: string, title: string, f: () => void) => (
-    <button type="button" className="rb tall" title={kbd(title)} aria-label={title.replace(/\s*[⌘⇧⌥].*$/, "")} onMouseDown={keep} onClick={f}><Icon name={icon} size={18} /><span>{label}</span></button>
+    <button type="button" className="rb tall" title={kbd(title)} aria-label={title.replace(/\s*([⌘⇧⌥]|Ctrl\+|Alt\+|Shift\+).*$/, "")} onMouseDown={keep} onClick={f}><Icon name={icon} size={18} /><span>{label}</span></button>
   );
   const num = (k: string, label: string, ph: string, attrs: { min: number; max: number; step?: number }, unit?: string) => (
     <label className="rfield"><span>{label}</span>
@@ -141,44 +142,60 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
   }, [gridOpen]);
   const hasLayout = ["heading-font", "body-font", "font-size", "line-height", "measure"].some((k) => layout[k]);
   const ov = useOverflow(tab);
+  // 窄的时候（H38）：四个段落样式大块收成一个下拉，分组标签收起，省出地方给文字按钮
+  const box = useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = useState(false);
+  useLayoutEffect(() => {
+    const el = box.current; if (!el) return;
+    const f = () => setCompact(el.clientWidth < 760);
+    f();
+    const ro = new ResizeObserver(f); ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const isList = block === "ul" || block === "ol" || block === "task";
   return (
-    <div className={"ribbon" + (collapsed ? " collapsed" : "")}>
+    <div ref={box} className={"ribbon" + (collapsed ? " collapsed" : "") + (compact ? " compact" : "")}>
       <div className="rtabs" role="tablist">
-        {([["home", "开始"], ["insert", "插入"], ["layout", "版式"]] as const).map(([k, l]) => (
+        {([["home", "开始"], ["insert", "插入"], ["layout", "本篇显示"]] as const).map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={"rtab" + (tab === k ? " on" : "")}
-            onClick={() => { setTab(k); setCollapsed(false); }} onDoubleClick={() => setCollapsed(!collapsed)}>{l}{k === "layout" && hasLayout && <i className="rdot" title="这篇文章有单独的版式" />}</button>
+            onClick={() => { setTab(k); setCollapsed(false); }} onDoubleClick={() => setCollapsed(!collapsed)}>{l}{k === "layout" && hasLayout && <i className="rdot" title="这一篇有单独的显示设置" />}</button>
         ))}
-        <button className="ib collapse" title={kbd(collapsed ? "展开功能区 ⌘⌥R" : "折叠功能区 ⌘⌥R")} aria-label="折叠功能区" onClick={() => setCollapsed(!collapsed)}><Icon name="up" /></button>
+        <button className="ib collapse" title={tipOf("toggle_ribbon", collapsed ? "展开功能区" : "折叠功能区")} aria-label="折叠功能区" onClick={() => setCollapsed(!collapsed)}><Icon name="up" /></button>
       </div>
       <div className={"rbody-wrap" + (ov.edge.l ? " ml" : "") + (ov.edge.r ? " mr" : "")} aria-hidden={collapsed}>
         {ov.edge.l && <button type="button" className="rscroll l" aria-label="向左滚动功能区" onMouseDown={keep} onClick={() => ov.scroll(-1)}><Icon name="back" size={12} /></button>}
         {ov.edge.r && <button type="button" className="rscroll r" aria-label="向右滚动功能区" onMouseDown={keep} onClick={() => ov.scroll(1)}><Icon name="back" size={12} /></button>}
         <div className="rbody" key={tab} ref={ov.ref}>
           {tab === "home" && <>
-            <Group label="段落样式" className="styles">
+            {compact ? <Group label="段落样式">
+              <Select value={block} ariaLabel="段落样式" keepFocus width={120}
+                options={[...STYLE_CHIPS.map((c) => ({ value: c.value, label: c.label, hint: keyText(shortcutOf("block_" + c.value)) })),
+                  { value: "h4", label: "标题 4", hint: keyText(shortcutOf("block_h4")) }, { value: "h5", label: "标题 5", hint: keyText(shortcutOf("block_h5")) }, { value: "h6", label: "标题 6", hint: keyText(shortcutOf("block_h6")) },
+                  ...(["ul", "ol", "task", "quote"].includes(block) ? [{ value: block, label: { ul: "无序列表", ol: "有序列表", task: "待办列表", quote: "引用" }[block as "ul"] }] : [])] as SelectOption<BlockKind>[]}
+                onChange={(k) => { if (v) setBlock(v, k); }} />
+            </Group> : <Group label="段落样式" className="styles">
               {STYLE_CHIPS.map((c) => (
                 <button key={c.value} type="button" className={"chip " + c.value + (block === c.value ? " on" : "")} title={kbd(c.title)} aria-pressed={block === c.value}
                   onMouseDown={keep} onClick={run((x) => setBlock(x, c.value))}><span>{c.label}</span></button>
               ))}
               <div className="chipmore">
                 <Select value={/^h[456]$/.test(block) ? block : ("" as BlockKind)} placeholder="4–6" ariaLabel="标题 4 到 6" keepFocus className={"ghost" + (/^h[456]$/.test(block) ? " on" : "")}
-                  options={[{ value: "h4", label: "标题 4", hint: kbd("⌘4") }, { value: "h5", label: "标题 5", hint: kbd("⌘5") }, { value: "h6", label: "标题 6", hint: kbd("⌘6") }]}
+                  options={[{ value: "h4", label: "标题 4", hint: keyText(shortcutOf("block_h4")) }, { value: "h5", label: "标题 5", hint: keyText(shortcutOf("block_h5")) }, { value: "h6", label: "标题 6", hint: keyText(shortcutOf("block_h6")) }]}
                   onChange={(k) => { if (v) setBlock(v, k); }} />
               </div>
-            </Group>
+            </Group>}
             <Group label="文字">
               {[...INLINE, ...MORE_INLINE].map((x) => <TB key={x.k} title={x.title} on={active.has(x.k)} onClick={run((y) => toggleInline(y, x.k))}>{x.icon}</TB>)}
-              <TB title="链接 ⌘⇧K" onClick={run((x) => insertLink(x))}><Icon name="link" /></TB>
+              <TB title={tipOf("link")} onClick={run((x) => insertLink(x))}><Icon name="link" /></TB>
             </Group>
             <Group label="列表与引用">
-              <TB title="无序列表 ⌘⇧8" on={block === "ul"} onClick={run((x) => setBlock(x, block === "ul" ? "p" : "ul"))}><Icon name="ul" /></TB>
-              <TB title="有序列表 ⌘⇧7" on={block === "ol"} onClick={run((x) => setBlock(x, block === "ol" ? "p" : "ol"))}><Icon name="ol" /></TB>
-              <TB title="引用 ⌘⇧." on={block === "quote"} onClick={run((x) => setBlock(x, block === "quote" ? "p" : "quote"))}><Icon name="quote" /></TB>
-              <TB title="待办列表 ⌘⇧9" on={block === "task"} onClick={run((x) => setBlock(x, block === "task" ? "p" : "task"))}><Icon name="task" /></TB>
+              <TB title={tipOf("block_ul")} on={block === "ul"} onClick={run((x) => setBlock(x, block === "ul" ? "p" : "ul"))}><Icon name="ul" /></TB>
+              <TB title={tipOf("block_ol")} on={block === "ol"} onClick={run((x) => setBlock(x, block === "ol" ? "p" : "ol"))}><Icon name="ol" /></TB>
+              <TB title={tipOf("block_quote")} on={block === "quote"} onClick={run((x) => setBlock(x, block === "quote" ? "p" : "quote"))}><Icon name="quote" /></TB>
+              <TB title={tipOf("block_task")} on={block === "task"} onClick={run((x) => setBlock(x, block === "task" ? "p" : "task"))}><Icon name="task" /></TB>
               <span className="vsep" />
-              <TB title="减少缩进（回到上一级） ⌘[" disabled={!isList} onClick={run((x) => indentList(x, -1))}><Icon name="outdent" /></TB>
-              <TB title="增加缩进（变成上一项的子项） ⌘]" disabled={!isList} onClick={run((x) => indentList(x, 1))}><Icon name="indent" /></TB>
+              <TB title={tipOf("outdent", "减少缩进（回到上一级）")} disabled={!isList} onClick={run((x) => indentList(x, -1))}><Icon name="outdent" /></TB>
+              <TB title={tipOf("indent", "增加缩进（变成上一项的子项）")} disabled={!isList} onClick={run((x) => indentList(x, 1))}><Icon name="indent" /></TB>
             </Group>
             <Group label="整理">
               <button type="button" className="rb tall" title="中文排版整理：标点、空格、引号（选中的文字或全文）" aria-label="中文排版整理" onMouseDown={keep}
@@ -197,14 +214,14 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
                         onClick={() => { setGridOpen(false); if (v) insertBlock(v, tableMarkdown(r, c), 2); }} />); })}</div>
                   </div>, document.body)}
               </div>
-              {big("img", "图片", "插入图片 ⌘⇧I", onPickImage)}
-              {big("codeb", "代码", "代码块 ⌘⌥C", run((x) => insertBlock(x, "```\n\n```", 4)))}
-              {big("mathb", "公式", "公式块 ⌘⌥B", run((x) => insertBlock(x, "$$\n\n$$", 3)))}
+              {big("img", "图片", tipOf("insert_image", "插入图片"), onPickImage)}
+              {big("codeb", "代码", tipOf("insert_code"), run((x) => insertBlock(x, "```\n\n```", 4)))}
+              {big("mathb", "公式", tipOf("insert_math"), run((x) => insertBlock(x, "$$\n\n$$", 3)))}
               {big("mermaid", "图表", "Mermaid 图表", run((x) => insertBlock(x, "```mermaid\nflowchart LR\n  A[开始] --> B[结束]\n```", 11)))}
               {big("hr", "分隔线", "分隔线", run((x) => insertBlock(x, "---")))}
             </Group>
-            <Group label="引用与链接">{big("cite", "文件链接", "插入文件链接 ⌘⇧C", onCite)}{big("link", "链接", "插入链接 ⌘⇧K", run((x) => insertLink(x)))}</Group>
-            <Group label="审阅">{big("note", "批注", "给选中文字加批注 ⌘⌥M", run((x) => insertNote(x, author)))}</Group>
+            <Group label="引用与链接">{big("cite", "文件链接", tipOf("cite", "插入文件链接"), onCite)}{big("link", "链接", tipOf("link", "插入链接"), run((x) => insertLink(x)))}</Group>
+            <Group label="审阅">{big("note", "批注", tipOf("note", "给选中文字加批注"), run((x) => insertNote(x, author)))}</Group>
           </>}
           {tab === "layout" && <>
             <Group label="字体" className="stack">
@@ -216,8 +233,10 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
               {num("line-height", "行距", String(settings.lineHeight), { min: 1.2, max: 2.6, step: 0.05 })}
               {num("measure", "版心", String(settings.measure), { min: 24, max: 60 }, "字")}
             </Group>
-            <Group label={hasLayout ? "只对这一篇生效" : "跟随默认设置"} className="reset">
-              <TB title="恢复默认：去掉这一篇单独的版式" disabled={!hasLayout} onClick={() => onLayout({})}><Icon name="reset" /></TB>
+            {/* 按钮写清楚做什么；状态另外用一行小字说明（H37） */}
+            <Group label="" className="reset">
+              <span className="rstate">{hasLayout ? "这一篇用自己的设置" : "这一篇跟随默认设置"}</span>
+              <button type="button" className="btn sm" disabled={!hasLayout} onMouseDown={keep} onClick={() => onLayout({})} title="去掉这一篇单独的字体和排版，回到设置里的默认值">恢复默认</button>
             </Group>
           </>}
         </div>

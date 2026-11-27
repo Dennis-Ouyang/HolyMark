@@ -1,10 +1,21 @@
-// 浏览器预览冒烟测试：逐项点一遍主要功能，要求控制台零报错。
-// 用法：先 `npm run dev`，再 `node scripts/smoke.mjs`（需要 Playwright；全局装的用 NODE_PATH=$(npm root -g)）
-// 加 `--shots 目录` 会在每一步后截图，浅色、深色各一份。
+/**
+ * 冒烟测试：打开浏览器预览，逐项点一遍主要功能（演示稿、各个新功能、一份覆盖所有块类型的测试稿、导出、搜索），
+ * 浅色、深色各跑一遍，控制台出现任何 error 就判失败。
+ *
+ * 用法：先 `npm run dev`，再
+ *   NODE_PATH=$(npm root -g) node scripts/smoke.mjs                          # 默认 http://localhost:1420
+ *   NODE_PATH=$(npm root -g) node scripts/smoke.mjs http://localhost:1421    # 检查 vite preview（带 CSP）
+ *   HM_ONLY=N9 node scripts/smoke.mjs        只跑名字里带这个词的步骤（第一步总会跑）
+ *   node scripts/smoke.mjs --shots 目录       每一步后截图
+ *   HM_VERBOSE=1                             失败时多打几行
+ * 需要 Playwright（npm i -g playwright 或本机已装）。
+ */
 import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
 const { chromium } = createRequire(import.meta.url)("playwright");
 
-const base = process.env.HM_URL || "http://localhost:1420/";
+const base = process.argv.slice(2).find((a) => /^https?:/.test(a)) || process.env.HM_URL || "http://localhost:1420/";
+const fixture = readFileSync(new URL("../tests/fixtures/all-blocks.md", import.meta.url), "utf8");
 const shotDir = process.argv.includes("--shots") ? process.argv[process.argv.indexOf("--shots") + 1] : "";
 
 /** 每一条：名字 + 在页面里执行的检查（抛错即失败） */
@@ -13,6 +24,15 @@ const step = (name, fn) => steps.push({ name, fn });
 
 const ready = (page) => page.waitForFunction(() => window.__hm?.view?.()?.state.doc.length > 100, null, { timeout: 30000 });
 const menu = (page, id) => page.evaluate((i) => window.__hm.menu(i), id);
+/** 文件树默认收起：先把所有文件夹展开，再找里面的文件 */
+async function expandTree(page) {
+  for (let i = 0; i < 6; i++) {
+    const n = await page.evaluate(() => { const ds = [...document.querySelectorAll(".tree .tn.dir.closed")]; ds.forEach((d) => d.click()); return ds.length; });
+    if (!n) return;
+    await page.waitForTimeout(80);
+  }
+}
+const treeItem = async (page, part) => { await expandTree(page); return `.tree .tn[data-path*='${part}']`; };
 const docText = (page) => page.evaluate(() => window.__hm.view().state.doc.toString());
 
 step("打开演示文件夹", async (page) => {
@@ -57,10 +77,16 @@ step("N14 写作统计：今天净增、7 天柱子、文件树悬停字数", as
   if (!/^\+/.test(head.trim())) throw new Error("今天净增不对：" + head);
   if ((await page.$$(".ws-col")).length !== 7) throw new Error("不是 7 根柱子");
   await page.click(".statusbar [data-countpop]");
-  await page.hover(".tree .tn[data-path*='02 文献综述']");
+  await page.hover(await treeItem(page, "02 文献综述"));
   await page.waitForSelector(".hm-tip", { timeout: 3000 });
   const t = await page.textContent(".hm-tip");
   if (!/字/.test(t)) throw new Error("悬停提示不对：" + t);
+  if ((await page.$$(".hm-tip")).length !== 1) throw new Error("叠出了两个悬停提示");
+  // 文件夹悬停不显示字数
+  await page.mouse.move(700, 500);
+  await page.hover(".tree .tn.dir >> nth=0");
+  await page.waitForTimeout(900);
+  if (await page.$(".hm-tip")) throw new Error("文件夹悬停不该有提示");
   await page.mouse.move(700, 500);
   for (let i = 0; i < 4; i++) await page.keyboard.press("Backspace");
 });
@@ -146,15 +172,15 @@ step("N2 阅读模式：只读、图片放大、勾选框、悬停文献、双�
   // 待办勾选框照样能点
   await page.evaluate(() => { const sc = document.querySelector(".scroller"); sc.scrollTop = sc.scrollHeight; });
   await page.waitForTimeout(200);
-  await page.click(".hm-check:not(.on)");
+  await page.click(".hm-check.todo");
   if (!(await docText(page)).includes("- [x] 补充第二轮")) throw new Error("勾选框点不动");
-  await page.click(".hm-check.on >> nth=-1");
+  await page.click(".hm-check.done >> nth=-1");
   // 悬停文献
   await page.evaluate(() => { document.querySelector(".scroller").scrollTop = 0; });
   await page.waitForTimeout(200);
   await page.hover(".hm-cite >> nth=0");
-  await page.waitForSelector(".hm-hovercard", { timeout: 3000 });
-  if (!(await page.textContent(".hm-hovercard")).includes("学术写作")) throw new Error("文献卡片内容不对");
+  await page.waitForSelector(".hm-citetip", { timeout: 3000 });
+  if (!(await page.textContent(".hm-citetip")).includes("学术写作")) throw new Error("文献卡片内容不对");
   await page.mouse.move(10, 400);
   // 单击链接：浏览器预览里给出说明
   await page.click(".hm-link:has-text('受访者编码表')");
@@ -182,10 +208,10 @@ step("N3 记住位置：切换文件、重新加载后恢复光标、顶部段�
     if (st.folded < 3) throw new Error(`${label}：折叠没恢复`);
     if (!st.reading) throw new Error(`${label}：阅读模式没恢复`);
   };
-  await page.click(".tree .tn[data-path*='02 文献综述']");
+  await page.click(await treeItem(page, "02 文献综述"));
   await page.waitForTimeout(300);
   if (await page.$(".cm-editor.hm-reading")) throw new Error("另一篇不该是阅读模式");
-  await page.click(".tree .tn[data-path*='03 研究设计']");
+  await page.click(await treeItem(page, "03 研究设计"));
   await check("切换回来");
   await page.reload();
   await page.waitForFunction(() => window.__hm?.view?.()?.state.doc.length > 100);
@@ -215,7 +241,7 @@ step("N4 文内跳转：锚点链接、找不到的提示、跨文件、返回�
   if (!(await line()).startsWith("## 3.2")) throw new Error("前进不对");
   await page.click("button[aria-label='阅读模式']");
   // 跨文件：导师意见里的链接，⌘ / Ctrl + 单击
-  await page.click(".tree .tn[data-path*='导师意见']");
+  await page.click(await treeItem(page, "导师意见"));
   await page.waitForTimeout(300);
   await page.click(".hm-link:has-text('样本部分')", { modifiers: [process.platform === "darwin" ? "Meta" : "Control"] });
   await page.waitForTimeout(600);
@@ -239,7 +265,7 @@ step("N1 单独打开一个文件、只看不改不存版本、改了才存、�
   const OUT = "/演示/下载/会议纪要.md";
   const vkey = "holymark-demo-versions:" + OUT;
   // 工作区里：打开不存版本，改一个字才存起点
-  await page.click(".tree .tn[data-path*='02 文献综述']");
+  await page.click(await treeItem(page, "02 文献综述"));
   await page.waitForTimeout(400);
   const k2 = "holymark-demo-versions:/演示/毕业论文/正文/02 文献综述.md";
   if (await page.evaluate((k) => localStorage.getItem(k), k2)) throw new Error("只打开没改就存了版本");
@@ -277,22 +303,27 @@ step("N5 预览 PDF、图片、Excel，切回 Markdown 编辑状态保留", asyn
   await page.reload();
   await page.waitForFunction(() => window.__hm?.view?.()?.state.doc.length > 100);
   await page.evaluate(() => { const v = window.__hm.view(); v.focus(); v.dispatch({ selection: { anchor: 40 } }); });
-  await page.click(".tree .tn[data-path*='访谈提纲.pdf']");
+  const pdfItem = await treeItem(page, "访谈提纲.pdf");
+  await page.mouse.move(700, 500);
+  await page.waitForTimeout(100);
+  await page.hover(pdfItem);
+  await page.waitForSelector(".hm-tip:has-text('单击预览，双击用默认程序打开')", { timeout: 3000 });
+  await page.click(await treeItem(page, "访谈提纲.pdf"));
   await page.waitForSelector(".fv-page");
   await page.waitForFunction(() => document.querySelectorAll(".fv-page").length === 2);
   if (!(await page.textContent(".fv-pdfbar")).includes("1 / 2")) throw new Error("没有页码");
   await page.click(".fv-pdfbar button[aria-label='放大']");
   if (!(await page.$(".finfo dd"))) throw new Error("右栏没有文件信息");
-  await page.click(".tree .tn[data-path*='图3-1.svg']");
+  await page.click(await treeItem(page, "图3-1.svg"));
   await page.waitForSelector(".fv-img-wrap img");
   await page.click(".fv-tools button:has-text('实际大小')");
-  await page.click(".tree .tn[data-path*='受访者编码表.xlsx']");
+  await page.click(await treeItem(page, "受访者编码表.xlsx"));
   await page.waitForSelector(".fv-sheet table");
   if ((await page.$$(".fv-sheet")).length !== 2) throw new Error("Excel 应该有两张表");
   await page.click(".fv-head button:has-text('用默认程序打开')");
   await page.waitForSelector(".toast:has-text('浏览器预览里打不开本机文件')");
   // 回到正在编辑的那篇：光标还在原处
-  await page.click(".tree .tn[data-path*='03 研究设计']");
+  await page.click(await treeItem(page, "03 研究设计"));
   await page.waitForSelector(".fviewer", { state: "detached" });
   const head = await page.evaluate(() => window.__hm.view().state.selection.main.head);
   if (head !== 40) throw new Error("切回来以后光标变了：" + head);
@@ -397,6 +428,43 @@ step("N9 在文件夹里替换：预览、取消勾选、执行、存版本、�
   if ((await docText(page)) !== before) throw new Error("撤销没有还原当前文件");
 });
 
+/* ---------- 全块测试稿、导出、搜索（放在最后：会把正文换成测试稿） ---------- */
+
+step("全块测试稿：渲染、光标走遍所有行", async (page) => {
+  // 滚到底，让 Mermaid、公式、文件卡片都渲染一遍
+  const bottom = () => page.evaluate(() => { const s = document.querySelector(".scroller"); if (s) s.scrollTop = s.scrollHeight; });
+  await bottom();
+  await page.waitForTimeout(1000);
+  await page.evaluate((t) => { const v = window.__hm.view(); v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: t } }); }, fixture);
+  await page.waitForTimeout(1200);
+  // 光标走一遍全文：每个块都进出一次源码 / 渲染
+  await page.evaluate(async () => {
+    const v = window.__hm.view();
+    for (let i = 1; i <= v.state.doc.lines; i++) {
+      v.dispatch({ selection: { anchor: v.state.doc.line(i).from } });
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+  });
+  await bottom();
+  await page.waitForTimeout(1200);
+});
+
+step("导出对话框", async (page) => {
+  await menu(page, "export");
+  await page.waitForTimeout(1500);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(400);
+});
+
+step("搜索", async (page) => {
+  await menu(page, "search");
+  await page.waitForSelector(".search");
+  await page.keyboard.type("研究");
+  await page.waitForTimeout(600);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+});
+
 async function run(theme) {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 }, colorScheme: theme });
@@ -408,7 +476,9 @@ async function run(theme) {
   let failed = 0;
   // HM_ONLY=关键词 只跑名字里带这个词的步骤（第一步「打开演示文件夹」总会跑）
   const only = process.env.HM_ONLY;
-  for (const s of steps.filter((x, i) => !only || i === 0 || x.name.includes(only))) {
+  // 编号（N2）按第一个词精确比，免得 N2 也跑到 N21
+  const hit = (name) => (/^[A-Z]\d+$/.test(only) ? name.split(/\s/)[0] === only : name.includes(only));
+  for (const s of steps.filter((x, i) => !only || i === 0 || hit(x.name))) {
     try {
       await s.fn(page);
       await page.waitForTimeout(150);

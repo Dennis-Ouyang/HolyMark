@@ -9,18 +9,21 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Backend } from "../lib/backend";
 import { FileDocument, FilePreview, previewKind } from "../lib/filePreview";
-import { fmtDate, fmtSize, middleTruncate } from "../lib/fileInfo";
+import { fmtDate, fmtSize } from "../lib/fileInfo";
 import { baseName } from "../lib/paths";
 import { isWindows } from "../lib/platform";
 import { Icon } from "./Icons";
+import { FileBadge } from "./FileBadge";
+import { MidName } from "./MidName";
 import { Segmented } from "./Segmented";
 
-export function FileViewer({ be, path, onInfo, say }: { be: Backend; path: string; onInfo: (i: FilePreview | null) => void; say: (m: string) => void }) {
+/** onOpenDefault：用默认程序打开（App 统一处理，后端拦下时提示条显示后端给的原因） */
+export function FileViewer({ be, path, onInfo, say, onOpenDefault }: { be: Backend; path: string; onInfo: (i: FilePreview | null) => void; say: (m: string) => void; onOpenDefault: (path: string) => void }) {
   const kind = previewKind(path);
   const name = baseName(path);
   const [pdfBar, setPdfBar] = useState<React.ReactNode>(null);
-  const openDefault = () => { if (be.isDemo) say("浏览器预览里打不开本机文件，桌面版会用默认程序打开"); else be.openPath(path).catch(() => say("没能打开这个文件")); };
-  const reveal = () => { if (be.isDemo) say("浏览器预览里没有访达"); else be.reveal(path).catch(() => {}); };
+  const openDefault = () => onOpenDefault(path);
+  const reveal = () => { if (be.isDemo) say("浏览器预览里不能打开文件所在的位置，桌面版会在" + (isWindows ? "资源管理器" : "访达") + "里显示"); else be.reveal(path).catch(() => {}); };
   const info = useRef<FilePreview | null>(null);
   const pdfPages = useRef(0);
   useEffect(() => {
@@ -32,8 +35,8 @@ export function FileViewer({ be, path, onInfo, say }: { be: Backend; path: strin
   return (
     <div className="fviewer" role="region" aria-label={`预览 ${name}`}>
       <div className="fv-head">
-        <Icon name={kind === "pdf" ? "pdf" : kind === "image" ? "img" : /\.xlsx?$/i.test(path) ? "excel" : /\.pptx?$/i.test(path) ? "ppt" : /\.docx?$/i.test(path) ? "word" : "file"} size={16} />
-        <b className="fv-name" title={name}>{middleTruncate(name, 40)}</b>
+        <FileBadge name={name} />
+        <b className="fv-name"><MidName name={name} tail={8} /></b>
         <span className="tag">只读预览</span>
         <span className="sp" />
         {pdfBar}
@@ -52,12 +55,13 @@ export function FileViewer({ be, path, onInfo, say }: { be: Backend; path: strin
 
 /** 右栏：页数、大小、修改时间，三档灰分层 */
 export function FileInfo({ info, path }: { info: FilePreview | null; path: string }) {
-  const unit = /\.pptx?$/i.test(path) ? "张幻灯片" : /\.xlsx?$/i.test(path) ? "张工作表" : "页";
+  // 标签按类型：PDF、Word 是「页数」，PPT 是「幻灯片」，Excel 是「工作表」（不会出现「页数：3 张工作表」）
+  const [label, unit] = /\.pptx?$/i.test(path) ? ["幻灯片", "张"] : /\.xlsx?$/i.test(path) ? ["工作表", "张"] : ["页数", "页"];
   return (
     <div className="panel-in finfo">
-      <div className="fi-name" title={baseName(path)}>{middleTruncate(baseName(path), 30)}</div>
+      <div className="fi-name"><FileBadge name={baseName(path)} /><MidName name={baseName(path)} tail={8} /></div>
       {info ? <dl>
-        {info.pages ? <><dt>页数</dt><dd className="num">{info.pages} {unit}</dd></> : null}
+        {info.pages ? <><dt>{label}</dt><dd className="num">{info.pages} {unit}</dd></> : null}
         <dt>大小</dt><dd className="num">{fmtSize(info.size)}</dd>
         <dt>修改时间</dt><dd className="num t3">{fmtDate(info.modified)}</dd>
       </dl> : <div className="fi-wait">正在读取…</div>}
@@ -92,7 +96,8 @@ function PdfView({ url, setBar, onPages }: { url: string; setBar: (n: React.Reac
     (async () => {
       const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf"); // eslint-disable-line @typescript-eslint/no-explicit-any
       pdfjs.GlobalWorkerOptions.workerSrc = (await import("pdfjs-dist/legacy/build/pdf.worker.min.js?url")).default;
-      const data = new Uint8Array(await (await fetch(url)).arrayBuffer());
+      // data: 地址（浏览器预览的演示文件）直接解码，不经 fetch：内容安全策略的 connect-src 不放行 data:
+      const data = url.startsWith("data:") ? Uint8Array.from(atob(url.slice(url.indexOf(",") + 1)), (c) => c.charCodeAt(0)) : new Uint8Array(await (await fetch(url)).arrayBuffer());
       loaded = await pdfjs.getDocument({ data, isEvalSupported: false }).promise;
       const s: { w: number; h: number }[] = [];
       for (let i = 1; i <= loaded.numPages; i++) { const v = (await loaded.getPage(i)).getViewport({ scale: 1 }); s.push({ w: v.width, h: v.height }); }

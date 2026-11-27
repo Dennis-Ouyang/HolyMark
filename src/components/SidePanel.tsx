@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import type { Heading, Note } from "../lib/markdown";
 import type { VersionMeta } from "../lib/backend";
+import { fmtNoteDate } from "../editor/notes";
 import { Icon } from "./Icons";
+import { changeTitle, useVersionStats } from "./versionStats";
 import { kbd } from "../lib/platform";
 import { hasChildren, hiddenByCollapse, outlineKeys } from "../lib/outlineFold";
 
@@ -31,6 +33,17 @@ interface Props {
   onOpenVersion: (id: string) => void;
   onSaveVersion: () => void;
   onCompareFile: () => void;
+  /** 光标位置：光标落在哪条批注里，那条在列表里标出来 */
+  cursorPos?: number;
+  /** 当前文稿路径和读取版本内容（算每个版本改了几段） */
+  path: string;
+  readVersion: (path: string, id: string) => Promise<string>;
+  /** 空状态里的操作 */
+  onAddHeading?: () => void;
+  onAddNote?: () => void;
+  /** 这次打开以来有修改：可以一键撤销 */
+  canRevert?: boolean;
+  onRevert?: () => void;
 }
 
 /**
@@ -79,65 +92,105 @@ export function SidePanel(p: Props) {
           {p.headings.length ? (
             <div className="ol" ref={outlineRef}>
               {p.headings.map((h, i) => hidden[i] ? null : (
-                <button key={i} className={"oi" + (h.level === 1 ? " l1" : "") + (i === p.currentHeading ? " cur" : "")} style={{ "--lv": Math.max(0, h.level - 2) } as React.CSSProperties} onClick={() => p.onJump(h.pos)}>
+                // 每一级都缩进（一级和二级以前一样靠左）；截断的长标题悬停能看到全文；有子级的标题可以收起（N6）
+                <button key={i} className={"oi l" + Math.min(h.level, 4) + (i === p.currentHeading ? " cur" : "")} style={{ "--lv": Math.max(0, h.level - 1) } as React.CSSProperties} onClick={() => p.onJump(h.pos)} title={h.text}>
                   {kids[i] && <span className={"ofold" + (collapsed.has(okeys[i]) ? " shut" : "")} role="button" aria-label={collapsed.has(okeys[i]) ? "展开子级" : "收起子级"}
                     onClick={(e) => { e.stopPropagation(); toggleKids(okeys[i]); }}><Icon name="chev" size={12} /></span>}
                   <span className="t">{h.text}</span>
-                  {noteCounts[i] > 0 && <span className="cm"><Icon name="note" size={12} />{noteCounts[i]}</span>}
+                  {noteCounts[i] > 0 && <span className="cm" title={`${noteCounts[i]} 条批注`}>{noteCounts[i]}</span>}
                 </button>
               ))}
             </div>
-          ) : <div className="empty">这个文档没有 Markdown 语法的目录</div>}
+          ) : <Empty icon="outline" text="这篇还没有标题。加上标题，这里就会列出目录。" action={p.onAddHeading && { label: "把这一段设成标题", run: p.onAddHeading }} />}
         </div>
       )}
 
       {p.tab === "notes" && (
         <div className="pane">
-          {p.notes.length ? p.notes.map((n) => { const st = stagger(String(n.at)); return (
-            <div key={n.at} className={"cc" + st.cls} style={st.style} onClick={() => p.onJump(n.at + 3)}>
-              <div className="who"><span className="av" style={{ background: avatarColor(n.who) }}>{(n.who || "?").slice(0, 1)}</span><b>{n.who || "未署名"}</b><span>{n.date}</span></div>
-              <div className="q">{n.quote}</div>
-              <div className={"tx" + (n.text ? "" : " ph2")}>{n.text || "还没有写内容"}</div>
-              <div className="acts"><button className="btn sm" onClick={(e) => { e.stopPropagation(); p.onResolve(n); }}>解决</button></div>
-            </div>
-          ); }) : <div className="empty">这个文档还没有批注<br />选择一段文字来添加批注</div>}
+          {p.notes.length ? <div className="nl">{p.notes.map((n) => {
+            const st = stagger(String(n.at));
+            const cur = p.cursorPos !== undefined && p.cursorPos >= n.at && p.cursorPos <= n.at + n.length;
+            return (
+              <div key={n.at} className={"ni" + (cur ? " cur" : "") + st.cls} style={st.style} onClick={() => p.onJump(n.at + 3)}>
+                <div className="q">{n.quote}</div>
+                <div className={"tx" + (n.text ? "" : " ph2")}>{n.text || "还没有写内容"}</div>
+                <div className="by"><span className="who">{n.who || "未署名"}</span><span className="dt">{fmtNoteDate(n.date)}</span>
+                  <button className="ok" onClick={(e) => { e.stopPropagation(); p.onResolve(n); }}>解决</button></div>
+              </div>
+            );
+          })}</div> : <Empty icon="note" text="还没有批注。选中一段文字，就能在旁边写批注。" action={p.onAddNote && { label: "给选中的文字加批注", run: p.onAddNote }} />}
         </div>
       )}
 
       {p.tab === "versions" && (
         <div className="pane">
-          <div className="ph"><b>{p.fileName}</b><span><button className="lnk" onClick={p.onCompareFile} title="选一篇文稿和当前文稿左右对比">与其他文稿对比</button><button className="lnk" onClick={p.onSaveVersion}>{kbd("保存版本 ⌘S")}</button></span></div>
-          {p.versions.length ? <VersionList {...p} /> : <div className="empty">这个文档还没有版本</div>}
+          {/* 头部只留两个操作（文件名和标题栏重复，去掉）；来源的图例给一次 */}
+          <div className="ph">
+            <button className="lnk" onClick={p.onSaveVersion} title={kbd("⌘S 直接存档，不用起名字")}>保存版本…</button>
+            <button className="lnk" onClick={p.onCompareFile} title="选一篇文稿和当前文稿左右对比">与其他文稿对比</button>
+          </div>
+          {p.canRevert && <button className="vrevert" onClick={p.onRevert}><Icon name="reset" size={14} />撤销这次打开以来的修改</button>}
+          {p.versions.length ? <VersionList {...p} /> : <Empty icon="history" text="还没有版本。自动保存的同时会定时留一个版本，也可以随时自己存一个。" action={{ label: "保存一个版本", run: p.onSaveVersion }} />}
         </div>
       )}
     </div>
   );
 }
 
+/** 空状态：一个小图标、一句话、一个操作 */
+function Empty({ icon, text, action }: { icon: string; text: string; action?: { label: string; run: () => void } | false }) {
+  return (
+    <div className="empty">
+      <span className="em-ic"><Icon name={icon} size={18} /></span>
+      <p>{text}</p>
+      {action && <button className="btn sm" onClick={action.run}>{action.label}</button>}
+    </div>
+  );
+}
+
 function VersionList(p: Props) {
   const stagger = useStagger(p.fileName);
+  const [mine, setMine] = useState(false);
+  const stat = useVersionStats(p.path, p.versions, p.readVersion);
   // 记住已经显示过的版本，新出现的从上方滑入
   const seen = useRef<Set<string> | null>(null);
   const fresh = new Set<string>();
   if (seen.current === null) seen.current = new Set(p.versions.map((v) => v.id));
   else p.versions.forEach((v) => { if (!seen.current!.has(v.id)) fresh.add(v.id); });
   useEffect(() => { p.versions.forEach((v) => seen.current!.add(v.id)); });
+  // 同一分钟里有好几个版本时，时间写到秒，免得分不清
+  const minute = (at: number) => Math.floor(at / 60000);
+  const dupMinute = new Set<number>();
+  p.versions.forEach((v, i) => { if (i && minute(p.versions[i - 1].at) === minute(v.at)) { dupMinute.add(minute(v.at)); } });
   let day = "";
-  return <>{p.versions.map((v) => {
-    const t = fmtTime(v.at);
-    const head = t.day !== day ? <div className="vgrp">{(day = t.day)}</div> : null;
-    const st = stagger(v.id);
-    return (
-      <div key={v.id}>
-        {head}
-        <button className={`ver ${v.source}` + (v.id === p.selectedVersion ? " sel" : "") + (fresh.has(v.id) ? " enter" : st.cls)} style={st.style} onClick={() => p.onOpenVersion(v.id)}>
-          <span className="nd" />
-          <span><div className="nm">{versionTitle(v)}</div><div className="tm">{t.hm} · {SRC[v.source]}{v.note ? ` · ${v.note}` : ""}</div></span>
-          {v.id === p.freshVersion && <span className="nw">新</span>}
-        </button>
-      </div>
-    );
-  })}</>;
+  return <>
+    <div className="vbar">
+      <span className="vlegend"><i className="saved" />你保存的<i className="external" />外部修改<i className="auto" />自动</span>
+      <label className="vfilter"><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} />只看我保存的</label>
+    </div>
+    {p.versions.map((v, i) => {
+      if (mine && v.source !== "saved") return null;
+      const t = fmtTime(v.at);
+      const head = t.day !== day ? <div className="vgrp">{(day = t.day)}</div> : null;
+      const st = stagger(v.id);
+      const named = v.source === "saved" && v.name;
+      const sec = dupMinute.has(minute(v.at)) ? ":" + String(new Date(v.at).getSeconds()).padStart(2, "0") : "";
+      return (
+        <div key={v.id}>
+          {head}
+          <button className={`ver ${v.source}` + (v.id === p.selectedVersion ? " sel" : "") + (fresh.has(v.id) ? " enter" : st.cls)} style={st.style} onClick={() => p.onOpenVersion(v.id)} title={SRC[v.source]}>
+            <span className="nd" aria-label={SRC[v.source]} />
+            <span className="vb">
+              <span className="nm">{named ? v.name : changeTitle(stat(i)) || "…"}</span>
+              {v.note && <span className="note">{v.note}</span>}
+            </span>
+            <span className="tm">{t.hm}{sec}</span>
+            {v.id === p.freshVersion && <span className="nw">新</span>}
+          </button>
+        </div>
+      );
+    })}
+  </>;
 }
 
 function countNotesPerHeading(hs: Heading[], notes: Note[]) {
@@ -146,13 +199,6 @@ function countNotesPerHeading(hs: Heading[], notes: Note[]) {
     const start = h.pos;
     return h.level === 1 ? 0 : notes.filter((n) => n.at >= start && n.at < end).length;
   });
-}
-
-export function avatarColor(who: string) {
-  if (who === "我") return "#5A62DE";
-  let h = 0;
-  for (const c of who) h = (h * 31 + c.charCodeAt(0)) % 360;
-  return `hsl(${h} 55% 45%)`;
 }
 
 /** 让外层可以监听 ESC 等按键时把焦点还给编辑器 */

@@ -10,17 +10,21 @@ export function Switch({ on, label, onChange }: { on: boolean; label: string; on
   return <label className="inline"><button className={"switch" + (on ? " on" : "")} role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)} /><span>{label}</span></label>;
 }
 
-/** 设置 → 编辑器里的阅读和书写环境（N13）：字体组合预设、纸张底色、打字机滚动、段落聚焦 */
+/** 设置 → 编辑器里的阅读和书写环境（N13）。字体组合放在「标题字体」上方，作为快捷入口 */
+export function FontPresets({ s, onChange }: { s: Settings; onChange: (p: Partial<Settings>) => void }) {
+  return <SRow label="字体组合" hint="一次填好标题和正文字体，之后还能单独改">
+    <div className="presets">{FONT_PRESETS.map((p) => (
+      <button key={p.id} type="button" className={"btn sm" + (s.headingFont === p.heading && s.bodyFont === p.body ? " on" : "")} onClick={() => onChange({ headingFont: p.heading, bodyFont: p.body })}>{p.name}</button>
+    ))}</div>
+  </SRow>;
+}
+
+/** 纸张底色、打字机滚动、段落聚焦 */
 export function EnvSettings({ s, onChange }: { s: Settings; onChange: (p: Partial<Settings>) => void }) {
   return <>
-    <SRow label="字体组合" hint="一次填好标题和正文字体，之后还能单独改">
-      <div className="presets">{FONT_PRESETS.map((p) => (
-        <button key={p.id} type="button" className={"btn sm" + (s.headingFont === p.heading && s.bodyFont === p.body ? " on" : "")} onClick={() => onChange({ headingFont: p.heading, bodyFont: p.body })}>{p.name}</button>
-      ))}</div>
-    </SRow>
     <SRow label="纸张底色" hint="只作用于正文区"><Segmented label="纸张底色" value={s.paper} options={[["default", "默认"], ["cream", "米白"], ["gray", "护眼灰"]]} onChange={(v) => onChange({ paper: v })} /></SRow>
-    <SRow label="打字机滚动" hint="打字时光标所在行停在屏幕中间偏上"><Switch on={s.typewriter} label="开启" onChange={(v) => onChange({ typewriter: v })} /></SRow>
-    <SRow label="段落聚焦" hint="其他段落变淡；专注模式里标题栏也有开关"><Switch on={s.paraFocus} label="开启" onChange={(v) => onChange({ paraFocus: v })} /></SRow>
+    <SRow label="打字机滚动" hint="保持光标在屏幕中央"><Switch on={s.typewriter} label="开启" onChange={(v) => onChange({ typewriter: v })} /></SRow>
+    <SRow label="段落聚焦" hint="淡化其余段落"><Switch on={s.paraFocus} label="开启" onChange={(v) => onChange({ paraFocus: v })} /></SRow>
   </>;
 }
 

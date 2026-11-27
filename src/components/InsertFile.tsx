@@ -3,14 +3,14 @@
  * - 打开时：最近用过的文件 + 和本文在同一个文件夹里的文件；
  * - 打字：在整个文件夹里按名字找；
  * - 开头输入 @：改为插入文献引用（文件夹里有 .bib 时）；
- * - 文件夹以外的文件交给系统的文件窗口（最底下一行，或 ⌘O）。
+ * - 文件夹以外的文件交给系统的文件窗口（最底下一行）。⌘O 在全局是「打开文件夹」，浮层里不再另作他用。
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icons";
+import { FileBadge } from "./FileBadge";
 import type { TreeNode } from "../lib/backend";
 import { BibEntry, shortAuthor } from "../lib/bib";
 import { baseName, dirOf, relative } from "../lib/paths";
-import { kbd } from "../lib/platform";
 import { CARD_EXT } from "../lib/filePreview";
 import { parseDoi } from "../lib/doi";
 
@@ -27,6 +27,8 @@ const TYPE: Record<string, string> = { md: "md", markdown: "md", pdf: "pdf", doc
 interface Props {
   /** 光标的位置（窗口坐标）：浮层从这里长出来 */
   at: { left: number; top: number; bottom: number };
+  /** 打开时搜索框里已有的内容（正文里打 @ 弹出时是 "@"，直接进文献模式） */
+  initialQuery?: string;
   files: TreeNode[];
   docPath: string;
   root: string;
@@ -39,12 +41,12 @@ interface Props {
   doi?: { targets: DoiTarget[]; add: (doi: string, target: DoiTarget) => Promise<string> };
 }
 
-export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPickOther, onClose, doi }: Props) {
+export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPickOther, onClose, doi, initialQuery }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [doiErr, setDoiErr] = useState("");
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(initialQuery ?? "");
   const [sel, setSel] = useState(0);
   const box = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: at.left - 12, top: at.bottom + 6, up: false });
@@ -115,7 +117,6 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
     if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); if (rows.length) setSel((sel + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length); }
     else if (e.key === "Enter") { e.preventDefault(); pick(rows[sel]); }
     else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); }
-    else if (e.key.toLowerCase() === "o" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); onPickOther(); }
   };
   const hl = (name: string) => {
     if (!qt || bibMode) return name;
@@ -131,7 +132,7 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
         <Icon name={qt || bibMode ? "search" : "link"} size={15} />
         <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} aria-label="输入名字筛选文件"
           placeholder={bib.length ? "插入文件链接，输入名字筛选；@ 插入文献" : "插入文件链接，输入名字筛选"} />
-        {(qt || bibMode) && <span className="ins-n">{bibMode ? `文献 · ${view.total} 条` : `整个文件夹 · ${view.total} 个`}</span>}
+        {(qt || bibMode) && <span className="ins-n">{bibMode ? `${view.total} 条` : `${view.total} 个`}</span>}
       </div>
       <div className="ins-list" role="listbox">
         {view.groups.map((g, gi) => (
@@ -143,15 +144,15 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
               return (
                 <button key={i} type="button" role="option" aria-selected={i === sel} className={"ins-row" + (i === sel ? " sel" : "")} onMouseMove={() => setSel(i)} onClick={() => pick(r)}>
                   {r.kind === "doi" ? <>
-                    <span className="ft bib">DOI</span>
+                    <FileBadge name="x.bib" />
                     <span className="nm">{busy === r.target.path ? "正在向 doi.org 请求…" : <>加到 {r.target.label}</>}<span className="dim">　{r.doi}</span></span>
                     {busy === r.target.path && <span className="ins-spin" aria-hidden="true" />}
                   </> : r.kind === "file" ? <>
-                    <span className={"ft " + (TYPE[extOf(r.node.name)] || "other")}>{extOf(r.node.name) || "文件"}</span>
+                    <FileBadge name={r.node.name} />
                     <span className="nm">{hl(r.node.name.replace(/\.(md|markdown)$/i, ""))}</span>
                     <span className="dir">{r.dir}</span>
                   </> : <>
-                    <span className="ft bib">@</span>
+                    <FileBadge name="x.bib" />
                     <span className="nm">{shortAuthor(r.b.author)}，{r.b.year}　<span className="dim">{r.b.title}</span></span>
                   </>}
                   <kbd className="ret" aria-hidden="true">↵</kbd>
@@ -166,7 +167,7 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
         {view.more > 0 && <div className="ins-more">还有 {view.more} 个，继续输入缩小范围</div>}
       </div>
       <div className="ins-foot">
-        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onPickOther}><Icon name="folder" size={14} />从电脑上选择…<span>{kbd("系统的文件窗口 ⌘O")}</span></button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={onPickOther} title="打开系统的文件窗口，选文件夹以外的文件"><Icon name="folder" size={14} />从电脑上选择…</button>
       </div>
     </div>
   );

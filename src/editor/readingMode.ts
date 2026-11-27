@@ -4,15 +4,14 @@
  * - 可以选中文字复制；
  * - 链接单击就打开，图片点开放大（交给 hooks，由界面处理）；
  * - 待办的勾选框照样能点（那是操作控件，不是改文字）；
- * - 文献引用、脚注悬停显示内容；
+ * - 文献引用、脚注悬停显示内容：和编辑时用同一套浮层（livePreview 的 CiteWidget、footnotes.ts），这里不另做；
  * - 双击正文：退出阅读模式，光标放在双击的位置。
  */
 import { EditorState, Extension, StateEffect, StateField } from "@codemirror/state";
-import { EditorView, hoverTooltip, ViewPlugin } from "@codemirror/view";
+import { EditorView, ViewPlugin } from "@codemirror/view";
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
-import type { SyntaxNode } from "@lezer/common";
+import { linkAt } from "./links";
 
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
 
 export const setReading = StateEffect.define<boolean>();
 export const readingField = StateField.define<boolean>({
@@ -44,33 +43,12 @@ export function docImages(state: EditorState): DocImage[] {
   return out;
 }
 
-/** pos 处的链接地址：[文字](地址)、<地址>、裸网址 */
-export function linkAt(state: EditorState, pos: number): string | null {
-  for (const side of [1, -1] as const) {
-    for (let n: SyntaxNode | null = syntaxTree(state).resolveInner(pos, side); n; n = n.parent) {
-      if (n.name === "Image") return null;
-      if (n.name === "Link" || n.name === "Autolink") {
-        if (/^\[@/.test(state.sliceDoc(n.from, n.from + 2))) return null; // 文献引用
-        const u = n.getChild("URL");
-        return u ? state.sliceDoc(u.from, u.to).replace(/^<|>$/g, "") : null;
-      }
-      if (n.name === "URL" && n.parent?.name !== "Link" && n.parent?.name !== "Image") return state.sliceDoc(n.from, n.to);
-    }
-  }
-  return null;
-}
-
 export interface ReadingHooks {
   openImage: (view: EditorView, index: number, images: DocImage[], rect: DOMRect) => void;
   openLink: (href: string) => void;
   /** 双击正文：退出阅读模式，光标放在 pos */
   exitAt: (pos: number) => void;
-  /** 文献：作者、年份、标题、出处 */
-  cite: (key: string) => { author: string; year: string; title: string; venue: string } | null;
 }
-
-const isMacUA = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent);
-const modClick = (e: MouseEvent) => (isMacUA ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey;
 
 function clickHandlers(hooks: () => ReadingHooks | undefined) {
   return ViewPlugin.fromClass(class {
@@ -87,8 +65,6 @@ function clickHandlers(hooks: () => ReadingHooks | undefined) {
       this.view.dom.removeEventListener("focusin", this.focusin, true);
     }
     down = (e: MouseEvent) => {
-      // 编辑时按住 ⌘（Windows 上 Ctrl）点链接也能打开；拦下来，免得 CodeMirror 当成多加一个光标
-      if (!isReading(this.view.state) && modClick(e) && (e.target as HTMLElement).closest(".hm-link")) { e.preventDefault(); e.stopPropagation(); return; }
       if (!isReading(this.view.state) || e.button !== 0) return;
       const t = e.target as HTMLElement;
       if (t.closest(".hm-check, .hm-fold, .hm-folded")) return; // 待办勾选框、折叠照常
@@ -107,7 +83,8 @@ function clickHandlers(hooks: () => ReadingHooks | undefined) {
       if (t.closest(".hm-notedot, .hm-table td, .hm-table th, .hm-itools, .hm-igrip, .hm-ttools, .hm-colgrip")) { e.preventDefault(); e.stopPropagation(); }
     };
     click = (e: MouseEvent) => {
-      if (!(isReading(this.view.state) || modClick(e)) || e.button !== 0 || e.detail > 1) return;
+      // 编辑时的 ⌘ / Ctrl + 点击在 links.ts 里处理；这里只管阅读模式的单击
+      if (!isReading(this.view.state) || e.button !== 0 || e.detail > 1) return;
       const t = e.target as HTMLElement;
       const el = t.closest<HTMLElement>(".hm-link, .cm-content a");
       if (!el) return;
@@ -117,10 +94,10 @@ function clickHandlers(hooks: () => ReadingHooks | undefined) {
       let pos: number | null = null;
       try { pos = this.view.posAtDOM(el) + 1; } catch { pos = this.view.posAtCoords({ x: e.clientX, y: e.clientY }); }
       if (pos === null) return;
-      const href = linkAt(this.view.state, pos);
-      if (!href) return;
+      const l = linkAt(this.view.state, pos);
+      if (!l) return;
       e.preventDefault(); e.stopPropagation();
-      hooks()?.openLink(href);
+      hooks()?.openLink(l.href);
     };
     dbl = (e: MouseEvent) => {
       if (!isReading(this.view.state)) return;
@@ -135,38 +112,6 @@ function clickHandlers(hooks: () => ReadingHooks | undefined) {
   });
 }
 
-/** 阅读模式里，文献引用和脚注悬停显示内容 */
-function hoverCards(hooks: () => ReadingHooks | undefined) {
-  return hoverTooltip((view, pos) => {
-    if (!isReading(view.state)) return null;
-    const line = view.state.doc.lineAt(pos);
-    for (const m of line.text.matchAll(/\[(@[^\]]+|\^[^\]\s]+)\]/g)) {
-      const from = line.from + m.index!, to = from + m[0].length;
-      if (pos < from || pos > to) continue;
-      if (m[1][0] === "@") {
-        const keys = [...m[1].matchAll(/@([\w:.-]+)/g)].map((k) => k[1]);
-        const html = keys.map((k) => {
-          const c = hooks()?.cite(k);
-          return c ? `<div class="hc-cite"><b>${esc(c.author)}</b><span class="num">${esc(c.year)}</span><div class="hc-t">${esc(c.title)}</div>${c.venue ? `<div class="hc-v">${esc(c.venue)}</div>` : ""}</div>`
-            : `<div class="hc-cite"><span class="hc-miss">文献库里没有 @${esc(k)}</span></div>`;
-        }).join("");
-        return { pos: from, end: to, above: true, create: () => card(html) };
-      }
-      const id = m[1].slice(1);
-      const def = view.state.doc.toString().match(new RegExp(`^\\[\\^${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]:\\s*(.*)$`, "m"));
-      if (!def) return null;
-      return { pos: from, end: to, above: true, create: () => card(`<div class="hc-fn">${esc(def[1])}</div>`) };
-    }
-    return null;
-  }, { hoverTime: 250 });
-}
-function card(html: string) {
-  const dom = document.createElement("div");
-  dom.className = "hm-hovercard";
-  dom.innerHTML = html;
-  return { dom };
-}
-
 export function readingMode(hooks: () => ReadingHooks | undefined): Extension {
-  return [readingField, clickHandlers(hooks), hoverCards(hooks)];
+  return [readingField, clickHandlers(hooks)];
 }

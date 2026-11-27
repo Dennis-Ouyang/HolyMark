@@ -3,6 +3,7 @@ import { EditorSelection, EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
+import { trackPair } from "./emptyPairs";
 
 export type InlineKind = "bold" | "italic" | "strike" | "code" | "math" | "sup" | "sub" | "highlight";
 const MARK: Record<InlineKind, string> = { bold: "**", italic: "*", strike: "~~", code: "`", math: "$", sup: "^", sub: "~", highlight: "==" };
@@ -195,7 +196,10 @@ export function toggleInline(view: EditorView, kind: InlineKind, keep = false) {
     const { state } = view;
     const r = state.selection.main;
     const res = toggleStyle(state, r.from, r.to, kind, keep);
-    if (res) view.dispatch({ changes: res.changes, selection: EditorSelection.range(res.anchor, res.head), userEvent: "input.format" });
+    if (res) {
+      const empty = r.empty && res.changes.insert === MARK[kind] + MARK[kind];
+      view.dispatch({ changes: res.changes, selection: EditorSelection.range(res.anchor, res.head), userEvent: "input.format", effects: empty ? trackPair.of({ from: r.from, mark: MARK[kind] }) : [] });
+    }
     view.focus();
     return;
   }
@@ -203,7 +207,7 @@ export function toggleInline(view: EditorView, kind: InlineKind, keep = false) {
   const { state } = view;
   view.dispatch(state.changeByRange((r) => {
     if (r.empty) {
-      return { changes: { from: r.from, insert: mk + mk }, range: EditorSelection.cursor(r.from + mk.length) };
+      return { changes: { from: r.from, insert: mk + mk }, range: EditorSelection.cursor(r.from + mk.length), effects: trackPair.of({ from: r.from, mark: mk }) };
     }
     const before = state.sliceDoc(r.from - mk.length, r.from);
     const after = state.sliceDoc(r.to, r.to + mk.length);

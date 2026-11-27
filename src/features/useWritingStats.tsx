@@ -2,17 +2,16 @@
  * N14 安静的写作统计：
  * - 打开文稿时定今天的起点，每次自动保存记一次终点（存在应用自己的存储里）；
  * - 状态栏「全文」字数浮窗里多两样：今天净增多少字、最近 7 天每天一根的小柱子；
- * - 文件树里悬停一篇显示它的字数，悬停文件夹显示合计。
+ * - 文件树里悬停一篇显示它的字数（交给统一的悬停提示 TooltipLayer）。
  * 不提醒、不打卡，也不用颜色强调。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Backend, TreeNode } from "../lib/backend";
 import { countWords, plainText, wordCounter } from "../lib/markdown";
 import { dayKey, lastDays, loadLog, record, renameFile, saveLog, WritingLog } from "../lib/writingLog";
-import { Presence } from "../components/Presence";
+import { setTipSource } from "../components/Tooltip";
 
 const isMd = (p: string) => /\.(md|markdown)$/i.test(p);
-const flatten = (ns: TreeNode[]): TreeNode[] => ns.flatMap((n) => (n.dir ? flatten(n.children) : [n]));
 
 export function useWritingStats({ be, tree, livePath, liveText, withPunct }: { be: Backend | null; tree: TreeNode[]; livePath: () => string; liveText: () => string; withPunct: boolean }) {
   const log = useRef<WritingLog>(loadLog());
@@ -36,7 +35,6 @@ export function useWritingStats({ be, tree, livePath, liveText, withPunct }: { b
   }, [rev, withPunct]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---------- 文件树悬停 ---------- */
-  const [tip, setTip] = useState<{ left: number; top: number; main: string; sub?: string } | null>(null);
   const cache = useRef(new Map<string, number>());
   useEffect(() => { cache.current.clear(); }, [tree]);
   const countOf = async (p: string): Promise<number> => {
@@ -50,42 +48,14 @@ export function useWritingStats({ be, tree, livePath, liveText, withPunct }: { b
   };
   const ctx = useRef({ countOf, tree });
   ctx.current = { countOf, tree };
-  useEffect(() => {
-    let timer = 0, cur: HTMLElement | null = null;
-    const find = (path: string, ns: TreeNode[]): TreeNode | null => { for (const n of ns) { if (n.path === path) return n; const c = n.dir ? find(path, n.children) : null; if (c) return c; } return null; };
-    const over = (e: MouseEvent) => {
-      const el = (e.target as HTMLElement).closest<HTMLElement>(".tree .tn[data-path]");
-      if (el === cur) return;
-      cur = el;
-      window.clearTimeout(timer);
-      setTip(null);
-      if (!el) return;
-      timer = window.setTimeout(async () => {
-        const p = el.dataset.path!;
-        const node = find(p, ctx.current.tree);
-        if (!node) return;
-        const r = el.getBoundingClientRect();
-        const pos = { left: Math.round(r.right + 8), top: Math.round(r.top + r.height / 2 - 14) };
-        if (!node.dir) {
-          if (!isMd(p)) return;
-          const n = await ctx.current.countOf(p);
-          if (cur === el) setTip({ ...pos, main: `${n.toLocaleString()} 字` });
-        } else {
-          const files = flatten(node.children).filter((f) => isMd(f.path));
-          if (!files.length) return;
-          const ns = await Promise.all(files.map((f) => ctx.current.countOf(f.path)));
-          if (cur === el) setTip({ ...pos, main: `共 ${ns.reduce((a, b) => a + b, 0).toLocaleString()} 字`, sub: `${files.length} 篇` });
-        }
-      }, 450);
-    };
-    const leave = () => { cur = null; window.clearTimeout(timer); setTip(null); };
-    document.addEventListener("mouseover", over);
-    document.addEventListener("mousedown", leave, true);
-    return () => { document.removeEventListener("mouseover", over); document.removeEventListener("mousedown", leave, true); window.clearTimeout(timer); };
-  }, []);
-  const treeTip = <Presence ms={90}>{tip && <div className="hm-tip" role="tooltip" style={{ left: tip.left, top: tip.top }}><b className="num">{tip.main}</b>{tip.sub && <span className="num">{tip.sub}</span>}</div>}</Presence>;
+  // 文件树悬停 Markdown 文稿显示字数：交给统一的 TooltipLayer（data-tipsrc="words"），只有一个提示框
+  useEffect(() => setTipSource("words", async (el) => {
+    const p = el.dataset.path;
+    if (!p || !isMd(p)) return null;
+    return `${(await ctx.current.countOf(p)).toLocaleString()} 字`;
+  }), []);
 
-  return { noteOpen, noteSave, noteMove, Section, treeTip };
+  return { noteOpen, noteSave, noteMove, Section };
 }
 
 /** 最近 7 天：每天一根柱子，等宽数字，不用颜色强调；悬停哪根，上面就显示哪天的数 */

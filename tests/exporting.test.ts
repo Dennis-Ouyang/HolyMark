@@ -139,3 +139,39 @@ describe("导出提示的归并", async () => {
     ]);
   });
 });
+
+describe("列表紧跟段落（B6）", () => {
+  it("Pandoc 的读法允许列表前没有空行，和编辑器、导出预览一致", () => {
+    const y = defaultsYaml(opts(), { bibliography: [], docDir: "/x" });
+    expect(y).toMatch(/^from: markdown\+east_asian_line_breaks\+mark\+lists_without_preceding_blankline$/m);
+  });
+});
+
+
+import { applyScene, SCENES } from "../src/lib/exportPresets";
+import { DEFAULT_OPTS } from "../src/lib/exporting";
+describe("导出默认值和场景预设（G2）", () => {
+  it("默认 A4、黑色标题", () => {
+    expect(DEFAULT_OPTS.paper).toBe("A4");
+    expect(DEFAULT_OPTS.H[1].color).toBe("black");
+  });
+  it("场景预设在默认值上改，格式保持", () => {
+    expect(SCENES.map((s) => s.name)).toEqual(["学位论文", "课程论文", "投稿", "打印稿"]);
+    const t = applyScene("thesis", "pdf");
+    expect(t.fmt).toBe("pdf");
+    expect(t.toc).toBe(true);
+    expect(t.H[1].num).toBe("第{一}章");
+    expect(applyScene("print", "docx").footer).toContain("{总页数}");
+  });
+});
+
+import { mergeDocs } from "../src/components/ExportDialog";
+describe("批量导出：合并成一个文件（G3）", () => {
+  it("第一篇的属性区保留，后面的去掉；子文件夹里的相对路径改成相对合并后的位置", () => {
+    const out = mergeDocs("/w/正文", [
+      { path: "/w/正文/01.md", text: "---\ntitle: 论文\n---\n# 一\n\n![图](assets/a.png)\n" },
+      { path: "/w/正文/附录/02.md", text: "---\ntitle: 附录\n---\n# 二\n\n![图](b.png) [网页](https://x.org)\n" },
+    ]);
+    expect(out).toBe("---\ntitle: 论文\n---\n# 一\n\n![图](assets/a.png)\n\n# 二\n\n![图](附录/b.png) [网页](https://x.org)\n");
+  });
+});

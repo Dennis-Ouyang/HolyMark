@@ -15,7 +15,7 @@
         "title": "HolyMark",
         "width": 1360,
         "height": 860,
-        "minWidth": 900,
+        "minWidth": 560,
         "minHeight": 600,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
@@ -28,12 +28,53 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' asset: http://asset.localhost data: blob:",
+        "font-src": "'self' data:",
+        "connect-src": "'self' ipc: http://ipc.localhost asset: http://asset.localhost",
+        "worker-src": "'self' blob:",
+        "object-src": "'none'",
+        "frame-src": "'none'",
+        "base-uri": "'none'",
+        "form-action": "'none'"
+      },
+      "devCsp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'unsafe-inline'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' asset: http://asset.localhost data: blob:",
+        "font-src": "'self' data:",
+        "connect-src": "'self' ipc: http://ipc.localhost asset: http://asset.localhost ws://localhost:1420 http://localhost:1420",
+        "worker-src": "'self' blob:",
+        "object-src": "'none'",
+        "frame-src": "'none'",
+        "base-uri": "'none'",
+        "form-action": "'none'"
+      },
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "**"
-        ]
+        "scope": {
+          "allow": [
+            "$HOME/**",
+            "$DESKTOP/**",
+            "$DOCUMENT/**",
+            "$DOWNLOAD/**",
+            "$PICTURE/**",
+            "/Volumes/**"
+          ],
+          "deny": [
+            "$HOME/Library/Keychains/**",
+            "$HOME/Library/Cookies/**",
+            "$HOME/Library/Mail/**",
+            "$HOME/Library/Messages/**",
+            "$CONFIG/**",
+            "$LOCALDATA/**"
+          ],
+          "requireLiteralLeadingDot": true
+        }
       }
     }
   },

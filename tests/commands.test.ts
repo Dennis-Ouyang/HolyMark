@@ -224,3 +224,19 @@ describe("批注：找到光标所在的批注", async () => {
     expect(parseBody("没有署名的批注").text).toBe("没有署名的批注");
   });
 });
+
+import { columnAlign, isNumericColumn, parseTable, serializeTable, setColumnAlign } from "../src/editor/tableWidget";
+describe("表格的数字列和对齐（F5）", () => {
+  const m = parseTable("| 项目 | 规模 | 金额 | 占比 |\n|---|---|---|---|\n| 访谈 | 48 | ¥1,200.50 | 12% |\n| 日志 | 1036 | 30 元 | 3.5% |");
+  it("数字列默认右对齐", () => {
+    expect([0, 1, 2, 3].map((c) => isNumericColumn(m, c))).toEqual([false, true, true, true]);
+    expect(columnAlign(m, 0)).toBe("left");
+    expect(columnAlign(m, 1)).toBe("right");
+  });
+  it("设置对齐写进分隔行，列宽不变", () => {
+    setColumnAlign(m, 0, "center");
+    setColumnAlign(m, 1, "left");
+    expect(serializeTable(m).split("\n")[1]).toBe("| :---: | :--- | --- | --- |");
+    expect(columnAlign(m, 1)).toBe("left");
+  });
+});

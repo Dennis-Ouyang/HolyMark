@@ -49,7 +49,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .separator()
         .item(&item("find", "查找…", Some("CmdOrCtrl+F"))?)
         .item(&item("search", "在文件夹中搜索…", Some("CmdOrCtrl+K"))?)
-        .item(&item("folder_replace", "在文件夹中替换…", Some("CmdOrCtrl+Alt+F"))?)
+        .item(&item("folder_replace", "在文件夹里替换…", Some("CmdOrCtrl+Alt+F"))?)
         .build()?;
 
     let para = SubmenuBuilder::new(app, "段落")

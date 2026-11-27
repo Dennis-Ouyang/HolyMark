@@ -69,7 +69,6 @@ import i_typography from "@tabler/icons/outline/typography.svg?raw";
 import i_book from "@tabler/icons/outline/book.svg?raw";
 import i_left from "@tabler/icons/outline/arrow-left.svg?raw";
 import i_right from "@tabler/icons/outline/arrow-right.svg?raw";
-import i_chevr from "@tabler/icons/outline/chevron-right.svg?raw";
 import i_replace from "@tabler/icons/outline/replace.svg?raw";
 import i_clip from "@tabler/icons/outline/clipboard-text.svg?raw";
 import i_zoomin from "@tabler/icons/outline/zoom-in.svg?raw";
@@ -80,6 +79,31 @@ import i_chart from "@tabler/icons/outline/chart-bar.svg?raw";
 import i_parafocus from "@tabler/icons/outline/focus-2.svg?raw";
 import i_typewriter from "@tabler/icons/outline/keyboard.svg?raw";
 import i_paper from "@tabler/icons/outline/paint.svg?raw";
+import i_grip from "@tabler/icons/outline/grip-vertical.svg?raw";
+import i_down from "@tabler/icons/outline/arrow-down.svg?raw";
+import i_upArrow from "@tabler/icons/outline/arrow-up.svg?raw";
+import i_fileOff from "@tabler/icons/outline/file-off.svg?raw";
+import i_dots from "@tabler/icons/outline/dots.svg?raw";
+import i_info from "@tabler/icons/outline/info-circle.svg?raw";
+import i_external from "@tabler/icons/outline/external-link.svg?raw";
+import i_eye from "@tabler/icons/outline/eye.svg?raw";
+import i_chevRight from "@tabler/icons/outline/chevron-right.svg?raw";
+import i_zip from "@tabler/icons/outline/file-zip.svg?raw";
+import i_photo from "@tabler/icons/outline/photo.svg?raw";
+import i_movie from "@tabler/icons/outline/movie.svg?raw";
+import i_music from "@tabler/icons/outline/music.svg?raw";
+import i_braces from "@tabler/icons/outline/braces.svg?raw";
+import i_fileUnknown from "@tabler/icons/outline/file-unknown.svg?raw";
+import i_moveTo from "@tabler/icons/outline/folder-symlink.svg?raw";
+import i_folderPlus from "@tabler/icons/outline/folder-plus.svg?raw";
+import i_filePlus from "@tabler/icons/outline/file-plus.svg?raw";
+import i_pencil from "@tabler/icons/outline/pencil.svg?raw";
+import i_alignLeft from "@tabler/icons/outline/align-left.svg?raw";
+import i_alignCenter from "@tabler/icons/outline/align-center.svg?raw";
+import i_alignRight from "@tabler/icons/outline/align-right.svg?raw";
+import i_rows from "@tabler/icons/outline/layout-rows.svg?raw";
+import i_outline from "@tabler/icons/outline/list-tree.svg?raw";
+import i_history from "@tabler/icons/outline/history.svg?raw";
 
 const RAW: Record<string, string> = {
   side: i_side,
@@ -148,7 +172,6 @@ const RAW: Record<string, string> = {
   book: i_book,
   left: i_left,
   right: i_right,
-  chevr: i_chevr,
   replace: i_replace,
   clip: i_clip,
   zoomin: i_zoomin,
@@ -159,6 +182,31 @@ const RAW: Record<string, string> = {
   parafocus: i_parafocus,
   typewriter: i_typewriter,
   paper: i_paper,
+  grip: i_grip,
+  down: i_down,
+  upArrow: i_upArrow,
+  fileOff: i_fileOff,
+  dots: i_dots,
+  info: i_info,
+  external: i_external,
+  eye: i_eye,
+  chevRight: i_chevRight,
+  zip: i_zip,
+  photo: i_photo,
+  movie: i_movie,
+  music: i_music,
+  braces: i_braces,
+  fileUnknown: i_fileUnknown,
+  moveTo: i_moveTo,
+  folderPlus: i_folderPlus,
+  filePlus: i_filePlus,
+  pencil: i_pencil,
+  alignLeft: i_alignLeft,
+  alignCenter: i_alignCenter,
+  alignRight: i_alignRight,
+  rows: i_rows,
+  outline: i_outline,
+  history: i_history,
 };
 
 /** 去掉外层 svg 和 Tabler 用来占位的透明方块，只留下线条 */

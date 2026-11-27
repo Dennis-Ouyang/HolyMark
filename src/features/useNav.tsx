@@ -1,14 +1,14 @@
 /**
  * N4 跳转历史：点目录、搜索结果、文内链接、文件卡片之前先记下现在的位置（文件 + 位置），可以返回、前进。
- * 快捷键：macOS ⌃⌘← / ⌃⌘→，Windows 和浏览器预览 Alt+← / Alt+→（⌘[ ⌘] 已经给了列表缩进）。
+ * 快捷键：macOS ⌃⌘← / ⌃⌘→，Windows 和浏览器预览 Alt+← / Alt+→（⌘[ ⌘] 已经给了列表缩进）；写在命令注册表里，
+ * 但要看有没有历史才拦按键，所以由这里自己处理（ownKeys），不挂原生菜单加速键。
  * 有历史时，标题栏路径左边出现两个小箭头，没有就不显示。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EditorView } from "@codemirror/view";
 import { emptyNav, goBack, goForward, leave, Loc, Nav, renameNav } from "../lib/navHistory";
-import { isMac } from "../lib/platform";
 import { Icon } from "../components/Icons";
-import { kbd } from "../lib/platform";
+import { matchKeys, shortcutOf, tipOf } from "../lib/commandRegistry";
 
 interface Ctx {
   view: () => EditorView | null;
@@ -17,8 +17,6 @@ interface Ctx {
   open: (path: string) => Promise<void>;
 }
 
-export const BACK_KEY = isMac ? "⌃⌘←" : "Alt+←";
-export const FWD_KEY = isMac ? "⌃⌘→" : "Alt+→";
 
 export function useNav(ctx: Ctx) {
   const [nav, setNav] = useState<Nav>(emptyNav);
@@ -47,15 +45,16 @@ export function useNav(ctx: Ctx) {
   useEffect(() => {
     // 捕获阶段处理：编辑器里 Alt+← 本来是按语法单元移动光标，这里优先当返回
     const f = (e: KeyboardEvent) => {
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-      const hit = isMac ? e.metaKey && e.ctrlKey && !e.altKey && !e.shiftKey : e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
-      if (!hit) return;
+      // 按键从命令注册表读（N15 改过快捷键也跟着变）
+      const hit = (id: string) => { const k = shortcutOf(id); return !!k && matchKeys(e, k); };
+      const dir = hit("nav_back") ? "back" : hit("nav_forward") ? "fwd" : null;
+      if (!dir) return;
       const ae = document.activeElement as HTMLElement | null;
       if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) return;
       const n = navRef.current;
-      if (e.key === "ArrowLeft" ? !n.back.length : !n.fwd.length) return;
+      if (dir === "back" ? !n.back.length : !n.fwd.length) return;
       e.preventDefault(); e.stopPropagation();
-      if (e.key === "ArrowLeft") back(); else forward();
+      if (dir === "back") back(); else forward();
     };
     addEventListener("keydown", f, true);
     return () => removeEventListener("keydown", f, true);
@@ -64,8 +63,8 @@ export function useNav(ctx: Ctx) {
   const has = nav.back.length > 0 || nav.fwd.length > 0;
   const arrows = has ? (
     <span className="navarrows">
-      <button className="ib sm" disabled={!nav.back.length} title={kbd(`返回 ${BACK_KEY}`)} aria-label="返回" onClick={back}><Icon name="left" size={14} /></button>
-      <button className="ib sm" disabled={!nav.fwd.length} title={kbd(`前进 ${FWD_KEY}`)} aria-label="前进" onClick={forward}><Icon name="right" size={14} /></button>
+      <button className="ib sm" disabled={!nav.back.length} title={tipOf("nav_back")} aria-label="返回" onClick={back}><Icon name="left" size={14} /></button>
+      <button className="ib sm" disabled={!nav.fwd.length} title={tipOf("nav_forward")} aria-label="前进" onClick={forward}><Icon name="right" size={14} /></button>
     </span>
   ) : null;
   return { record, back, forward, rename, arrows, canBack: nav.back.length > 0, canForward: nav.fwd.length > 0 };

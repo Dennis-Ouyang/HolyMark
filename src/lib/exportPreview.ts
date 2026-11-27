@@ -2,9 +2,10 @@
 import { marked } from "marked";
 import katex from "katex";
 import type { BibEntry } from "./bib";
-import { shortAuthor } from "./bib";
+import { citeText } from "./bib";
 import { citedKeys, DOCX_HINTS, dropNotes, ExportOptions, fmField, Level, numberHeadings, PAPERS, pageSize, PDF_DEFAULTS, prepareAssets, splitFrontMatter } from "./exporting";
 import { fontStack } from "./settings";
+import { sanitizeHTML } from "./sanitize";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
 const NOTE = /\{==([\s\S]+?)==\}\{>>([\s\S]*?)<<\}/g;
@@ -51,7 +52,7 @@ export function previewHTML(src: string, o: ExportOptions, ctx: PreviewCtx): { h
     .replace(/(^|[^\\$])\$([^$\n]+?)\$/g, (_m, a: string, t: string) => a + tex(t, false))
     .replace(/\[(@[\w:.-]+(?:\s*;\s*@[\w:.-]+)*)\]/g, (_m, inner: string) => {
       const keys = inner.split(";").map((k) => k.trim().slice(1));
-      return "（" + keys.map((k) => { const b = ctx.bib.get(k); return b ? `${esc(shortAuthor(b.author))}，${esc(b.year)}` : `@${esc(k)}?`; }).join("；") + "）";
+      return esc(citeText(keys, ctx.bib));
     }));
   // marked 不认 ==高亮==、^上标^、~下标~，先换成 HTML（Pandoc 导出时自己处理）
   body = outsideCode(body, (s) => s
@@ -67,7 +68,7 @@ export function previewHTML(src: string, o: ExportOptions, ctx: PreviewCtx): { h
   };
   let html = marked.parse(body, { gfm: true, renderer, async: false }) as string;
   // 只有一张图片的段落：居中，不缩进
-  html = html.replace(/<p>(<span class="pv-fig">[\s\S]*?<\/span>)<\/p>/g, '<p class="pv-figp">$1</p>');
+  html = html.replace(/<p>(<span class="pv-fig"[^>]*>[\s\S]*?<\/span>)<\/p>/g, '<p class="pv-figp">$1</p>');
   if (o.toc) {
     const hs = [...html.matchAll(/<h([123])[^>]*>([\s\S]*?)<\/h\1>/g)];
     html = `<div class="pv-toc"><h1>目录</h1>${hs.map((h) => `<div class="l${h[1]}">${h[2]}</div>`).join("")}</div>` + html;
@@ -78,7 +79,8 @@ export function previewHTML(src: string, o: ExportOptions, ctx: PreviewCtx): { h
     const refs = keys.map((k) => ctx.bib.get(k)!).sort((a, b) => a.author.localeCompare(b.author, "zh"));
     html += `<h1 class="pv-refh">参考文献</h1><div class="pv-refs">${refs.map((r) => `<p>${esc(r.author.replace(/\s+and\s+/g, "，"))}. ${r.year}. ${esc(r.title)}.</p>`).join("")}</div>`;
   }
-  return { html, notes, title };
+  // 文稿里的原始 HTML 不能在页面里执行：去掉脚本、事件处理器、javascript: 地址
+  return { html: sanitizeHTML(html), notes, title };
 }
 
 /** 预览实际使用的版式：没填的字段用参考文档（这里只能近似成 Pandoc 默认参考文档）或 PDF 的默认值 */

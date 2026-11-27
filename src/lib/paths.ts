@@ -55,3 +55,9 @@ export function isInside(root: string, p: string): boolean {
   const r = root.replace(/\/+$/, "") + "/";
   return same(p.slice(0, r.length), r, isWin(root));
 }
+
+/** Markdown 文稿：.md 或 .markdown，不分大小写 */
+export const MD_EXT = /\.(md|markdown)$/i;
+export const isMarkdown = (name: string) => MD_EXT.test(name);
+/** 去掉 Markdown 扩展名（给人看的名字） */
+export const stripMd = (name: string) => name.replace(MD_EXT, "");

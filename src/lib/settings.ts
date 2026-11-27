@@ -6,8 +6,6 @@ export interface Settings {
   theme: "system" | "light" | "dark";
   /** 主题色（按钮、选中、光标的颜色） */
   accent: AccentName;
-  /** 关闭应用时，如果这次打开以后改过文件，问一声要不要保存 */
-  askOnClose: boolean;
   headingFont: string;
   bodyFont: string;
   fontSize: number;
@@ -39,6 +37,15 @@ export interface Settings {
   externalReading: boolean;
   /** 中文排版整理的规则 */
   tidy: TidyRules;
+  /** ⌘N 新建的文稿放在当前文稿旁边，还是文件夹最外层 */
+  newDocPlace: "current" | "root";
+  /** 粘贴、拖进来的图片存在文稿旁边的哪个文件夹 */
+  imageDir: string;
+  /** 左栏、右栏的宽度（可拖动调整，双击拖拽线恢复默认） */
+  sideWidth: number;
+  panelWidth: number;
+  /** 批注署名：加批注时写在作者处，导出到 Word 后对方看到的名字。空着时第一次启动用系统用户名填上 */
+  noteAuthor: string;
   /** 设置格式版本，用来迁移旧的默认值 */
   v: number;
 }
@@ -49,7 +56,6 @@ const UI_FONT = isWindows ? "Microsoft YaHei" : "PingFang SC";
 export const DEFAULTS: Settings = {
   theme: "system",
   accent: "indigo",
-  askOnClose: true,
   headingFont: UI_FONT,
   bodyFont: UI_FONT,
   fontSize: 16,
@@ -72,6 +78,11 @@ export const DEFAULTS: Settings = {
   paper: "default",
   typewriter: false,
   paraFocus: false,
+  noteAuthor: "",
+  newDocPlace: "current",
+  imageDir: "assets",
+  sideWidth: 248,
+  panelWidth: 300,
   v: 2,
 };
 

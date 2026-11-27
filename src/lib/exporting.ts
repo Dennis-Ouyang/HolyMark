@@ -58,6 +58,15 @@ export const EMPTY: ExportOptions = {
   H: { 1: { ...H0 }, 2: { ...H0 }, 3: { ...H0 } }, csl: "", notes: "comment", toc: false, eqNum: false, extra: "",
   mdNotes: "keep", mdCite: "keep", mdFm: "keep",
 };
+/**
+ * 为中文用户调过的默认值（G2）：A4 纸、黑色标题（Pandoc 默认是 Letter 纸、蓝色标题）。
+ * 「恢复默认」回到这里；EMPTY 是「什么都不改」，测试和场景预设在它上面叠加。
+ */
+export const DEFAULT_OPTS: ExportOptions = {
+  ...EMPTY, paper: "A4",
+  H: { 1: { ...H0, color: "black" }, 2: { ...H0, color: "black" }, 3: { ...H0, color: "black" } },
+};
+
 export function cloneOpts(o: ExportOptions): ExportOptions {
   return JSON.parse(JSON.stringify(o));
 }
@@ -372,7 +381,9 @@ export function typstTemplate(o: ExportOptions, title: string): string {
     "  #text(weight: \"bold\")[#it.term]",
     "  #block(inset: (left: 1.5em, top: -0.4em))[#it.description]",
     "]",
-    "#set table(inset: 6pt, stroke: 0.5pt)",
+    // 三线表：顶线、表头下线、底线，没有竖线（和编辑器里的表格一致）
+    "#set table(inset: 6pt, stroke: (x, y) => if y == 0 { (bottom: 0.5pt) } else { none })",
+    "#show table: it => block(stroke: (top: 1pt, bottom: 1pt), inset: (y: 0pt), it)",
     ...(o.eqNum ? ["#set math.equation(numbering: \"(1)\")"] : []),
     "#show figure.where(kind: table): set figure.caption(position: top)",
     "#show figure.where(kind: image): set figure.caption(position: bottom)",
@@ -442,7 +453,7 @@ export function defaultsYaml(o: ExportOptions, ctx: DefaultsCtx): string {
   L.push(
     "# HolyMark 导出配置（Pandoc defaults 文件），每次导出时更新。",
     `# 命令行里也能用：pandoc -d .holymark/export/${defaultsName(o.fmt)} 稿件.md -o 稿件.${isPdf ? "pdf" : "docx"}`,
-    "from: markdown+east_asian_line_breaks+mark",
+    "from: markdown+east_asian_line_breaks+mark+lists_without_preceding_blankline",
     `to: ${isPdf ? "typst" : "docx"}`,
     "standalone: true",
   );
@@ -467,7 +478,7 @@ export function defaultsYaml(o: ExportOptions, ctx: DefaultsCtx): string {
 
 const KEY = "holymark-export";
 /** Word 和 PDF 共用一套选项，切换格式不用重填 */
-interface Saved { last: ExportOptions | null; presets: { name: string; opts: ExportOptions }[] }
+export interface Saved { last: ExportOptions | null; presets: { name: string; opts: ExportOptions }[] }
 export function loadSaved(): Saved {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || "{}");
