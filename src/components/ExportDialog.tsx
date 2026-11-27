@@ -19,6 +19,7 @@ import { Segmented } from "./Segmented";
 import { isWindows } from "../lib/platform";
 import { applyScene, loadProject, saveProject, SCENES } from "../lib/exportPresets";
 import { usePresetIO } from "../features/usePresetIO";
+import { htmlCss } from "../lib/htmlExport";
 import type { NoticeAction, NoticeKind } from "../editor/notice";
 
 interface Props {
@@ -51,6 +52,7 @@ export const FORMATS: { id: Fmt; label: string; ext: string; pandoc: boolean }[]
   { id: "docx", label: "Word", ext: "docx", pandoc: true },
   { id: "pdf", label: "PDF", ext: "pdf", pandoc: true },
   { id: "md", label: "Markdown", ext: "md", pandoc: false },
+  { id: "html", label: "HTML", ext: "html", pandoc: true },
 ];
 const FMTS: [Fmt, string][] = FORMATS.map((f) => [f.id, f.label]);
 const EXT = Object.fromEntries(FORMATS.map((f) => [f.id, f.ext])) as Record<Fmt, string>;
@@ -71,6 +73,7 @@ const STAGES: Record<Fmt, [Stage, string][]> = {
   docx: [["prepare", "整理文稿、把图表转成图片"], ["style", "写入 Word 样式"], ["pandoc", "Pandoc 生成 Word 文档"], ["write", "保存文件"]],
   pdf: [["prepare", "整理文稿、把图表转成图片"], ["style", "写入版式模板"], ["pandoc", "Pandoc 转换"], ["typst", "Typst 排版"], ["write", "保存文件"]],
   md: [["write", "保存文件"]],
+  html: [["prepare", "整理文稿、把图表转成图片"], ["style", "写入阅读版式"], ["pandoc", "Pandoc 生成网页"], ["write", "保存文件"]],
 };
 type Job = { state: "running"; stage: Stage } | { state: "done"; out: string; warnings: string } | { state: "error"; error: string };
 
@@ -241,7 +244,7 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
           if (svg) assets.push({ name: `mermaid-${i + 1}.png`, data: await svgToPng(svg, 3) });
         }
         const r = await be.exportRun({
-          format: o.fmt as "docx" | "pdf", markdown: prep.markdown, output: out,
+          format: o.fmt as "docx" | "pdf" | "html", markdown: prep.markdown, output: out, htmlCss: o.fmt === "html" ? htmlCss(o) : null,
           defaultsDir: join(root || dd, ".holymark/export"), defaultsName: defaultsName(o.fmt), defaultsYaml: defaultsYaml(o, { bibliography: bibFiles, docDir: dd }),
           referenceDoc: o.fmt === "docx" && o.ref ? o.ref : null,
           docxStyle: o.fmt === "docx" ? docxStyle(o, title) : null,
@@ -286,7 +289,7 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
         if (svg) assets.push({ name: `mermaid-${i + 1}.png`, data: await svgToPng(svg, 3) });
       }
       const r = await be.exportRun({
-        format: o.fmt as "docx" | "pdf", markdown: prepared.markdown, output: out,
+        format: o.fmt as "docx" | "pdf" | "html", markdown: prepared.markdown, output: out, htmlCss: o.fmt === "html" ? htmlCss(o) : null,
         defaultsDir: join(root || docDir, ".holymark/export"), defaultsName: defaultsName(o.fmt), defaultsYaml: yaml,
         referenceDoc: o.fmt === "docx" && o.ref ? o.ref : null,
         docxStyle: o.fmt === "docx" ? docxStyle(o, docTitle) : null,
@@ -317,7 +320,7 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
     ...["8", "9", "10", "11", "12", "13", "14", "16", "18", "20", "24", "28", "32"].filter((v) => !CN_SIZES.some(([x]) => x === v)).map((v) => ({ value: v, label: `${v} pt` })),
   ];
   const withCustom = (opts: Option<string>[], v: string) => (v && !opts.some((x) => x.value === v) ? [...opts, { value: v, label: `${v} pt` }] : opts);
-  const fontDefault = (k: "cjk" | "latin") => (o.fmt === "pdf" ? `默认（${k === "cjk" ? PDF_DEFAULTS.cjk : PDF_DEFAULTS.latin}）` : o.ref ? "参考文档里的字体" : "Word 默认字体");
+  const fontDefault = (k: "cjk" | "latin") => (o.fmt === "pdf" ? `默认（${k === "cjk" ? PDF_DEFAULTS.cjk : PDF_DEFAULTS.latin}）` : o.fmt === "html" ? "默认（系统界面字体）" : o.ref ? "参考文档里的字体" : "Word 默认字体");
 
   const refFiles = files.filter((f) => /\.(docx|dotx)$/i.test(f.name) && !f.name.startsWith("~$"));
   const refOptions: Option<string>[] = [
@@ -344,7 +347,7 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
           onChange={(v) => (v === "__pick" ? pickReference() : applyReference(v))} /></div>
         <p className="dnote">选了参考文档，会读出它的字体、字号、页边距填进下面（带颜色的字段）；没填的项沿用参考文档。</p>
       </div>}
-      <div className="og"><h5>页面</h5>
+      {o.fmt !== "html" && <div className="og"><h5>页面</h5>
         <div className="orow"><span>纸张</span>{xf("paper", <Select value={o.paper} ariaLabel="纸张" onChange={(v) => set({ paper: v as ExportOptions["paper"] })}
           options={[{ value: "", label: `默认（${D.paper}）` }, ...Object.keys(PAPERS).map((k) => ({ value: k, label: k === "16K" ? "16 开" : k, hint: `${PAPERS[k][0]}×${PAPERS[k][1]} mm` })), { value: "custom", label: "自定义尺寸" }]} />)}</div>
         {o.paper === "custom" && <div className="orow"><span>宽 × 高</span><div className="pair">{numf("pw", "宽", { min: 50, max: 1000 }, "mm", "210")}{numf("ph", "高", { min: 50, max: 1000 }, "mm", "297")}</div></div>}
@@ -362,7 +365,10 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
           <Seg label="页脚对齐" value={o.footerAlign} options={[["left", "左"], ["center", "中"], ["right", "右"]]} onChange={(v) => set({ footerAlign: v })} /></div></div>
         <p className="dnote tokens">可以插入 {(["{页码}", "{总页数}", "{标题}"]).map((t) => <button key={t} type="button" className="tok" onClick={() => set({ footer: o.footer + t })} title="加到页脚">{t}</button>)}，例如 第 {"{页码}"} 页 / 共 {"{总页数}"} 页</p>
         </More>
-      </div>
+      </div>}
+      {o.fmt === "html" && <div className="og"><h5>网页</h5>
+        <p className="dnote">单个 .html 文件，图片和样式都在里面，直接发给别人就能打开；版式和 HolyMark 的阅读模式一样，深色跟随系统；公式用 MathML。</p>
+      </div>}
       <div className="og"><h5>正文</h5>
         <div className="orow"><span>中文字体</span>{xf("cjk", <FontSelect value={o.cjk} fonts={fonts} allowDefault defaultLabel={fontDefault("cjk")} ariaLabel="中文字体" onChange={(v) => set({ cjk: v })} />)}</div>
         <div className="orow"><span>西文字体</span>{xf("latin", <FontSelect value={o.latin} fonts={fonts} allowDefault defaultLabel={fontDefault("latin")} ariaLabel="西文字体" onChange={(v) => set({ latin: v })} />)}</div>
@@ -394,8 +400,8 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
         <div className="orow"><span>文献格式</span><Select value={o.csl} options={cslOptions} ariaLabel="参考文献格式" width={300} onChange={(v) => (v === "__pick" ? pickCsl() : set({ csl: v }))} /></div>
         <p className="dnote">正文里的 [@key] 按这个格式排成引注和文末的参考文献表。国标 GB/T 7714 等格式可以从 Zotero 样式库下载 .csl 文件放进文件夹。{bibFiles.length ? `文献库：${bibFiles.map((b) => baseName(b)).join("、")}` : "文件夹里没有 .bib 文献库，[@key] 不会被处理。"}</p>
       </div>
-      {o.fmt === "docx" && <div className="og"><h5>批注</h5>
-        <div className="orow"><span>文中批注</span><Seg label="文中批注" value={o.notes} options={[["comment", "变成 Word 批注"], ["drop", "不导出"]]} onChange={(v) => set({ notes: v })} /></div>
+      {(o.fmt === "docx" || o.fmt === "html") && <div className="og"><h5>批注</h5>
+        <div className="orow"><span>文中批注</span><Seg label="文中批注" value={o.notes} options={[["comment", o.fmt === "html" ? "保留（悬停查看）" : "变成 Word 批注"], ["drop", "不导出"]]} onChange={(v) => set({ notes: v })} /></div>
       </div>}
       <div className="og"><h5>其他</h5>
         <div className="orow"><span>目录</span><label className="pair spread"><span className="dnote">在正文前生成目录</span><button type="button" className={"switch" + (o.toc ? " on" : "")} role="switch" aria-checked={o.toc} aria-label="生成目录" onClick={() => set({ toc: !o.toc })} /></label></div>
@@ -463,13 +469,14 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
               : pv === "yaml" ? <div className="xcfg"><div className="fn">{defaultsName(o.fmt)}</div><pre className="xsrc">{yaml}</pre>
                 {o.fmt === "pdf" && <><div className="fn">pdf-template.typst</div><pre className="xsrc">{template}</pre></>}
                 {o.fmt === "docx" && <p className="dnote">版式写在同目录的 word-reference.docx 里{o.ref ? `（由 ${baseName(o.ref)} 改写）` : "（由 Pandoc 默认参考文档改写）"}。</p>}</div>
+                : o.fmt === "html" ? <HtmlPage text={text} o={o} docDir={docDir} bib={bibMap} resolveImage={pvImage} />
                 : <Pages text={text} o={o} docDir={docDir} bib={bibMap} title={docTitle} resolveImage={pvImage} />}
           </div>
         </div>
         <div className="xf-foot">
           <span className="xstatus">
             {err ? <span className="xerr" role="alert">{err}</span>
-              : be.isDemo && !isMd ? <span>浏览器预览里只能看效果，导出 Word 和 PDF 请在 HolyMark 应用里进行。</span>
+              : be.isDemo && !isMd ? <span>浏览器预览里只能看效果，导出 Word、PDF 和 HTML 请在 HolyMark 应用里进行。</span>
               : missing.length ? <span className="xerr">没有找到 {missing.join("、")}。可以在终端运行 <code>brew install {missing.join(" ").toLowerCase()}</code>，装好后重新打开导出窗口。</span>
                 : tools && !isMd ? <span className="xinfo" tabIndex={0} title={[tools.pandoc && `Pandoc ${tools.pandoc.version.replace(/^pandoc\s*/i, "")}${tools.pandoc.bundled ? "（内置）" : ""}`, o.fmt === "pdf" && tools.typst && `Typst ${tools.typst.version.replace(/^typst\s*/i, "").split(" ")[0]}${tools.typst.bundled ? "（内置）" : ""}`].filter(Boolean).join("\n")}
                   aria-label="导出工具的版本"><Icon name="info" size={15} /></span> : null}
@@ -568,6 +575,14 @@ function JobView({ job, fmt, be, onBack, onClose }: { job: Job; fmt: Fmt; be: Ba
 }
 
 /* ---------------- 分页预览 ---------------- */
+/** 导出 HTML 的预览：不分页，按阅读版式连续排（N17） */
+function HtmlPage({ text, o, docDir, bib, resolveImage }: { text: string; o: ExportOptions; docDir: string; bib: Map<string, BibEntry>; resolveImage: (s: string) => string }) {
+  const { html } = useMemo(() => previewHTML(text, o, { docDir, bib, resolveImage }), [text, o, docDir, bib, resolveImage]);
+  const e = effective(o);
+  const style = { fontFamily: e.family, fontSize: `${Math.round(e.size * 4 / 3 * 0.8 * 10) / 10}px`, lineHeight: o.lsMode === "multi" && parseFloat(o.ls) ? o.ls : 1.75, textAlign: e.align, "--pv-indent": `${e.indent}em` } as React.CSSProperties;
+  return <div className="xhtml"><div className="xhtml-in" style={style} dangerouslySetInnerHTML={{ __html: html }} /></div>;
+}
+
 function Pages({ text, o, docDir, bib, title, resolveImage }: { text: string; o: ExportOptions; docDir: string; bib: Map<string, BibEntry>; title: string; resolveImage: (s: string) => string }) {
   const box = useRef<HTMLDivElement>(null);
   const flow = useRef<HTMLDivElement>(null);

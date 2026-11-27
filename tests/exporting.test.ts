@@ -175,3 +175,31 @@ describe("批量导出：合并成一个文件（G3）", () => {
     expect(out).toBe("---\ntitle: 论文\n---\n# 一\n\n![图](assets/a.png)\n\n# 二\n\n![图](附录/b.png) [网页](https://x.org)\n");
   });
 });
+
+import { defaultsName, notesToHtml } from "../src/lib/exporting";
+import { htmlCss } from "../src/lib/htmlExport";
+describe("导出 HTML（N17）", () => {
+  it("配置：单个自包含文件、MathML、阅读版式样式表、文献照常", () => {
+    const y = defaultsYaml({ ...DEFAULT_OPTS, fmt: "html", csl: "/a/gb.csl" }, { bibliography: ["/a/r.bib"], docDir: "/a" });
+    expect(y).toContain("to: html5");
+    expect(y).toContain("embed-resources: true");
+    expect(y).toContain("method: mathml");
+    expect(y).toContain("${.}/html-style.css");
+    expect(y).toContain("citeproc: true");
+    expect(y).not.toContain("reference-doc");
+    expect(defaultsName("html")).toBe("html.yaml");
+  });
+  it("批注：保留时原文标出、悬停看内容；不导出时只留原文", () => {
+    const src = "看{==这里==}{>>@王老师 2025-03-01：要改<<}吧";
+    expect(notesToHtml(src)).toBe('看[这里]{.hm-note data-note="王老师：要改"}吧');
+    expect(prepareForPandoc(src, { ...DEFAULT_OPTS, fmt: "html", notes: "drop" }, "/a").markdown).toBe("看这里吧");
+    expect(prepareForPandoc(src, { ...DEFAULT_OPTS, fmt: "html", notes: "comment" }, "/a").markdown).toContain(".hm-note");
+  });
+  it("样式表跟导出选项走，深色跟随系统", () => {
+    const css = htmlCss({ ...DEFAULT_OPTS, size: "15", ls: "2", lsMode: "multi", indent: "2", cjk: "Songti SC" });
+    expect(css).toContain("font-size: 20px");
+    expect(css).toContain("line-height: 2;");
+    expect(css).toContain('"Songti SC"');
+    expect(css).toContain("prefers-color-scheme: dark");
+  });
+});

@@ -726,7 +726,7 @@ pub struct Asset {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportJob {
-    /// docx / pdf
+    /// docx / pdf / html
     pub format: String,
     /// 已经处理过的 Markdown（批注、编号、图片路径、图表）
     pub markdown: String,
@@ -738,6 +738,9 @@ pub struct ExportJob {
     pub reference_doc: Option<String>,
     pub docx_style: Option<DocxStyle>,
     pub typst_template: Option<String>,
+    /// 导出 HTML 时的样式表（阅读版式），写进 defaults 同目录的 html-style.css
+    #[serde(default)]
+    pub html_css: Option<String>,
     pub assets: Vec<Asset>,
     pub extra_args: Vec<String>,
 }
@@ -817,6 +820,9 @@ pub fn run(job: ExportJob, progress: &dyn Fn(&str)) -> Result<ExportResult, Stri
         }
         if let Some(t) = &job.typst_template {
             std::fs::write(ddir.join("pdf-template.typst"), t).map_err(|e| e.to_string())?;
+        }
+        if let Some(c) = &job.html_css {
+            std::fs::write(ddir.join("html-style.css"), c).map_err(|e| e.to_string())?;
         }
         let defaults = ddir.join(&job.defaults_name);
         std::fs::write(&defaults, &job.defaults_yaml).map_err(|e| e.to_string())?;

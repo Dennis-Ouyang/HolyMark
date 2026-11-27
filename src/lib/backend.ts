@@ -24,7 +24,9 @@ export interface RefStyles {
   line: [string, string] | null; indent: string | null; before: string | null; after: string | null; align: string | null; headings: RefHeading[];
 }
 export interface ExportJob {
-  format: "docx" | "pdf"; markdown: string; output: string; defaultsDir: string; defaultsName: string; defaultsYaml: string;
+  format: "docx" | "pdf" | "html"; markdown: string; output: string; defaultsDir: string; defaultsName: string; defaultsYaml: string;
+  /** 导出 HTML 时的样式表（写进 .holymark/export/html-style.css，Pandoc 内嵌进网页） */
+  htmlCss?: string | null;
   referenceDoc: string | null; docxStyle: unknown; typstTemplate: string | null; assets: { name: string; data: string }[]; extraArgs: string[];
 }
 

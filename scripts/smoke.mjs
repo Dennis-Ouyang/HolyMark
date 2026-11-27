@@ -641,6 +641,22 @@ step("N16 导出预设：导出当前预设（内嵌参考文档、引用样式�
   await page.waitForSelector(".xdlg", { state: "detached" });
 });
 
+step("N17 导出 HTML：格式里有 HTML、连续的阅读版式预览、批注选项、配置文件", async (page) => {
+  await menu(page, "export");
+  await page.waitForSelector(".xdlg");
+  await page.click(".xdlg [role=radio]:has-text('HTML'), .xdlg button:has-text('HTML')");
+  await page.waitForSelector(".xhtml .xhtml-in h1, .xhtml .xhtml-in h2");
+  if (await page.$(".xdlg h5:text-is('页面')")) throw new Error("HTML 不该有页面设置");
+  if (!(await page.$(".xdlg button:has-text('保留（悬停查看）')"))) throw new Error("没有批注选项");
+  await page.click(".xdlg button:has-text('配置文件')");
+  const y = await page.textContent(".xcfg");
+  if (!y.includes("html.yaml") || !y.includes("embed-resources: true") || !y.includes("mathml")) throw new Error("配置文件不对");
+  await page.click(".xdlg button:has-text('页面')");
+  await page.click(".xdlg [role=radio]:has-text('Word'), .xdlg button:has-text('Word')");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".xdlg", { state: "detached" });
+});
+
 /* ---------- 全块测试稿、导出、搜索（放在最后：会把正文换成测试稿） ---------- */
 
 step("全块测试稿：渲染、光标走遍所有行", async (page) => {

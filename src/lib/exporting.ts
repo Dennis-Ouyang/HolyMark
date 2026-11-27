@@ -9,7 +9,7 @@ import { shortAuthor } from "./bib";
 import { join, normalize, toPosix } from "./paths";
 import { fontFallbacks } from "./settings";
 
-export type Fmt = "docx" | "pdf" | "md";
+export type Fmt = "docx" | "pdf" | "md" | "html";
 export type Level = "1" | "2" | "3";
 
 export interface HeadingOpts {
@@ -194,6 +194,15 @@ export function notesToComments(s: string): string {
   }).replace(LONE_NOTE, "");
 }
 
+/** 批注 → 导出 HTML 用的 span：[原文]{.hm-note data-note="作者：内容"}（N17，和 Word 导出一样保留批注） */
+export function notesToHtml(s: string): string {
+  const attr = (x: string) => x.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/\n/g, " ");
+  return s.replace(NOTE, (_m, quote: string, body: string) => {
+    const p = noteParts(body);
+    return `[${quote}]{.hm-note data-note="${attr((p.who ? p.who + "：" : "") + p.text.trim())}"}`;
+  }).replace(LONE_NOTE, "");
+}
+
 /** [@a] [@a; @b] → （作者，年份；作者，年份） */
 export function citesToText(s: string, bib: Map<string, BibEntry>): string {
   return s.replace(/\[(@[\w:.-]+(?:\s*;\s*@[\w:.-]+)*)\]/g, (m, inner: string) => {
@@ -267,7 +276,7 @@ export interface Prepared {
 export function prepareForPandoc(src: string, o: ExportOptions, docDir: string): Prepared {
   const { fm, body } = splitFrontMatter(src);
   let b = numberHeadings(body, o.H);
-  b = o.fmt === "docx" && o.notes === "comment" ? notesToComments(b) : dropNotes(b);
+  b = o.notes === "comment" && o.fmt === "docx" ? notesToComments(b) : o.notes === "comment" && o.fmt === "html" ? notesToHtml(b) : dropNotes(b);
   const assets = prepareAssets(b, docDir, true);
   const bibliography = fmField(fm, "bibliography").map((p) => absolute(docDir, p));
   const title = fmField(fm, "title")[0] || "";
@@ -444,21 +453,24 @@ export function splitArgs(s: string): string[] {
 }
 
 export function defaultsName(fmt: Fmt) {
-  return fmt === "pdf" ? "pdf.yaml" : "word.yaml";
+  return fmt === "pdf" ? "pdf.yaml" : fmt === "html" ? "html.yaml" : "word.yaml";
 }
 
 export function defaultsYaml(o: ExportOptions, ctx: DefaultsCtx): string {
   const L: string[] = [];
-  const isPdf = o.fmt === "pdf";
+  const isPdf = o.fmt === "pdf", isHtml = o.fmt === "html";
   L.push(
     "# HolyMark 导出配置（Pandoc defaults 文件），每次导出时更新。",
-    `# 命令行里也能用：pandoc -d .holymark/export/${defaultsName(o.fmt)} 稿件.md -o 稿件.${isPdf ? "pdf" : "docx"}`,
+    `# 命令行里也能用：pandoc -d .holymark/export/${defaultsName(o.fmt)} 稿件.md -o 稿件.${isPdf ? "pdf" : isHtml ? "html" : "docx"}`,
     "from: markdown+east_asian_line_breaks+mark+lists_without_preceding_blankline",
-    `to: ${isPdf ? "typst" : "docx"}`,
+    `to: ${isPdf ? "typst" : isHtml ? "html5" : "docx"}`,
     "standalone: true",
   );
   if (isPdf) {
     L.push("template: ${.}/pdf-template.typst", "pdf-engine: typst", "pdf-engine-opts: [\"--root\", \"/\"]");
+  } else if (isHtml) {
+    // 单个自包含的文件：图片、样式都内嵌；公式用 MathML（不依赖网络上的脚本）
+    L.push("embed-resources: true", "html-math-method:", "  method: mathml", "css:", "  - ${.}/html-style.css");
   } else {
     L.push("reference-doc: ${.}/word-reference.docx");
   }
