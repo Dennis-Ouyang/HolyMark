@@ -32,6 +32,7 @@ import { useRememberSpot, useSpotAutosave } from "./features/useRememberSpot";
 import { useNav, BACK_KEY, FWD_KEY } from "./features/useNav";
 import { FileInfo, FileViewer } from "./components/FileViewer";
 import type { FilePreview } from "./lib/filePreview";
+import { copyRich } from "./features/copyRich";
 import { findAnchor } from "./lib/anchors";
 
 const AUTHOR = "我";
@@ -498,6 +499,16 @@ export default function App() {
   });
   featureHooks.current.reading = reading.hooks;
   /** 本文里的锚点：N4 会换成和 Pandoc 一致的规则 */
+  /** N17 复制为带格式的文字：选中的内容，没选中就是全文 */
+  function copyFormatted(target: "word" | "wechat") {
+    const v = view(); if (!v || !path) return;
+    const r = v.state.selection.main;
+    const md = r.empty ? v.state.doc.toString() : v.state.sliceDoc(r.from, r.to);
+    const what = r.empty ? "全文" : "选中的文字";
+    copyRich(md, target, { citeLabel: preview.citeLabel, resolveImage: preview.resolveImage, bodyFont: fontStack(layout["body-font"] || s.bodyFont) })
+      .then((ok) => say(ok ? (target === "wechat" ? `已复制${what}，可以粘进公众号编辑器` : `已复制${what}，可以粘进 Word 或邮件`) : "没能写进剪贴板"))
+      .catch(() => say("没能写进剪贴板"));
+  }
   /** 本文里的锚点（规则和 Pandoc 一致，见 lib/anchors.ts）；找不到就用提示条说明，不跳 */
   function jumpAnchor(anchor: string, rec = true) {
     const h = findAnchor(live.current.text, anchor);
@@ -527,6 +538,7 @@ export default function App() {
       case "settings": openSettings(); break;
       case "tidy": if (path) tidy.open(); break;
       case "reading": if (path) reading.toggle(); break;
+      case "copy_rich": case "copy_wechat": copyFormatted(id === "copy_wechat" ? "wechat" : "word"); break;
       case "nav_back": nav.back(); break;
       case "nav_forward": nav.forward(); break;
       case "math_symbols": if (path) symbols.open(); break;
@@ -881,6 +893,10 @@ export default function App() {
     ...(viewing ? [{ group: "命令", icon: "doc", title: "关闭预览，回到正文", keys: ["Esc"], run: () => setViewing("") }] : []),
     ...(nav.canBack ? [{ group: "命令", icon: "left", title: "返回", keys: [kbd(BACK_KEY)], run: () => nav.back() }] : []),
     ...(nav.canForward ? [{ group: "命令", icon: "right", title: "前进", keys: [kbd(FWD_KEY)], run: () => nav.forward() }] : []),
+    ...(path ? [
+      { group: "命令", icon: "clip", title: "复制为带格式的文字（Word、邮件）", sub: "选中的文字或全文；公式用 MathML", run: () => copyFormatted("word") },
+      { group: "命令", icon: "clip", title: "复制为带格式的文字（公众号）", sub: "选中的文字或全文；公式转成图片", run: () => copyFormatted("wechat") },
+    ] : []),
     ...(path ? [{ group: "命令", icon: "book", title: reading.on ? "退出阅读模式" : "阅读模式", keys: ["⌘", "⇧", "R"].map((k) => keyName(k)), run: () => reading.toggle() }] : []),
     ...(path ? [
       { group: "命令", icon: "chevr", title: "折叠全部章节", run: () => onMenu("fold_all") },

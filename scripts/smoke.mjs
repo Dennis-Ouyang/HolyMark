@@ -325,6 +325,28 @@ step("N13 纸张底色、字体预设、打字机滚动、段落聚焦", async (
   await page.reload();
   await page.waitForFunction(() => window.__hm?.view?.()?.state.doc.length > 100);
 });
+step("N17 复制为带格式的文字：Word（MathML）、公众号（公式图片）", async (page) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(base).origin });
+  const read = () => page.evaluate(async () => {
+    const items = await navigator.clipboard.read();
+    const html = items[0].types.includes("text/html") ? await (await items[0].getType("text/html")).text() : "";
+    const text = items[0].types.includes("text/plain") ? await (await items[0].getType("text/plain")).text() : "";
+    return { html, text };
+  });
+  await page.evaluate(() => { const v = window.__hm.view(); v.dispatch({ selection: { anchor: 0 } }); });
+  await menu(page, "copy_rich");
+  await page.waitForSelector(".toast:has-text('已复制全文')");
+  let c = await read();
+  if (!c.html.includes("<math") || !c.html.includes("<table") || !c.html.includes("style=")) throw new Error("Word 版的 HTML 不对");
+  if (!c.html.includes("data:image/svg")) throw new Error("图片没有内嵌");
+  if (!c.text.includes("研究设计")) throw new Error("没有纯文本");
+  if (c.html.includes("{==")) throw new Error("批注标记没去掉");
+  await menu(page, "copy_wechat");
+  await page.waitForSelector(".toast:has-text('可以粘进公众号编辑器')");
+  c = await read();
+  if (!c.html.includes("data:image/png")) throw new Error("公众号版的公式没有转成图片");
+  if (c.html.includes("<math")) throw new Error("公众号版不该有 MathML");
+});
 
 async function run(theme) {
   const browser = await chromium.launch();
