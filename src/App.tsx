@@ -19,6 +19,7 @@ import { SearchPanel } from "./components/Search";
 import { InsertFile, InsertPick, linkFor } from "./components/InsertFile";
 import { baseName, dirOf, isInside, isMarkdown, join, normalize, relative, stripMd, toPosix } from "./lib/paths";
 import { MidName } from "./components/MidName";
+import { TooltipLayer } from "./components/Tooltip";
 import { sortTree } from "./lib/sortTree";
 import { isMac, isWindows, kbd } from "./lib/platform";
 import { menuIdFor } from "./lib/shortcuts";
@@ -1121,6 +1122,7 @@ export default function App() {
       {folderMenu && <Menu x={folderMenu.x} y={folderMenu.y} items={folderMenuItems()} onClose={() => setFolderMenu(null)} minWidth={232} />}
       {dropCaret && <div className="dropcaret" style={{ left: dropCaret.left, top: dropCaret.top, height: dropCaret.height }} aria-hidden="true" />}
       <Presence>{toast && <div className={"toast " + toast.kind} role="status">{toast.kind !== "info" && <i aria-hidden="true" />}{toast.msg}{toast.actions.map((a) => <button key={a.label} className="lnk" onClick={() => { a.run(); setToast(null); }}>{a.label}</button>)}</div>}</Presence>
+      <TooltipLayer />
     </div>
   );
 }

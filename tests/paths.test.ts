@@ -113,3 +113,12 @@ describe("命令注册表（G6）", async () => {
   });
 });
 
+
+describe("悬停提示拆出快捷键（H33）", async () => {
+  const { splitTip } = await import("../src/components/Tooltip");
+  it("结尾的快捷键拆成键帽", () => {
+    expect(splitTip("导出 ⌘⇧E")).toEqual(["导出", "⌘⇧E"]);
+    expect(splitTip("切换侧栏 Ctrl+\\")).toEqual(["切换侧栏", "Ctrl+\\"]);
+    expect(splitTip("在访达中显示")).toEqual(["在访达中显示", ""]);
+  });
+});

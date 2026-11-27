@@ -1172,3 +1172,8 @@ textarea.nb-tx::placeholder { color: var(--fg-3); }
 .app.narrow.drawer-side .side, .app.narrow.drawer-panel .panel { translate: 0 0; visibility: visible; transition: translate 200ms var(--ease), visibility 0s; }
 /* 窄的功能区：分组标签收起（H38、G4） */
 .ribbon.compact .rgrp .gl { display: none; }
+/* 统一的悬停提示（H33，Tooltip.tsx）：名称 + 右对齐的弱化键帽，跟深浅色主题 */
+.hm-tip { position: fixed; z-index: 200; display: flex; align-items: center; gap: 12px; max-width: 320px; padding: 4px 8px; border-radius: 6px; background: var(--raised); box-shadow: var(--float); font: 12px/1.5 var(--f-ui); color: var(--fg); pointer-events: none; white-space: nowrap; animation: tipIn 120ms var(--ease); }
+.hm-tip.up { translate: 0 -100%; }
+.hm-tip span { overflow: hidden; text-overflow: ellipsis; white-space: pre-line; }
+.hm-tip kbd { margin-left: auto; font: 11px var(--f-ui); color: var(--fg-3); background: none; border: 0; padding: 0; font-variant-numeric: tabular-nums; }
