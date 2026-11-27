@@ -38,6 +38,7 @@ export const COMMANDS: CommandDef[] = [
   { id: "save_version", title: "存档", category: "file", keys: "Mod+S", sepBefore: true, alias: "保存版本" },
   { id: "save_version_named", title: "保存版本并起名字…", category: "file" },
   { id: "compare_file", title: "与其他文稿对比…", category: "file" },
+  { id: "import_docx", title: "从 Word 导入…", category: "file", alias: "docx 转换", sepBefore: true },
   { id: "export", title: "导出…", category: "file", keys: "Mod+Shift+E", sepBefore: true, alias: "Word PDF Markdown" },
   { id: "settings", title: "设置…", category: "file", keys: "Mod+," },
   { id: "quit", title: "退出 HolyMark", category: "file", hidden: true },

@@ -16,6 +16,7 @@ import { notes } from "./notes";
 import { tabKeymap } from "./keys";
 import { emptyPairs } from "./emptyPairs";
 import { zhPhrases } from "./phrases";
+import { paste } from "./paste";
 import { Subscript, Superscript } from "@lezer/markdown";
 
 export interface EditorHandle {
@@ -83,19 +84,13 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor({ initial,
             ...defaultKeymap,
           ]),
           emptyPairs(),
+          paste((files, pos) => cb.current.onImages(files, pos)),
           zhPhrases,
           EditorView.updateListener.of((u) => {
             if (u.docChanged && !silent.current) cb.current.onChange(u.state.doc.toString());
             if (u.selectionSet || u.docChanged || u.focusChanged) cb.current.onSelection(u.view);
           }),
           EditorView.domEventHandlers({
-            paste(e, v) {
-              const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith("image/"));
-              if (!files.length) return false;
-              e.preventDefault();
-              cb.current.onImages(files, v.state.selection.main.head);
-              return true;
-            },
             drop(e, v) {
               const all = [...(e.dataTransfer?.files || [])];
               if (!all.length) return false;

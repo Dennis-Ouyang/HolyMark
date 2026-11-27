@@ -267,6 +267,19 @@ export default function App() {
     return () => window.clearTimeout(autoTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, path, be]);
+  /** 从 Word 导入（G9）：选一个 .docx，用内置 Pandoc 转成文稿旁边的 .md，图片放进图片文件夹，然后打开 */
+  async function importDocx() {
+    if (!be || !root) { await chooseFolder(); return; }
+    if (be.isDemo) { say("浏览器预览里不能从 Word 导入", "info"); return; }
+    const src = await be.pickFile("选择要导入的 Word 文件", ["docx"]);
+    if (!src) return;
+    try {
+      const p = await be.importDocx(src, path && s.newDocPlace !== "root" ? dirOf(path) : root, s.imageDir || "assets");
+      await refreshTree();
+      await openFile(p);
+      undoable(`已从 Word 导入「${baseName(p)}」`, async () => { await be.trashPath(p); });
+    } catch (e) { say(String(e).replace(/^Error:\s*/, ""), "error"); }
+  }
   /** 关闭文件夹，回到开始页；下次启动也从开始页开始，直到再打开一个文件夹 */
   async function closeFolder() {
     if (!be || !root) return;
@@ -572,6 +585,7 @@ export default function App() {
       case "help_keys": setDlg("help_keys"); break;
       case "save_version_named": if (path) setDlg("save"); break;
       case "compare_file": if (path) setDlg("cmpfile"); break;
+      case "import_docx": importDocx(); break;
       case "export": openExport(); break;
       case "quit": requestClose(); break;
       case "indent": if (v) indentList(v, 1); break;

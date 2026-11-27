@@ -1,6 +1,7 @@
 //! HolyMark 后端：文件夹、读写、版本库、外部修改监听。
 mod export;
 mod fsops;
+mod import;
 mod menuspec;
 mod preview;
 #[cfg(target_os = "macos")]
@@ -591,6 +592,18 @@ fn open_path(path: String) -> Result<(), String> {
     export::open_path(&path)
 }
 
+/// 从 Word 导入：把 .docx 转成文件夹里的 .md（图片放进 image_dir），返回新文件路径
+#[tauri::command]
+async fn import_docx(state: State<'_, AppState>, src: String, dir: String, image_dir: String) -> Result<String, String> {
+    let d = PathBuf::from(&dir);
+    guard(&state, &d)?;
+    if image_dir.contains("..") {
+        return Err("图片文件夹的名字不对".into());
+    }
+    let p = tauri::async_runtime::spawn_blocking(move || import::docx_to_md(Path::new(&src), &d, &image_dir)).await.map_err(err)??;
+    Ok(slash(&p))
+}
+
 /// 按前端命令注册表重建原生菜单（快捷键在运行时改了以后调用）。只有 macOS 有菜单栏，其他系统什么都不做
 #[tauri::command]
 fn set_menu(app: tauri::AppHandle, sections: Vec<menuspec::SpecSection>, settings_accel: Option<String>) -> Result<(), String> {
@@ -747,6 +760,7 @@ pub fn run() {
             open_path,
             open_url,
             set_menu,
+            import_docx,
             user_name,
             pick_save,
             pick_folder,

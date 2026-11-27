@@ -54,6 +54,8 @@ export interface Backend {
   reveal(path: string): Promise<void>;
   /** 用系统默认的程序打开 */
   openPath(path: string): Promise<void>;
+  /** 从 Word 导入：.docx 转成 dir 里的 .md，图片放进 imageDir，返回新文件路径 */
+  importDocx(src: string, dir: string, imageDir: string): Promise<string>;
   /** 按命令注册表重建原生菜单（只有 macOS 有菜单栏） */
   setMenu(sections: unknown, settingsAccel: string | null): Promise<void>;
   /** 系统用户名（批注署名的默认值），拿不到时是空字符串 */
@@ -129,6 +131,7 @@ async function tauriBackend(): Promise<Backend> {
     openUrl: (url) => invoke("open_url", { url }),
     userName: () => invoke("user_name"),
     setMenu: (sections, settingsAccel) => invoke("set_menu", { sections, settingsAccel }),
+    importDocx: (src, dir, imageDir) => invoke("import_docx", { src, dir, imageDir }),
     onExportProgress(cb) {
       let un: (() => void) | null = null, alive = true;
       listen<string>("export-progress", (e) => cb(e.payload)).then((u) => { if (alive) un = u; else u(); });
@@ -247,6 +250,7 @@ function demoBackend(): Backend {
     async openUrl(url) { window.open(url, "_blank", "noopener,noreferrer"); },
     async userName() { return ""; },
     async setMenu() { /* 浏览器里没有原生菜单 */ },
+    async importDocx() { throw new Error("浏览器预览里不能从 Word 导入"); },
     onExportProgress() { return () => {}; },
     async openFolder() { return tree(); },
     async closeFolder() { /* 演示文件夹没有监听 */ },
