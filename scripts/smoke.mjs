@@ -598,6 +598,49 @@ step("N15 自定义快捷键：录新按键、冲突替换、立即生效、重�
   await page.waitForSelector(".prefs", { state: "detached" });
 });
 
+step("N16 导出预设：导出当前预设（内嵌参考文档、引用样式）、导入、重名时改名保存、撤销", async (page) => {
+  await menu(page, "export");
+  await page.waitForSelector(".xdlg");
+  const pick = async (label) => { await page.click(".xpre .select-btn[aria-label='预设']"); await page.click(`.select-pop [role=option]:has-text('${label}')`); };
+  await pick("学位论文");
+  await page.waitForSelector(".toast:has-text('已套用预设')");
+  const dl = page.waitForEvent("download");
+  await pick("导出当前预设…");
+  const d = await dl;
+  // 无头 Chromium 报告中文下载名时会变成「download」（真实浏览器里是「学位论文.json」）
+  if (!["学位论文.json", "download"].includes(d.suggestedFilename())) throw new Error("导出的文件名不对：" + d.suggestedFilename());
+  const fs = await import("node:fs");
+  const json = JSON.parse(fs.readFileSync(await d.path(), "utf8"));
+  if (json.format !== "holymark-export-preset" || json.opts.toc !== true) throw new Error("导出的预设内容不对");
+  // 别人发来的预设：内嵌了参考文档和引用样式
+  json.name = "学院模板";
+  json.files = { ref: { name: "学院模板.docx", data: "UEsDBBQAAAAIAA==" }, csl: { name: "gb-t-7714.csl", data: Buffer.from("<style/>").toString("base64") } };
+  const file = { name: "学院模板.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(json)) };
+  await pick("导入预设…");
+  await page.setInputFiles("[data-preset-input]", file);
+  await page.waitForSelector(".toast:has-text('已导入预设「学院模板」')");
+  // 再导入一次：重名，改名保存
+  await pick("导入预设…");
+  await page.setInputFiles("[data-preset-input]", file);
+  await page.waitForSelector(".preask:has-text('「学院模板.docx」已经有了')");
+  await page.click(".preask .btn:has-text('改名保存')");
+  await page.waitForSelector(".preask:has-text('「gb-t-7714.csl」已经有了')");
+  await page.click(".preask .btn:has-text('替换')");
+  await page.waitForSelector(".toast:has-text('已导入预设「学院模板 2」')");
+  await page.click(".xpre .select-btn[aria-label='预设']");
+  const names = await page.$$eval(".select-pop [role=option]", (els) => els.map((e) => e.textContent));
+  await page.keyboard.press("Escape");
+  if (!names.includes("学院模板") || !names.includes("学院模板 2")) throw new Error("我的预设里没有导入的：" + names);
+  await page.click(".toast .lnk:has-text('撤销')");
+  await page.waitForTimeout(150);
+  await page.click(".xpre .select-btn[aria-label='预设']");
+  const after = await page.$$eval(".select-pop [role=option]", (els) => els.map((e) => e.textContent));
+  await page.keyboard.press("Escape");
+  if (after.includes("学院模板 2")) throw new Error("撤销没有去掉导入的预设");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".xdlg", { state: "detached" });
+});
+
 /* ---------- 全块测试稿、导出、搜索（放在最后：会把正文换成测试稿） ---------- */
 
 step("全块测试稿：渲染、光标走遍所有行", async (page) => {

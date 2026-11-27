@@ -255,3 +255,8 @@ body.hm-dragging .ol .oi { cursor: grabbing; }
 .kedit .kwarn td { color: var(--fg-2); }
 .kedit .kfoot { display: flex; align-items: center; gap: 8px; padding-top: 4px; }
 .kedit .kundo { font-size: 12px; color: var(--fg-2); display: inline-flex; gap: 6px; align-items: center; }
+
+/* ---------- N16 导入预设时重名：就地问一句 ---------- */
+.preask { position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--raised); box-shadow: var(--float); font-size: 12px; color: var(--fg-2); white-space: nowrap; transform-origin: 100% 0; animation: floatIn 150ms var(--ease); }
+.preask span { margin-right: 4px; color: var(--fg); }
+.xpre { position: relative; }

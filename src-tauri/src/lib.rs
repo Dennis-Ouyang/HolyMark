@@ -433,6 +433,27 @@ fn save_image(state: State<AppState>, dir: String, name: String, data: String) -
     Ok(slash(&dest))
 }
 
+/// 读任意文件，返回 base64（导出预设把参考文档、引用样式内嵌进去时用）。读取类命令不限制位置
+#[tauri::command]
+fn read_base64(path: String) -> Result<String, String> {
+    use base64::Engine;
+    let bytes = std::fs::read(&path).map_err(|_| "找不到这个文件".to_string())?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+/// 把 base64 写成文件（导入导出预设时解出参考文档、引用样式）。只能写进打开的文件夹
+#[tauri::command]
+fn write_base64(state: State<AppState>, path: String, data: String) -> Result<(), String> {
+    use base64::Engine;
+    let p = PathBuf::from(&path);
+    guard_write(&state, &p)?;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.as_bytes()).map_err(err)?;
+    if let Some(d) = p.parent() {
+        std::fs::create_dir_all(d).map_err(err)?;
+    }
+    std::fs::write(&p, bytes).map_err(err)
+}
+
 #[tauri::command]
 fn set_merge_window(state: State<AppState>, secs: u64) {
     state.inner.lock().unwrap().merge_ms = secs.max(1) * 1000;
@@ -970,6 +991,8 @@ pub fn run() {
             pick_save,
             pick_folder,
             pick_file,
+            read_base64,
+            write_base64,
             create_dir,
             rename_path,
             duplicate_path,

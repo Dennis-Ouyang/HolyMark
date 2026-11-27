@@ -84,6 +84,10 @@ export interface Backend {
   listFonts(): Promise<FontFamily[]>;
   /** 保存粘贴或拖进来的图片，data 是 base64，返回保存后的路径 */
   saveImage(dir: string, name: string, data: string): Promise<string>;
+  /** 读文件成 base64（导出预设内嵌参考文档、引用样式）；没有这个文件时报错 */
+  readBase64(path: string): Promise<string>;
+  /** 把 base64 写成文件（只能写进打开的文件夹） */
+  writeBase64(path: string, data: string): Promise<void>;
   createFile(dir: string, base: string): Promise<string>;
   /** 新建文件夹（重名时加编号），返回路径 */
   createDir(dir: string, base: string): Promise<string>;
@@ -166,6 +170,8 @@ async function tauriBackend(): Promise<Backend> {
     },
     listFonts: () => invoke("list_fonts"),
     saveImage: (dir, name, data) => invoke("save_image", { dir, name, data }),
+    readBase64: (path) => invoke("read_base64", { path }),
+    writeBase64: (path, data) => invoke("write_base64", { path, data }),
     createFile: (dir, base) => invoke("create_file", { dir, base }),
     createDir: (dir, base) => invoke("create_dir", { dir, base }),
     renamePath: (path, name) => invoke("rename_path", { path, name }),
@@ -223,6 +229,8 @@ export const demoStartFile = stressChars ? STRESS_PATH : DEMO_START;
 
 function demoBackend(): Backend {
   const files = new Map<string, string>(Object.entries(DEMO_FILES));
+  /** 演示里写进去的二进制文件（base64） */
+  const binFiles = new Map<string, string>();
   for (const [p, url] of Object.entries(DEMO_IMAGES)) { files.set(p, ""); demoImages.set(p, url); }
   for (const p of Object.keys(DEMO_DOCS)) files.set(p, "");
   const dirs = new Set<string>(); // 空文件夹
@@ -300,6 +308,9 @@ function demoBackend(): Backend {
     async readVersion(path, id) { const r = load(path).find((x) => x.id === id); return r ? content(r) : ""; },
     onExternalChange(cb) { listeners.add(cb); return () => listeners.delete(cb); },
     async listFonts() { return isWindows ? WINDOWS_FONTS : MAC_FONTS; },
+    // 演示文件夹里的二进制文件（参考文档、引用样式）存成 base64 字符串
+    async readBase64(path) { if (binFiles.has(path)) return binFiles.get(path)!; if (files.has(path)) return btoa(unescape(encodeURIComponent(files.get(path)!))); throw new Error("找不到这个文件"); },
+    async writeBase64(path, data) { binFiles.set(path, data); },
     async saveImage(dir, name, data) {
       let p = `${dir}/${name}`, n = 1;
       const [stem, ext] = name.includes(".") ? [name.replace(/\.[^.]+$/, ""), name.slice(name.lastIndexOf("."))] : [name, ".png"];

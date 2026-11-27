@@ -18,6 +18,7 @@ import { baseName, dirOf, join, normalize, relative } from "../lib/paths";
 import { Segmented } from "./Segmented";
 import { isWindows } from "../lib/platform";
 import { applyScene, loadProject, saveProject, SCENES } from "../lib/exportPresets";
+import { usePresetIO } from "../features/usePresetIO";
 import type { NoticeAction, NoticeKind } from "../editor/notice";
 
 interface Props {
@@ -112,6 +113,9 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
 
   const docDir = dirOf(path);
   const files = useMemo(() => flatten(tree), [tree]);
+  // N16 导出预设的导入和导出；最近套用的预设名当导出时的文件名
+  const [lastPreset, setLastPreset] = useState("");
+  const presetIO = usePresetIO({ be, root, docDir, o, setO, presets, setPresets, lastName: lastPreset, say });
   const bibMap = useMemo(() => new Map(bib.map((b) => [b.key, b])), [bib]);
   const prepared = useMemo(() => prepareForPandoc(text, o, docDir), [text, o, docDir]);
   const docTitle = prepared.title || baseName(path).replace(/\.(md|markdown)$/i, "");
@@ -427,15 +431,20 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
                 options={[
                   ...SCENES.map((sc) => ({ value: "scene:" + sc.id, label: sc.name, hint: "", group: "常用场景", title: sc.hint })),
                   ...presets.map((p, i) => ({ value: String(i), label: p.name, group: "我的预设" })),
+                  { value: "__export", label: "导出当前预设…", group: "分享" },
+                  { value: "__import", label: "导入预设…", group: "分享" },
                 ]}
                 onChange={(v) => {
+                  if (v === "__export") { void presetIO.exportPreset(); return; }
+                  if (v === "__import") { void presetIO.importPreset(); return; }
                   const before = cloneOpts(o);
-                  if (v.startsWith("scene:")) { setO(applyScene(v.slice(6), o.fmt)); setFromRef(new Set()); }
-                  else { const p = presets[+v]; if (!p) return; setO(normalizeOpts({ ...p.opts, fmt: o.fmt })); setFromRef(new Set()); }
+                  if (v.startsWith("scene:")) { setO(applyScene(v.slice(6), o.fmt)); setFromRef(new Set()); setLastPreset(SCENES.find((x) => x.id === v.slice(6))?.name ?? ""); }
+                  else { const p = presets[+v]; if (!p) return; setO(normalizeOpts({ ...p.opts, fmt: o.fmt })); setFromRef(new Set()); setLastPreset(p.name); }
                   say("已套用预设", "success", { label: "撤销", run: () => setO(before) });
                 }} />
               <button type="button" className="btn" onClick={() => setNaming("")}>存为预设</button>
-            </> : <form className="pair" onSubmit={(e) => { e.preventDefault(); const nm = naming.trim(); if (!nm) return; setPresets([...presets.filter((p) => p.name !== nm), { name: nm, opts: cloneOpts(o) }]); setNaming(null); }}>
+              {presetIO.node}
+            </> : <form className="pair" onSubmit={(e) => { e.preventDefault(); const nm = naming.trim(); if (!nm) return; setPresets([...presets.filter((p) => p.name !== nm), { name: nm, opts: cloneOpts(o) }]); setLastPreset(nm); setNaming(null); }}>
               <input className="tin" autoFocus placeholder="预设名称" aria-label="预设名称" value={naming} onChange={(e) => setNaming(e.target.value)} />
               <button type="submit" className="btn acc">保存</button><button type="button" className="btn" onClick={() => setNaming(null)}>取消</button>
             </form>}
