@@ -267,6 +267,19 @@ export default function App() {
     return () => window.clearTimeout(autoTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, path, be]);
+  /**
+   * 批量导出一个文件夹（G3）：文件夹里（含子文件夹）的所有文稿按文件树的顺序，导出对话框里选「合并成一个文件」或「分别导出」
+   */
+  const [batch, setBatch] = useState<{ name: string; dir: string; files: { path: string; text: string }[] } | null>(null);
+  async function exportFolder(node: TreeNode) {
+    if (!be) return;
+    await flush().catch(() => {});
+    const mds = flatten(sortTree([node])[0].children).filter((f) => isMarkdown(f.name));
+    if (!mds.length) { say("这个文件夹里没有文稿", "info"); return; }
+    const files = await Promise.all(mds.map(async (f) => ({ path: f.path, text: f.path === live.current.path ? live.current.text : await be.readText(f.path).catch(() => "") })));
+    setBatch({ name: node.name, dir: node.path, files });
+    setDlg("export");
+  }
   /** 从 Word 导入（G9）：选一个 .docx，用内置 Pandoc 转成文稿旁边的 .md，图片放进图片文件夹，然后打开 */
   async function importDocx() {
     if (!be || !root) { await chooseFolder(); return; }
@@ -768,6 +781,7 @@ export default function App() {
   async function openExport() {
     if (!path) return;
     await flush().catch(() => null);
+    setBatch(null);
     setDlg("export");
   }
   const resolveImage = useCallback((src: string) => preview.resolveImage(src), [preview]);
@@ -876,6 +890,7 @@ export default function App() {
       ...(node.dir ? [
         { label: "新建文稿", icon: "filePlus", run: () => newFile(node.path) },
         { label: "新建文件夹", icon: "folderPlus", run: () => newFolder(node.path) },
+        { label: "导出这个文件夹…", icon: "export", run: () => exportFolder(node) },
         { sep: true } as MenuEntry,
       ] : !md ? [
         { label: "用默认程序打开", icon: "external", run: () => be?.openPath(node.path).catch(() => say("没能打开这个文件", "error")) },
@@ -1182,7 +1197,7 @@ export default function App() {
         onJump={jumpTo} onOpenAt={openAt} onClose={() => setDlg(null)} />}</Presence>
       <Presence ms={100}>{insertAt && <InsertFile at={insertAt} initialQuery={insertAt.q} files={flatten(tree)} docPath={path} root={root} bib={bib} recent={recentIns}
         onPick={pickInsert} onPickOther={() => { setInsertAt(null); setTimeout(citeOtherFile, 0); }} onClose={() => { setInsertAt(null); view()?.focus(); }} />}</Presence>
-      <Presence>{dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => setDlg(null)} say={say} />}</Presence>
+      <Presence>{dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => { setDlg(null); if (batch) refreshTree(); setBatch(null); }} say={say} batch={batch ?? undefined} />}</Presence>
       <Presence>{dlg === "cmpfile" && <Palette items={cmpItems} search={noSearch} pinned={cmpPick} onClose={() => setDlg(null)} placeholder="选一篇文稿，和当前文稿左右对比" />}</Presence>
       <Presence>{dlg === "move" && moving && <Palette items={moveItems} search={noSearch} onClose={() => { setDlg(null); setMoving(null); }} placeholder={`把「${moving.name}」移到哪个文件夹`} />}</Presence>
       {treeMenu && <Menu x={treeMenu.x} y={treeMenu.y} items={treeMenuItems(treeMenu.node)} onClose={() => setTreeMenu(null)} />}

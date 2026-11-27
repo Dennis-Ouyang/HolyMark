@@ -164,3 +164,14 @@ describe("导出默认值和场景预设（G2）", () => {
     expect(applyScene("print", "docx").footer).toContain("{总页数}");
   });
 });
+
+import { mergeDocs } from "../src/components/ExportDialog";
+describe("批量导出：合并成一个文件（G3）", () => {
+  it("第一篇的属性区保留，后面的去掉；子文件夹里的相对路径改成相对合并后的位置", () => {
+    const out = mergeDocs("/w/正文", [
+      { path: "/w/正文/01.md", text: "---\ntitle: 论文\n---\n# 一\n\n![图](assets/a.png)\n" },
+      { path: "/w/正文/附录/02.md", text: "---\ntitle: 附录\n---\n# 二\n\n![图](b.png) [网页](https://x.org)\n" },
+    ]);
+    expect(out).toBe("---\ntitle: 论文\n---\n# 一\n\n![图](assets/a.png)\n\n# 二\n\n![图](附录/b.png) [网页](https://x.org)\n");
+  });
+});

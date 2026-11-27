@@ -1184,3 +1184,4 @@ textarea.nb-tx::placeholder { color: var(--fg-3); }
 .hm-fndef { font-size: .88em; color: var(--fg-2); }
 .hm-fndef-n { display: inline-block; min-width: 1.4em; margin-right: .3em; font: 600 .8em var(--f-ui); color: var(--accent-fg); vertical-align: .2em; }
 .hm-fntip { position: fixed; z-index: 70; max-width: 360px; padding: 8px 12px; border-radius: 10px; background: var(--raised); box-shadow: var(--float); font: 13px/1.6 var(--f-ui); color: var(--fg); pointer-events: none; animation: tipIn 120ms var(--ease); }
+.xh h3 .xcount { margin-left: 8px; font-size: 12px; font-weight: 400; color: var(--fg-3); }

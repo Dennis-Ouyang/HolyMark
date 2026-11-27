@@ -7,14 +7,14 @@ import type { Backend, ExportTools, FontFamily, RefStyles, TreeNode } from "../l
 import type { BibEntry } from "../lib/bib";
 import {
   cloneOpts, CN_SIZES, defaultsName, defaultsYaml, docxStyle, DOCX_HINTS, DEFAULT_OPTS, ExportOptions, Fmt, Level, loadSaved, markdownOut,
-  normalizeOpts, PAPERS, PDF_DEFAULTS, prepareForPandoc, save, splitArgs, typstTemplate,
+  normalizeOpts, PAPERS, PDF_DEFAULTS, prepareForPandoc, save, splitArgs, splitFrontMatter, typstTemplate,
 } from "../lib/exporting";
 import { effective, previewHTML } from "../lib/exportPreview";
 import { renderMermaid, svgToPng } from "../lib/mermaidImage";
 import { FontSelect, Option, Select } from "./Select";
 import { NumberField } from "./NumberField";
 import { Icon } from "./Icons";
-import { baseName, dirOf, join, normalize } from "../lib/paths";
+import { baseName, dirOf, join, normalize, relative } from "../lib/paths";
 import { Segmented } from "./Segmented";
 import { isWindows } from "../lib/platform";
 import { applyScene, loadProject, saveProject, SCENES } from "../lib/exportPresets";
@@ -30,6 +30,11 @@ interface Props {
   fonts: FontFamily[];
   resolveImage: (src: string) => string;
   onClose: () => void;
+  /**
+   * 批量导出（G3）：一个文件夹里的几篇文稿。mode「合并成一个文件」时按顺序拼成一篇再导出；
+   * 「分别导出」时每篇用同样的设置各导出一个文件，放进这个文件夹里的「导出」文件夹。
+   */
+  batch?: { name: string; dir: string; files: { path: string; text: string }[] };
   /** 应用的提示条（导出成功、恢复默认的撤销） */
   say: (msg: string, kind?: NoticeKind, action?: NoticeAction | NoticeAction[]) => void;
 }
@@ -68,7 +73,21 @@ const STAGES: Record<Fmt, [Stage, string][]> = {
 };
 type Job = { state: "running"; stage: Stage } | { state: "done"; out: string; warnings: string } | { state: "error"; error: string };
 
-export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveImage, onClose, say }: Props) {
+/** 合并几篇文稿：第一篇的属性区保留，后面的去掉；子文件夹里文稿的相对路径（图片、文件链接）改成相对合并后的位置 */
+export function mergeDocs(dir: string, files: { path: string; text: string }[]): string {
+  return files.map((f, i) => {
+    const { fm, body } = splitFrontMatter(f.text);
+    const sub = relative(dir, dirOf(f.path));
+    const fixed = sub === "." ? body : body.replace(/(!?\[[^\]]*\]\()(?!https?:|mailto:|\/|[A-Za-z]:|#|<)([^)\s]+)/g, (_m, a: string, h: string) => `${a}${sub}/${h}`);
+    return (i === 0 && fm ? fm.replace(/\n?$/, "\n") : "") + fixed.trim();
+  }).join("\n\n") + "\n";
+}
+
+export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fonts, resolveImage, onClose, say, batch }: Props) {
+  const [mode, setMode] = useState<"merge" | "each">("merge");
+  const merged = useMemo(() => (batch ? mergeDocs(batch.dir, batch.files) : null), [batch]);
+  const text = merged ?? text0;
+  const path = batch ? join(batch.dir, batch.name + ".md") : path0;
   const saved = useMemo(loadSaved, []);
   const [o, setO] = useState<ExportOptions>(() => saved.last || cloneOpts(DEFAULT_OPTS));
   const [presets, setPresets] = useState(saved.presets);
@@ -195,9 +214,52 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
     say(`已导出「${baseName(out)}」`, "success", acts);
   }
 
+  /** 分别导出：每篇各导出一个文件，放进这个文件夹里的「导出」文件夹 */
+  async function runEach() {
+    if (!batch) return;
+    const ext = EXT[o.fmt];
+    const outDir = join(batch.dir, "导出");
+    setBusy(true);
+    setJob({ state: "running", stage: isMd ? "write" : "prepare" });
+    const outs: string[] = [];
+    const warns: string[] = [];
+    try {
+      for (const f of batch.files) {
+        const stem = baseName(f.path).replace(/\.(md|markdown)$/i, "");
+        const out = join(outDir, `${stem}.${ext}`);
+        if (isMd) { await be.writeText(out, markdownOut(f.text, o, bibMap)); outs.push(out); continue; }
+        const dd = dirOf(f.path);
+        const prep = prepareForPandoc(f.text, o, dd);
+        const title = prep.title || stem;
+        const assets: { name: string; data: string }[] = [];
+        for (let i = 0; i < prep.mermaid.length; i++) {
+          const svg = await renderMermaid(prep.mermaid[i]).catch(() => "");
+          if (svg) assets.push({ name: `mermaid-${i + 1}.png`, data: await svgToPng(svg, 3) });
+        }
+        const r = await be.exportRun({
+          format: o.fmt as "docx" | "pdf", markdown: prep.markdown, output: out,
+          defaultsDir: join(root || dd, ".holymark/export"), defaultsName: defaultsName(o.fmt), defaultsYaml: defaultsYaml(o, { bibliography: bibFiles, docDir: dd }),
+          referenceDoc: o.fmt === "docx" && o.ref ? o.ref : null,
+          docxStyle: o.fmt === "docx" ? docxStyle(o, title) : null,
+          typstTemplate: o.fmt === "pdf" ? typstTemplate(o, title) : null,
+          assets, extraArgs: splitArgs(o.extra),
+        });
+        outs.push(r.output);
+        if (r.warnings.trim()) warns.push(r.warnings);
+      }
+      setJob(null);
+      onClose();
+      say(`已分别导出 ${outs.length} 篇到「导出」文件夹${warns.length ? `，其中 ${warns.length} 篇有提示` : ""}`, warns.length ? "warn" : "success",
+        be.isDemo || !outs.length ? [] : [{ label: isWindows ? "在资源管理器中显示" : "在访达中显示", run: () => { be.reveal(outs[0]).catch(() => {}); } }]);
+    } catch (e) {
+      setJob({ state: "error", error: `${outs.length ? `已导出 ${outs.length} 篇，第 ${outs.length + 1} 篇出错：\n` : ""}${e}` });
+    } finally { setBusy(false); }
+  }
+
   async function run() {
     setErr("");
     if (be.isDemo && !isMd) { setErr("浏览器预览里不能导出 Word 和 PDF，请在 HolyMark 应用里导出。"); return; }
+    if (batch && mode === "each") { await runEach(); return; }
     const ext = EXT[o.fmt];
     const stem = baseName(path).replace(/\.(md|markdown)$/i, "");
     let out: string | null;
@@ -354,7 +416,8 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
     <div className="scrim center" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="xdlg" role="dialog" aria-label="导出">
         <div className="xh">
-          <h3>导出「{docTitle}」</h3>
+          <h3>导出「{batch ? batch.name : docTitle}」{batch && <small className="xcount">{batch.files.length} 篇</small>}</h3>
+          {batch && <Seg label="批量导出方式" value={mode} options={[["merge", "合并成一个文件"], ["each", "分别导出"]]} onChange={setMode} />}
           <Seg label="格式" value={o.fmt} options={FMTS} onChange={(f) => { setErr(""); setO((x) => ({ ...x, fmt: f })); }} />
           <div className="xpre">
             {naming === null ? <>
