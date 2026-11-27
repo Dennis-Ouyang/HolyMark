@@ -69,7 +69,7 @@ function WeekBars({ days }: { days: { day: string; date: Date; net: number }[] }
   return (
     <div className="wstats">
       <div className="ws-head">
-        <span>{sel ? `${sel.date.getMonth() + 1}月${sel.date.getDate()}日` : "今天净增"}</span>
+        <span>{sel ? `${sel.date.getMonth() + 1}月${sel.date.getDate()}日` : "今日字数"}</span>
         <b className="num">{sign(sel ? sel.net : today.net)}</b>
       </div>
       <div className="ws-bars" onMouseLeave={() => setHover(null)} aria-label="最近 7 天每天净增的字数">

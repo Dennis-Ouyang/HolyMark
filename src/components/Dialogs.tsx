@@ -57,7 +57,7 @@ const LICENSES: [string, string, string][] = [
 function About() {
   return <div className="about">
     <p className="ab-v"><b>HolyMark</b><span>版本 {__APP_VERSION__}</span></p>
-    <p className="ab-d">面向长篇中文写作的本地 Markdown 阅读器和编辑器。稿件就是普通的 .md 文件。</p>
+    <p className="ab-d">面向长篇中文写作的本地 Markdown 阅读器和编辑器。</p>
     <h5>开源许可</h5>
     <table className="kt"><tbody>{LICENSES.map(([n, l]) => <tr key={n}><td>{n}</td><td>{l}</td></tr>)}</tbody></table>
   </div>;
@@ -123,12 +123,12 @@ export function SettingsDialog({ s, fonts, onChange, onClose, onReset, initialPa
             <Row label="行距">{num("lineHeight", { min: 1.2, max: 2.6, step: 0.05 }, "倍")}</Row>
             <Row label="版心宽度" hint="每行大约多少个字">{num("measure", { min: 24, max: 60 }, "字")}</Row>
             <EnvSettings s={s} onChange={onChange} />
-            <Row label="公式编号" hint="单独成行的公式右侧显示 (1) (2)…"><label className="inline">{sw("eqNumbers", "行间公式编号")}<span>显示编号</span></label></Row>
+            <Row label="公式编号" hint="单独成行的公式右侧显示 (1) (2)…"><label className="inline">{sw("eqNumbers", "公式编号")}<span>显示编号</span></label></Row>
             <Row label="Markdown 符号"><Segmented label="Markdown 符号" value={s.syntax} options={[["active", "光标所在处显示"], ["always", "始终显示"]]} onChange={(v) => onChange({ syntax: v })} /></Row>
           </>}
           {pane === "writing" && <>
             <Row label="状态栏字数"><Segmented label="状态栏字数" value={s.countPunct} options={[[false, "不含标点"], [true, "含标点"]]} onChange={(v) => onChange({ countPunct: v })} /></Row>
-            <Row label="写作目标" hint="按当前打开的那一篇算，开启后状态栏显示进度"><div className="inline">{sw("goalOn", "写作目标")}{num("goal", { min: 100, step: 500, disabled: !s.goalOn }, "字")}</div></Row>
+            <Row label="写作目标" hint="统计当前打开的文件的每日写作数，开启后，状态栏会显示进度。"><div className="inline">{sw("goalOn", "写作目标")}{num("goal", { min: 100, step: 500, disabled: !s.goalOn }, "字")}</div></Row>
             <Row label="自动版本间隔">{num("autoMinutes", { min: 1, max: 240 }, "分钟")}</Row>
             <Row label="外部修改合并" hint="这段时间内的连续写入记为一条">{num("mergeSeconds", { min: 1, max: 600 }, "秒")}</Row>
           </>}
@@ -149,7 +149,7 @@ function EditorPreview({ s }: { s: Settings }) {
       <div className="epv-scroll">
         <div className="epv-col" style={{ width, fontSize: s.fontSize, lineHeight: s.lineHeight }}>
           <div className="epv-h" style={{ fontFamily: fontStack(s.headingFont) }}>这是标题的预览。</div>
-          <p className="epv-b" style={{ fontFamily: fontStack(s.bodyFont) }}>这是正文部分的预览。你在此设置的是 HolyMark 打开所有文件时的默认值，如果你只想设置单个文件的显示方式，请在功能区「本篇显示」中单独设置。</p>
+          <p className="epv-b" style={{ fontFamily: fontStack(s.bodyFont) }}>这是正文部分的预览。你在此设置的是 HolyMark 打开所有文件时的默认值，如果你只想设置单个文件的显示方式，请在功能区「本文显示」中单独设置。</p>
           {s.paraFocus && <p className="epv-b epv-dim" style={{ fontFamily: fontStack(s.bodyFont) }}>开了段落聚焦时，光标不在的段落会像这样变淡。</p>}
         </div>
       </div>
@@ -241,7 +241,7 @@ export function KeyTable() {
 const SYNTAX: [string, string][] = [
   ["# 标题", "一级到六级标题，# 越多级别越低"], ["**粗体**  *斜体*", "强调"], ["~~删除线~~", "删除线"], ["==高亮==", "高亮（导出 Word 是黄色底）"], ["x^2^  H~2~O", "上标、下标"], ["![说明](图.png){width=60%}", "图片宽度（点图片可以直接拖）"], ["`代码`", "行内代码"],
   ["- 项目", "无序列表；1. 是有序列表"], ["- [ ] 待办", "任务列表，点方框可以勾选"], ["> 引用", "引用块"],
-  ["[文字](地址)", "链接；地址可以是文件夹里的文件"], ["![说明](图片路径)", "图片"], ["$公式$  $$公式$$", "行内公式与独立公式（LaTeX）"],
+  ["[文字](地址)", "链接；地址可以是文件夹里的文件"], ["![说明](图片路径)", "图片"], ["$公式$  $$公式$$", "行内公式与单独成行的公式（LaTeX）"],
   ["```python", "代码块，后面写语言名"], ["```mermaid", "流程图、时序图等图表"], ["| 列 | 列 |", "表格，第二行是 | --- | --- |"],
   ["[@key]", "引用 .bib 里的文献"], ["{==原文==}{>>批注<<}", "批注（CriticMarkup）"], ["---", "分隔线；写在文件开头时是属性区"],
 ];

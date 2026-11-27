@@ -77,8 +77,8 @@ export function FolderReplace({ files, root, read, initial, onApply, onClose }: 
         <div className="fr-body">
           {typeof err === "string" && err && <div className="fr-err" role="alert">正则表达式有误：{err}</div>}
           {!texts && <div className="empty">正在读取文件夹里的文稿…</div>}
-          {texts && q && typeof err !== "string" && !results.length && <div className="empty">文件夹里的 Markdown 文稿中没有找到「{q}」</div>}
-          {texts && !q && <div className="empty">输入要查找的文字，只在 Markdown 文稿里找</div>}
+          {texts && q && typeof err !== "string" && !results.length && <div className="empty">文件夹里没有找到「{q}」</div>}
+          {texts && !q && <div className="empty">输入要在文件夹的 Markdown 文稿中寻找的文字</div>}
           {results.map((x) => {
             const ks = x.matches.map((m) => key(x.path, m));
             const n = ks.filter((k) => !off.has(k)).length;
@@ -98,7 +98,7 @@ export function FolderReplace({ files, root, read, initial, onApply, onClose }: 
                     </label>
                   );
                 })}
-                {x.matches.length > 200 && <div className="fr-more">这篇还有 {x.matches.length - 200} 处没列出来，执行时一起替换</div>}
+                {x.matches.length > 200 && <div className="fr-more">…此外还有 {x.matches.length - 200} 处</div>}
               </div>
             );
           })}

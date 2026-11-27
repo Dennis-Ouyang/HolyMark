@@ -94,7 +94,7 @@ function Resizer({ side, value, min, max, def, onChange }: { side: "left" | "rig
     addEventListener("mousemove", move);
     addEventListener("mouseup", up);
   };
-  return <div className={"resizer " + side} role="separator" aria-orientation="vertical" aria-label="拖动调整宽度，双击恢复默认" title="拖动调整宽度，双击恢复默认"
+  return <div className={"resizer " + side} role="separator" aria-orientation="vertical" aria-label="拖动来调整宽度，双击可以恢复默认" title={"拖动来调整宽度\nTips：双击可以恢复默认"}
     onMouseDown={down} onDoubleClick={() => onChange(def)} />;
 }
 
@@ -103,7 +103,7 @@ function Welcome({ hasRoot, recent, onOpen, onNew, onRecent }: { hasRoot: boolea
   return (
     <div className="welcome">
       <h2>HolyMark</h2>
-      <p>{hasRoot ? "这个文件夹里还没有 Markdown 文稿。" : "选择一个文件夹作为你的工作区。"}</p>
+      <p>{hasRoot ? "这个文件夹里还没有 Markdown 文稿。" : "选择一个文件夹来作为工作区……"}</p>
       <div className="w-acts">
         {hasRoot ? <button className="btn acc" onClick={onNew}>新建文稿</button> : <button className="btn acc" onClick={onOpen}>打开文件夹…</button>}
       </div>
@@ -509,7 +509,7 @@ export default function App() {
       if (merged !== content) {
         await flush().catch(() => setSaveState("error"));
         if (conflicts) say("外部程序也改了你正在写的地方，两边的内容都保留了，请看一下", "warn");
-        else say("已合并外部修改和你刚写的字", "success");
+        else say("已合并外部修改和你刚编辑的内容", "success");
       }
       const vs = await be.listVersions(p);
       setVersions(vs);
@@ -917,7 +917,7 @@ export default function App() {
     const v = view(); if (!v) return;
     const next = setDocLayout(v.state.doc.toString(), l);
     v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: next } });
-    say(Object.keys(l).some((k) => l[k]) ? "已写入本文属性区" : "已清除本文版式", "success");
+    say(Object.keys(l).some((k) => l[k]) ? "已写入本文属性区" : "已恢复本篇默认显示", "success");
   }
   /**
    * ⌘S 是不打断的存档点（G1）：马上提示「已存档」，提示条上带「起个名字」，点了才弹出起名字的对话框。
@@ -1035,7 +1035,7 @@ export default function App() {
     inp.onchange = () => { const v = view(); if (v && inp.files?.length) insertImages([...inp.files], v.state.selection.main.head); };
     inp.click();
   }
-  /** 粘贴或拖进来的图片：存到文档旁的 assets/，在指定位置插入图片语法 */
+  /** 粘贴或拖进来的图片：存到文档旁的图片文件夹（设置里的「图片保存位置」，默认 assets/），在指定位置插入图片语法 */
   async function insertImages(files: File[], pos: number) {
     const v = view();
     if (!v || !be || !path) return;
@@ -1055,7 +1055,8 @@ export default function App() {
     const ins = blockInsertSpec(v.state.doc.toString(), pos, parts.join("\n\n"));
     v.dispatch({ changes: { from: ins.from, insert: ins.insert }, selection: { anchor: ins.cursor }, scrollIntoView: true });
     v.focus();
-    say(parts.length > 1 ? `已插入 ${parts.length} 张图片，保存在 assets/` : "图片已保存到 assets/", "success");
+    const dirName = s.imageDir || "assets";
+    say(parts.length > 1 ? `已插入 ${parts.length} 张图片，保存在 ${dirName}/` : `图片已保存到 ${dirName}/`, "success");
   }
   function insertAtCursor(t: string, block = false) {
     const v = view(); if (!v) return;
@@ -1200,10 +1201,10 @@ export default function App() {
       ...(node.dir ? [
         { label: "新建文稿", icon: "filePlus", run: () => newFile(node.path) },
         { label: "新建文件夹", icon: "folderPlus", run: () => newFolder(node.path) },
-        { label: "导出这个文件夹…", icon: "export", run: () => exportFolder(node) },
+        { label: "导出整个文件夹…", icon: "export", run: () => exportFolder(node) },
         { sep: true } as MenuEntry,
       ] : !md ? [
-        { label: "用默认程序打开", icon: "external", run: () => be?.openPath(node.path).catch(() => say("没能打开这个文件", "error")) },
+        { label: "用默认程序打开", icon: "external", run: () => openOther(node.path) },
         { sep: true } as MenuEntry,
       ] : md ? [
         { label: "打开", icon: "doc", run: () => openFile(node.path) },
@@ -1216,7 +1217,7 @@ export default function App() {
       { label: "移动到…", icon: "moveTo", run: () => { setMoving(node); setDlg("move"); } },
       { sep: true },
       { label: reveal, icon: "open", run: () => be?.reveal(node.path) },
-      { label: "拷贝路径", icon: "link", run: () => { navigator.clipboard?.writeText(node.path).then(() => say("已拷贝路径", "success")).catch(() => {}); } },
+      { label: "复制路径", icon: "link", run: () => { navigator.clipboard?.writeText(node.path).then(() => say("已复制路径", "success")).catch(() => {}); } },
       { sep: true },
       { label: `移到${trashName}`, icon: "trash", danger: true, run: () => trash(node) },
     ];
@@ -1239,9 +1240,9 @@ export default function App() {
   ];
   const folderList = (nodes: TreeNode[]): TreeNode[] => nodes.flatMap((n) => (n.dir ? [n, ...folderList(n.children)] : []));
   const moveItems: PaletteItem[] = moving ? [
-    { group: "移到", icon: "folder", title: baseName(root) + "（最外层）", run: () => moveTo(moving, root) },
+    { group: "移动到", icon: "folder", title: baseName(root) + "（最外层）", run: () => moveTo(moving, root) },
     ...folderList(tree).filter((d) => d.path !== moving.path && !d.path.startsWith(moving.path + "/") && d.path !== dirOf(moving.path))
-      .map((d) => ({ group: "移到", icon: "folder", title: relative(root, d.path), run: () => moveTo(moving, d.path) })),
+      .map((d) => ({ group: "移动到", icon: "folder", title: relative(root, d.path), run: () => moveTo(moving, d.path) })),
   ] : [];
   const cmpItems: PaletteItem[] = flatten(tree).filter((f) => /\.(md|markdown)$/i.test(f.name) && f.path !== path)
     .map((f) => ({ group: "文件夹里的文稿", icon: "doc", title: relative(root, f.path), run: () => compareWith(f.path) }));
@@ -1390,7 +1391,7 @@ export default function App() {
     }
     v.focus();
     const n = imgs.length + links.length;
-    if (n) say(copied ? `已插入 ${n} 个文件，其中 ${copied} 张图片复制到了 assets/` : imgs.length && !links.length ? `已插入 ${imgs.length} 张图片` : `已插入 ${n} 个文件链接`, "success");
+    if (n) say(copied ? `已插入 ${n} 个文件，其中 ${copied} 张图片复制到了 ${s.imageDir || "assets"}/` : imgs.length && !links.length ? `已插入 ${imgs.length} 张图片` : `已插入 ${n} 个文件链接`, "success");
   }
   const dropRef = useRef({ dragOver, dropFiles });
   dropRef.current = { dragOver, dropFiles };
@@ -1479,11 +1480,11 @@ export default function App() {
       <aside className="side" aria-label="文件夹">
         <div className="side-in">
           <div className="side-scroll" onScroll={(e) => e.currentTarget.classList.toggle("scrolled", e.currentTarget.scrollTop > 2)}>
-            <button className={"folder" + (root || single ? "" : " none")} onClick={(e) => { if (!root && !single) { chooseFolder(); return; } const r = e.currentTarget.getBoundingClientRect(); setFolderMenu({ x: r.left + 8, y: r.bottom }); }} title={root ? root : single ? single : "选择一个放稿件的文件夹"} aria-haspopup="menu">
+            <button className={"folder" + (root || single ? "" : " none")} onClick={(e) => { if (!root && !single) { chooseFolder(); return; } const r = e.currentTarget.getBoundingClientRect(); setFolderMenu({ x: r.left + 8, y: r.bottom }); }} title={root ? root : single ? single : "选择的文件夹中的文件会显示在下方"} aria-haspopup="menu">
               <span className="fname">{root ? baseName(root) : single ? "单个文件" : "打开文件夹"}{(root || single) && <Icon name="chev" size={12} />}</span>
-              <span className="fpath">{root ? shortPath(root) : single ? shortPath(dirOf(single)) : "选择一个放稿件的文件夹"}</span>
+              <span className="fpath">{root ? shortPath(root) : single ? shortPath(dirOf(single)) : "选择的文件夹中的文件会显示在下方"}</span>
             </button>
-            {single && !root && <button className="tn single-open" onClick={adoptSingleFolder} title={`把「${baseName(dirOf(single))}」当作工作区打开，这篇的版本一起带过去`}>
+            {single && !root && <button className="tn single-open" onClick={adoptSingleFolder} title={`打开整个「${baseName(dirOf(single))}」`}>
               <span className="slot"><Icon name="folderOpen" size={14} /></span><span className="nm">打开所在文件夹</span></button>}
             <FileTree nodes={treeOrder.shown} root={root} manual={treeOrder.manual} onReorder={(n, d, b) => { void reorderTree(n, d, b); }} onReference={refPane.open} current={viewing || path} onOpen={openFromTree} onPreview={openFromTree} showAll={s.showAllFiles} renaming={renaming} onRename={renameDone}
               onOpenOther={openOther}

@@ -99,7 +99,7 @@ export function RefPane({ be, path, width, onWidth, onClose, onPath, preview, op
 
   return (
     <aside className="refpane" aria-label={`参考：${baseName(path)}`}>
-      <div className="ref-grip" onMouseDown={drag} onDoubleClick={() => onWidth(REF_DEFAULT_W)} title="拖动调整宽度，双击恢复默认" role="separator" aria-orientation="vertical" />
+      <div className="ref-grip" onMouseDown={drag} onDoubleClick={() => onWidth(REF_DEFAULT_W)} title={"拖动来调整宽度\nTips：双击可以恢复默认"} role="separator" aria-orientation="vertical" />
       <div className="ref-head">
         <FileBadge name={baseName(path)} />
         <b className="ref-name"><MidName name={md ? baseName(path).replace(/\.(md|markdown)$/i, "") : baseName(path)} tail={8} /></b>

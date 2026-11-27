@@ -8,7 +8,7 @@ import { kbd } from "../lib/platform";
 import { hasChildren, hiddenByCollapse, outlineKeys } from "../lib/outlineFold";
 
 export type PanelTab = "outline" | "notes" | "versions";
-const SRC = { saved: "你保存的", external: "外部修改", auto: "自动" } as const;
+const SRC = { saved: "手动保存", external: "外部修改", auto: "自动" } as const;
 
 export function fmtTime(at: number) {
   const d = new Date(at), now = new Date();
@@ -140,7 +140,7 @@ export function SidePanel(p: Props) {
               ))}
               {dropY !== null && <div className="ol-drop" style={{ top: dropY }} aria-hidden="true" />}
             </div>
-          ) : <Empty icon="outline" text="这篇还没有标题。加上标题，这里就会列出目录。" action={p.onAddHeading && { label: "把这一段设成标题", run: p.onAddHeading }} />}
+          ) : <Empty icon="outline" text="这个文件还没有标题" action={p.onAddHeading && { label: "把当前行设为标题", run: p.onAddHeading }} />}
         </div>
       )}
 
@@ -157,7 +157,7 @@ export function SidePanel(p: Props) {
                   <button className="ok" onClick={(e) => { e.stopPropagation(); p.onResolve(n); }}>解决</button></div>
               </div>
             );
-          })}</div> : <Empty icon="note" text="还没有批注。选中一段文字，就能在旁边写批注。" action={p.onAddNote && { label: "给选中的文字加批注", run: p.onAddNote }} />}
+          })}</div> : <Empty icon="note" text="还没有批注。你可以选中一段文字，在工具栏中选择批注。" action={p.onAddNote && { label: "给选中的文字添加批注", run: p.onAddNote }} />}
         </div>
       )}
 
@@ -168,8 +168,8 @@ export function SidePanel(p: Props) {
             <button className="lnk" onClick={p.onSaveVersion} title={kbd("⌘S 直接存档，不用起名字")}>保存版本…</button>
             <button className="lnk" onClick={p.onCompareFile} title="选一篇文稿和当前文稿左右对比">与其他文稿对比</button>
           </div>
-          {p.canRevert && <button className="vrevert" onClick={p.onRevert}><Icon name="reset" size={14} />撤销这次打开以来的修改</button>}
-          {p.versions.length ? <VersionList {...p} /> : <Empty icon="history" text="还没有版本。自动保存的同时会定时留一个版本，也可以随时自己存一个。" action={{ label: "保存一个版本", run: p.onSaveVersion }} />}
+          {p.canRevert && <button className="vrevert" onClick={p.onRevert}><Icon name="reset" size={14} />还原到刚打开时</button>}
+          {p.versions.length ? <VersionList {...p} /> : <Empty icon="history" text="使用 HolyMark 打开的文件，编辑时会定期为你自动保存版本。你也可以随时手动保存。" action={{ label: "保存当前版本", run: p.onSaveVersion }} />}
         </div>
       )}
     </div>
@@ -204,8 +204,8 @@ function VersionList(p: Props) {
   let day = "";
   return <>
     <div className="vbar">
-      <span className="vlegend"><i className="saved" />你保存的<i className="external" />外部修改<i className="auto" />自动</span>
-      <label className="vfilter"><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} />只看我保存的</label>
+      <span className="vlegend"><i className="saved" />手动保存<i className="external" />外部修改<i className="auto" />自动</span>
+      <label className="vfilter"><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} />只看手动保存</label>
     </div>
     {p.versions.map((v, i) => {
       if (mine && v.source !== "saved") return null;

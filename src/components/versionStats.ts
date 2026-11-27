@@ -38,5 +38,5 @@ export function changeTitle(n: number | undefined): string {
   if (n === undefined) return "";
   if (n < 0) return "最早的版本";
   if (n === 0) return "没有改动";
-  return `改了 ${n} 段`;
+  return `编辑过 ${n} 段`;
 }

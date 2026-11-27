@@ -89,7 +89,7 @@ class MermaidWidget extends WidgetType {
         const { svg } = await mermaid.render("hm-mm-" + ++mermaidSeq, this.code);
         el.innerHTML = svg;
       } catch {
-        el.textContent = "Mermaid 语法有误，点这里修改";
+        el.textContent = "Mermaid 语法有误，点击来修改";
       }
     });
     el.addEventListener("mousedown", (e) => focusAt(view, el, e, 11));
@@ -103,7 +103,7 @@ const PROP_NAMES: Record<string, string> = {
   title: "标题", subtitle: "副标题", author: "作者", date: "日期", abstract: "摘要", keywords: "关键词", tags: "标签",
   bibliography: "文献库", csl: "引用样式", lang: "语言", toc: "目录", "toc-depth": "目录层级", numbersections: "章节编号",
   papersize: "纸张", geometry: "页边距", fontsize: "字号", mainfont: "西文字体", CJKmainfont: "中文字体", linestretch: "行距",
-  "reference-doc": "参考文档", holymark: "本文版式", "heading-font": "标题字体", "body-font": "正文字体", "font-size": "字号",
+  "reference-doc": "参考文档", holymark: "本文显示", "heading-font": "标题字体", "body-font": "正文字体", "font-size": "字号",
   "line-height": "行距", measure: "版心宽度", description: "说明", category: "分类", status: "状态",
 };
 /** 展开过的属性区（按内容记），重画时保持展开 */

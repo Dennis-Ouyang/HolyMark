@@ -463,10 +463,14 @@ step("N8 块把手：段落菜单下移、标题整节下移带撤销、目录�
   const before = await docText(page);
   const lineBox = (text) => page.evaluate((t) => {
     const v = window.__hm.view(); const p = v.state.doc.toString().indexOf(t);
-    v.dispatch({ effects: window.__hmScroll?.(p) ?? [] });
     const c = v.coordsAtPos(p, 1); return c && { x: c.left + 30, y: Math.round((c.top + c.bottom) / 2) };
   }, text);
-  const scrollTo = (text) => page.evaluate((t) => { const v = window.__hm.view(); const p = v.state.doc.toString().indexOf(t); const sc = document.querySelector(".scroller"); const c = v.coordsAtPos(p, 1); if (c) sc.scrollTop += c.top - 260; }, text);
+  // 不在屏幕上的行没有坐标：先让编辑器自己滚过去，再微调到离顶部 260px
+  const scrollTo = async (text) => {
+    await page.evaluate((t) => { const v = window.__hm.view(); const p = v.state.doc.toString().indexOf(t); if (p < 0) throw new Error("正文里没有「" + t + "」"); v.dispatch({ effects: v.constructor.scrollIntoView(p, { y: "center" }) }); }, text);
+    await page.waitForTimeout(120);
+    await page.evaluate((t) => { const v = window.__hm.view(); const p = v.state.doc.toString().indexOf(t); const sc = document.querySelector(".scroller"); const c = v.coordsAtPos(p, 1); if (c) sc.scrollTop += c.top - 260; }, text);
+  };
   // 段落：把手菜单「下移」
   await page.evaluate(() => document.activeElement?.blur?.());
   await scrollTo("基于此，本章提出");

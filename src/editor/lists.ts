@@ -306,7 +306,7 @@ function listProvider(always: () => boolean): HandleProvider {
         menu: () => [
           { label: "无序列表", icon: "ul", disabled: curKind === "bullet", run: kind("bullet") },
           { label: "有序列表", icon: "ol", disabled: curKind === "ordered", run: kind("ordered") },
-          { label: "待办列表", icon: "task", disabled: curKind === "task", run: kind("task") },
+          { label: "任务列表", icon: "task", disabled: curKind === "task", run: kind("task") },
           { sep: true },
           { label: "增加缩进", icon: "indent", hint: "Tab", run: () => run(indentItem(c.lines, c.i, 1)) },
           { label: "减少缩进", icon: "outdent", hint: "⇧Tab", run: () => run(indentItem(c.lines, c.i, -1)) },

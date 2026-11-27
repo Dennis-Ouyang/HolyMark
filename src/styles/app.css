@@ -566,7 +566,7 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .ni:hover + .ni::before, .ni.cur + .ni::before, .ni:hover::before, .ni.cur::before { opacity: 0; }
 .ni .q { font-size: 12px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ni .tx { margin-top: 3px; font-size: 13px; line-height: 1.6; color: var(--fg); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.ni .tx.ph2 { color: var(--fg-3); }
+.ni .tx.ph2, .nb-tx.ph2 { color: var(--fg-2); }
 .ni .by { display: flex; align-items: center; gap: 10px; margin-top: 4px; height: 22px; font-size: 12px; }
 .ni .who { color: var(--fg-2); }
 .ni .dt { color: var(--fg-3); font-variant-numeric: tabular-nums; }

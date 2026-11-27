@@ -22,7 +22,7 @@ export function inCodeBlock(state: EditorState, pos: number) {
 export function tabKey(view: EditorView, dir: 1 | -1) {
   if (indentList(view, dir)) return true;
   if (inCodeBlock(view.state, view.state.selection.main.head)) return dir === 1 ? indentMore(view) : indentLess(view);
-  if (dir === 1) notifyOnce("tab-indent", "正文里按 Tab 不会缩进。首行缩进在导出设置的「正文」里统一调");
+  if (dir === 1) notifyOnce("tab-indent", "在正文中按 Tab 并不会缩进。导出文件的缩进显示格式可以在导出设置中的「正文」部分调整。");
   return true;
 }
 

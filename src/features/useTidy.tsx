@@ -1,4 +1,5 @@
 /** 中文排版整理的接线：打开浮层、执行、撤销。App 里只调用这个 hook，渲染它返回的 node。 */
+import { kbd } from "../lib/platform";
 import { useCallback, useState } from "react";
 import { ChangeSet } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
@@ -47,7 +48,7 @@ export function useTidy({ view, rules, text, say, openSettings }: Ctx) {
       const w = view();
       if (!w) return;
       // 整理之后又打了字：改用编辑器的撤销历史，不硬套旧的改动
-      if (w.state.doc !== after) { say("整理之后正文又改过了，用 ⌘Z 逐步撤销"); return; }
+      if (w.state.doc !== after) { say(`整理之后正文又改过了，用 ${kbd("⌘Z")} 逐步撤销`); return; }
       w.dispatch({ changes: inverse, userEvent: "undo.tidy" });
     } });
   }, [view, say]);

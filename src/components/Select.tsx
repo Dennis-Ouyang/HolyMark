@@ -8,7 +8,8 @@ import { createPortal } from "react-dom";
 import { Icon } from "./Icons";
 import type { FontFamily } from "../lib/backend";
 
-export interface Option<T extends string> { value: T; label: string; hint?: string; style?: React.CSSProperties; group?: string }
+/** title：悬停时显示的说明（比如导出场景预设的具体参数），走统一的悬停提示 */
+export interface Option<T extends string> { value: T; label: string; hint?: string; style?: React.CSSProperties; group?: string; title?: string }
 
 interface Props<T extends string> {
   value: T;
@@ -95,8 +96,8 @@ export function Select<T extends string>({ value, options, onChange, ariaLabel, 
               return (
                 <div key={o.value + i}>
                   {head}
-                  <div role="option" aria-selected={o.value === value} className={"opt" + (i === hi ? " hi" : "") + (o.value === value ? " cur" : "")}
-                    onMouseMove={() => setHi(i)} onClick={() => choose(o)}>
+                  <div role="option" aria-selected={o.value === value} className={"opt" + (i === hi ? " hi" : "") + (o.value === value ? " cur" : "") + (o.title ? " tip" : "")}
+                    title={o.title} onMouseMove={() => setHi(i)} onClick={() => choose(o)}>
                     <span className="ck">{o.value === value && <Icon name="check" size={13} />}</span>
                     <span className="olbl" style={o.style}>{o.label}</span>
                     {o.hint && <span className="oh">{o.hint}</span>}

@@ -12,7 +12,7 @@ import { isMac } from "./platform";
 export type CommandCategory = "file" | "edit" | "paragraph" | "format" | "insert" | "view" | "help";
 
 export const CATEGORY_TITLE: Record<CommandCategory, string> = {
-  file: "文件", edit: "编辑", paragraph: "段落", format: "格式", insert: "插入", view: "视图", help: "帮助",
+  file: "文件", edit: "编辑", paragraph: "段落", insert: "插入", format: "格式", view: "视图", help: "帮助",
 };
 
 export interface CommandDef {
@@ -46,7 +46,7 @@ export const COMMANDS: CommandDef[] = [
   { id: "open_folder", title: "打开文件夹…", category: "file", keys: "Mod+O" },
   { id: "close_folder", title: "关闭文件夹", category: "file" },
   { id: "save_version", title: "存档", category: "file", keys: "Mod+S", sepBefore: true, alias: "保存版本" },
-  { id: "save_version_named", title: "保存版本并起名字…", category: "file" },
+  { id: "save_version_named", title: "保存一个版本…", category: "file", alias: "起名字 命名版本" },
   { id: "compare_file", title: "与其他文稿对比…", category: "file" },
   { id: "import_docx", title: "从 Word 导入…", category: "file", alias: "docx 转换", sepBefore: true },
   { id: "export", title: "导出…", category: "file", keys: "Mod+Shift+E", sepBefore: true, alias: "Word PDF Markdown" },
@@ -74,18 +74,18 @@ export const COMMANDS: CommandDef[] = [
   { id: "block_quote", title: "引用", category: "paragraph", keys: "Mod+Shift+.", sepBefore: true },
   { id: "block_ul", title: "无序列表", category: "paragraph", keys: "Mod+Shift+8" },
   { id: "block_ol", title: "有序列表", category: "paragraph", keys: "Mod+Shift+7" },
-  { id: "block_task", title: "待办列表", category: "paragraph", keys: "Mod+Shift+9" },
+  { id: "block_task", title: "任务列表", category: "paragraph", keys: "Mod+Shift+9", alias: "待办" },
   { id: "indent", title: "增加缩进", category: "paragraph", keys: "Mod+]" },
   { id: "outdent", title: "减少缩进", category: "paragraph", keys: "Mod+[" },
   // 插入（斜杠菜单读这一类）
-  { id: "insert_table", title: "表格", category: "insert", alias: "插入表格" },
-  { id: "insert_code", title: "代码块", category: "insert", keys: "Mod+Alt+C", alias: "插入代码块" },
-  { id: "insert_math", title: "公式块", category: "insert", keys: "Mod+Alt+B", alias: "插入公式 LaTeX" },
-  { id: "insert_mermaid", title: "图表（Mermaid）", category: "insert", alias: "插入流程图" },
-  { id: "insert_image", title: "图片…", category: "insert", keys: "Mod+Shift+I", alias: "插入图片" },
-  { id: "insert_hr", title: "分隔线", category: "insert", alias: "插入分隔线" },
-  { id: "cite", title: "文件链接或文献…", category: "insert", keys: "Mod+Shift+C", alias: "插入文件链接 引用" },
-  { id: "note", title: "批注", category: "insert", keys: "Mod+Alt+M", alias: "添加批注" },
+  { id: "insert_table", title: "表格", paletteTitle: "插入表格", category: "insert" },
+  { id: "insert_code", title: "代码块", paletteTitle: "插入代码块", category: "insert", keys: "Mod+Alt+C" },
+  { id: "insert_math", title: "公式块", paletteTitle: "插入公式块", category: "insert", keys: "Mod+Alt+B", alias: "公式 LaTeX 单独成行的公式" },
+  { id: "insert_mermaid", title: "图表（Mermaid）", paletteTitle: "插入图表（Mermaid）", category: "insert", alias: "流程图" },
+  { id: "insert_image", title: "图片…", paletteTitle: "插入图片…", category: "insert", keys: "Mod+Shift+I" },
+  { id: "insert_hr", title: "分隔线", paletteTitle: "插入分隔线", category: "insert" },
+  { id: "cite", title: "文件链接或文献…", paletteTitle: "插入文件链接或文献…", category: "insert", keys: "Mod+Shift+C", alias: "引用" },
+  { id: "note", title: "批注", paletteTitle: "添加批注", category: "insert", keys: "Mod+Alt+M" },
   { id: "math_symbols", title: "打开公式符号面板…", category: "insert", alias: "LaTeX 希腊字母 运算符" },
   // 格式
   { id: "bold", title: "粗体", category: "format", keys: "Mod+B" },
@@ -116,9 +116,9 @@ export const COMMANDS: CommandDef[] = [
   { id: "ref_open", title: "在右侧并排参考…", category: "view", sepBefore: true, alias: "对照 参考 分屏" },
   { id: "ref_close", title: "关闭并排参考", category: "view", paletteOnly: true },
   { id: "close_preview", title: "关闭预览，回到正文", category: "view", keys: "Escape", ownKeys: true, paletteOnly: true },
-  { id: "panel_outline", title: "目录", category: "view", keys: "Mod+Alt+1", sepBefore: true },
-  { id: "panel_notes", title: "批注列表", category: "view", keys: "Mod+Alt+2" },
-  { id: "panel_versions", title: "版本", category: "view", keys: "Mod+Alt+3" },
+  { id: "panel_outline", title: "目录", paletteTitle: "查看目录", category: "view", keys: "Mod+Alt+1", sepBefore: true },
+  { id: "panel_notes", title: "批注", paletteTitle: "查看批注", category: "view", keys: "Mod+Alt+2" },
+  { id: "panel_versions", title: "版本", paletteTitle: "查看版本", category: "view", keys: "Mod+Alt+3" },
   { id: "toggle_syntax", title: "始终显示 Markdown 符号", category: "view", sepBefore: true },
   // 帮助
   { id: "help_syntax", title: "Markdown 语法速查", category: "help" },

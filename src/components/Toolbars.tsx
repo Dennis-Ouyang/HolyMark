@@ -156,7 +156,7 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
   return (
     <div ref={box} className={"ribbon" + (collapsed ? " collapsed" : "") + (compact ? " compact" : "")}>
       <div className="rtabs" role="tablist">
-        {([["home", "开始"], ["insert", "插入"], ["layout", "本篇显示"]] as const).map(([k, l]) => (
+        {([["home", "开始"], ["insert", "插入"], ["layout", "本文显示"]] as const).map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={"rtab" + (tab === k ? " on" : "")}
             onClick={() => { setTab(k); setCollapsed(false); }} onDoubleClick={() => setCollapsed(!collapsed)}>{l}{k === "layout" && hasLayout && <i className="rdot" title="这一篇有单独的显示设置" />}</button>
         ))}
@@ -171,7 +171,7 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
               <Select value={block} ariaLabel="段落样式" keepFocus width={120}
                 options={[...STYLE_CHIPS.map((c) => ({ value: c.value, label: c.label, hint: keyText(shortcutOf("block_" + c.value)) })),
                   { value: "h4", label: "标题 4", hint: keyText(shortcutOf("block_h4")) }, { value: "h5", label: "标题 5", hint: keyText(shortcutOf("block_h5")) }, { value: "h6", label: "标题 6", hint: keyText(shortcutOf("block_h6")) },
-                  ...(["ul", "ol", "task", "quote"].includes(block) ? [{ value: block, label: { ul: "无序列表", ol: "有序列表", task: "待办列表", quote: "引用" }[block as "ul"] }] : [])] as SelectOption<BlockKind>[]}
+                  ...(["ul", "ol", "task", "quote"].includes(block) ? [{ value: block, label: { ul: "无序列表", ol: "有序列表", task: "任务列表", quote: "引用" }[block as "ul"] }] : [])] as SelectOption<BlockKind>[]}
                 onChange={(k) => { if (v) setBlock(v, k); }} />
             </Group> : <Group label="段落样式" className="styles">
               {STYLE_CHIPS.map((c) => (
@@ -235,8 +235,8 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
             </Group>
             {/* 按钮写清楚做什么；状态另外用一行小字说明（H37） */}
             <Group label="" className="reset">
-              <span className="rstate">{hasLayout ? "这一篇用自己的设置" : "这一篇跟随默认设置"}</span>
-              <button type="button" className="btn sm" disabled={!hasLayout} onMouseDown={keep} onClick={() => onLayout({})} title="去掉这一篇单独的字体和排版，回到设置里的默认值">恢复默认</button>
+              <span className="rstate">设置仅在当前文件中生效的显示样式</span>
+              <button type="button" className="btn sm" disabled={!hasLayout} onMouseDown={keep} onClick={() => onLayout({})} title="去除当前文件的自定义样式，恢复设置里的默认值">恢复默认</button>
             </Group>
           </>}
         </div>

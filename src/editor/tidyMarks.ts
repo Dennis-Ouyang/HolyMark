@@ -6,7 +6,7 @@ import { StateEffect, StateField } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView } from "@codemirror/view";
 
 export const setTidyMarks = StateEffect.define<{ from: number; to: number }[]>();
-const mark = Decoration.mark({ class: "hm-repeat", attributes: { title: "重复的字词，看看是不是多打了" } });
+const mark = Decoration.mark({ class: "hm-repeat", attributes: { title: "这里有重复的字词，是不是多打了？" } });
 
 export const tidyMarks = StateField.define<DecorationSet>({
   create: () => Decoration.none,

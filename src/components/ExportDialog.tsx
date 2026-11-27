@@ -16,7 +16,7 @@ import { NumberField } from "./NumberField";
 import { Icon } from "./Icons";
 import { baseName, dirOf, join, normalize, relative } from "../lib/paths";
 import { Segmented } from "./Segmented";
-import { isWindows } from "../lib/platform";
+import { isWindows, isMac } from "../lib/platform";
 import { applyScene, loadProject, saveProject, SCENES } from "../lib/exportPresets";
 import { usePresetIO } from "../features/usePresetIO";
 import { htmlCss } from "../lib/htmlExport";
@@ -215,7 +215,7 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
     setJob(null);
     onClose();
     const acts: NoticeAction[] = be.isDemo ? [] : [
-      { label: "打开", run: () => { be.openPath(out).catch(() => {}); } },
+      { label: "打开", run: () => { be.openPath(out).catch((e) => say(String((e as Error)?.message ?? e).replace(/^Error:\s*/, "") || "没能打开这个文件", "error")); } },
       { label: isWindows ? "在资源管理器中显示" : "在访达中显示", run: () => { be.reveal(out).catch(() => {}); } },
     ];
     say(`已导出「${baseName(out)}」`, "success", acts);
@@ -389,7 +389,7 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
         <p className="dnote">例如 第{"{一}"}章、{"{1}.{2}"}。{"{1}{2}{3}"} 是各级的阿拉伯数字，{"{一}{二}{三}"} 是中文数字；填了以后，原文里写的编号会被替换。</p>
         <More id="heading">
         <div className="orow"><span>字体</span>{xf(hk("font"), <FontSelect value={H.font} fonts={fonts} allowDefault defaultLabel="同正文" ariaLabel="标题字体" onChange={(v) => setH({ font: v })} />)}</div>
-        <div className="orow"><span>对齐</span>{xf(hk("align"), <Seg label="标题对齐" value={H.align} options={[["", "默认"], ["left", "左"], ["center", "居中"]]} onChange={(v) => setH({ align: v })} />)}</div>
+        <div className="orow"><span>对齐</span>{xf(hk("align"), <Seg label="标题对齐" value={H.align} options={[["", "默认"], ["left", "左对齐"], ["center", "居中"]]} onChange={(v) => setH({ align: v })} />)}</div>
         {o.fmt === "docx" && <div className="orow"><span>颜色</span><Seg label="标题颜色" value={H.color} options={[["", "默认"], ["black", "黑色"]]} onChange={(v) => setH({ color: v })} /></div>}
         <div className="orow"><span>段前 / 段后</span><div className="pair">
           {xf(hk("before"), <NumberField value={H.before} placeholder="" min={0} max={72} step={0.5} unit="pt" ariaLabel="标题段前" onCommit={(v) => setH({ before: v })} />)}
@@ -397,7 +397,7 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
         </More>
       </div>
       <div className="og"><h5>参考文献</h5>
-        <div className="orow"><span>文献格式</span><Select value={o.csl} options={cslOptions} ariaLabel="参考文献格式" width={300} onChange={(v) => (v === "__pick" ? pickCsl() : set({ csl: v }))} /></div>
+        <div className="orow"><span>引用样式</span><Select value={o.csl} options={cslOptions} ariaLabel="引用样式" width={300} onChange={(v) => (v === "__pick" ? pickCsl() : set({ csl: v }))} /></div>
         <p className="dnote">正文里的 [@key] 按这个格式排成引注和文末的参考文献表。国标 GB/T 7714 等格式可以从 Zotero 样式库下载 .csl 文件放进文件夹。{bibFiles.length ? `文献库：${bibFiles.map((b) => baseName(b)).join("、")}` : "文件夹里没有 .bib 文献库，[@key] 不会被处理。"}</p>
       </div>
       {(o.fmt === "docx" || o.fmt === "html") && <div className="og"><h5>批注</h5>
@@ -405,7 +405,7 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
       </div>}
       <div className="og"><h5>其他</h5>
         <div className="orow"><span>目录</span><label className="pair spread"><span className="dnote">在正文前生成目录</span><button type="button" className={"switch" + (o.toc ? " on" : "")} role="switch" aria-checked={o.toc} aria-label="生成目录" onClick={() => set({ toc: !o.toc })} /></label></div>
-        {o.fmt === "pdf" && <div className="orow"><span>公式编号</span><label className="pair spread"><span className="dnote">行间公式右侧显示 (1) (2)…</span><button type="button" className={"switch" + (o.eqNum ? " on" : "")} role="switch" aria-checked={o.eqNum} aria-label="公式编号" onClick={() => set({ eqNum: !o.eqNum })} /></label></div>}
+        {o.fmt === "pdf" && <div className="orow"><span>公式编号</span><label className="pair spread"><span className="dnote">单独成行的公式右侧显示 (1) (2)…</span><button type="button" className={"switch" + (o.eqNum ? " on" : "")} role="switch" aria-checked={o.eqNum} aria-label="公式编号" onClick={() => set({ eqNum: !o.eqNum })} /></label></div>}
         <More id="pandoc" label="高级">
         <div className="orow top"><span>Pandoc 参数</span><textarea className="xa" value={o.extra} placeholder="额外的参数，例如 --number-sections" aria-label="额外的 Pandoc 参数" onChange={(e) => set({ extra: e.target.value })} /></div>
         </More>
@@ -477,7 +477,9 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
           <span className="xstatus">
             {err ? <span className="xerr" role="alert">{err}</span>
               : be.isDemo && !isMd ? <span>浏览器预览里只能看效果，导出 Word、PDF 和 HTML 请在 HolyMark 应用里进行。</span>
-              : missing.length ? <span className="xerr">没有找到 {missing.join("、")}。可以在终端运行 <code>brew install {missing.join(" ").toLowerCase()}</code>，装好后重新打开导出窗口。</span>
+              : missing.length ? <span className="xerr">{isMac
+                ? <>没有找到 {missing.join("、")}。可以在终端运行 <code>brew install {missing.join(" ").toLowerCase()}</code>，装好后重新打开导出窗口。</>
+                : <>未找到内置的导出工具，请重新安装完整安装包，或自行安装 Pandoc 与 Typst。</>}</span>
                 : tools && !isMd ? <span className="xinfo" tabIndex={0} title={[tools.pandoc && `Pandoc ${tools.pandoc.version.replace(/^pandoc\s*/i, "")}${tools.pandoc.bundled ? "（内置）" : ""}`, o.fmt === "pdf" && tools.typst && `Typst ${tools.typst.version.replace(/^typst\s*/i, "").split(" ")[0]}${tools.typst.bundled ? "（内置）" : ""}`].filter(Boolean).join("\n")}
                   aria-label="导出工具的版本"><Icon name="info" size={15} /></span> : null}
           </span>
@@ -511,10 +513,10 @@ export function summarizeWarnings(raw: string): { text: string; n: number }[] {
   }
   const zh = (t: string) => {
     let m: RegExpMatchArray | null;
-    if ((m = t.match(/unknown font family:\s*(.+)$/i))) return `系统里没有字体「${m[1].trim()}」，用了替代字体`;
+    if ((m = t.match(/unknown font family:\s*(.+)$/i))) return `本机中没有字体「${m[1].trim()}」，使用了替代字体`;
     if ((m = t.match(/Could not fetch resource\s+'?([^']+)'?/i))) return `找不到文件：${m[1].trim()}`;
-    if ((m = t.match(/Missing character:.*?(\S+)\s*$/i))) return `字体里缺字：${m[1]}`;
-    if (/Could not convert TeX math/i.test(t)) return "有公式没能转换，按原样的 TeX 输出";
+    if ((m = t.match(/Missing character:.*?(\S+)\s*$/i))) return `字体中缺少字符：${m[1]}`;
+    if (/Could not convert TeX math/i.test(t)) return "有公式没能正确转换";
     return t.replace(/^\[WARNING\]\s*/, "").replace(/^warning:\s*/i, "");
   };
   const out = new Map<string, number>();

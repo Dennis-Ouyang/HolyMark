@@ -119,7 +119,8 @@ function bubble(n: NoteHit, focus: boolean): Bubble {
         } else {
           body = document.createElement("div");
           body.className = "nb-tx ro";
-          body.textContent = n.text || "（没有内容）";
+          body.textContent = n.text || "还没有写内容";
+          if (!n.text) body.classList.add("ph2");
         }
         const foot = document.createElement("div");
         foot.className = "nb-f";

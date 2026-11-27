@@ -41,7 +41,7 @@ export function Compare({ version, fileLabel, onPick, oldText, newText, against,
   const title = fileLabel ? fileLabel : `${name} ${t!.day} ${t!.hm}`;
   const leftLabel = against === "prev" ? prevLabel : title;
   const rightLabel = against === "prev" ? title : "现在";
-  const against0 = fileLabel ? "左边是那个文件，右边是现在" : against === "prev" ? "与上一版相比" : "与现在相比";
+  const against0 = fileLabel ? "左侧是打开的外部文件" : against === "prev" ? "与上一版相比" : "与现在相比";
   const cls = (s: string | null) => (!s ? "" : /^```|^\$\$|^\|/.test(s) ? " mono" : /^#{1,6} /.test(s) ? " h" : "");
   const render = (ops: Op[], side: "-" | "+" | "both") =>
     ops.map(([k, s], i) => k === "=" ? <span key={i}>{s}</span> : k === "-" ? (side !== "+" ? <del key={i}>{s}</del> : null) : (side !== "-" ? <ins key={i}>{s}</ins> : null));
@@ -54,7 +54,7 @@ export function Compare({ version, fileLabel, onPick, oldText, newText, against,
         <div className="ttl">
           <div className="tl"><b title={name}>{fileLabel ? `「${fileLabel}」和当前文稿` : name}</b>{t && <span className="tm">{t.day} {t.hm}</span>}</div>
           <div className="sub">
-            {sameAsNow && <span className="same">和现在一样</span>}
+            {sameAsNow && <span className="same">和当前文件一致</span>}
             {sameAsNow && against === "current" ? <span>没有更早的版本可以对比</span> : <>
               <span>{against0}</span>
               <span className="n">{stats.changed} 处不同</span>
