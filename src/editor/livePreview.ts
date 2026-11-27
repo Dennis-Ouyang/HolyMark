@@ -246,7 +246,7 @@ class ImageWidget extends WidgetType {
     };
     for (const [w, t] of sizes) bar.appendChild(btn(t, w ? `宽度设为版心的 ${w}` : "按图片本身的大小显示", () => commit(w), w === this.width ? "on" : ""));
     const sep = document.createElement("span"); sep.className = "sep"; bar.appendChild(sep);
-    bar.appendChild(btn("源代码", "显示这张图片的 Markdown 源码", () => { close(); focusAt(view, el, new Event("x"), 2); }, "src"));
+    bar.appendChild(btn("源代码", "显示源代码", () => { close(); focusAt(view, el, new Event("x"), 2); }, "src"));
     const grip = document.createElement("span");
     grip.className = "hm-igrip";
     grip.title = "拖动缩放";

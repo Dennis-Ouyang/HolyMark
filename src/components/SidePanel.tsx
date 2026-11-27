@@ -44,6 +44,8 @@ interface Props {
   /** 这次打开以来有修改：可以一键撤销 */
   canRevert?: boolean;
   onRevert?: () => void;
+  /** 目录里拖动标题（N8）：把 from 这个标题的整节挪到 before 这个标题前面（null 是挪到最后） */
+  onMoveHeading?: (from: number, before: number | null) => void;
 }
 
 /**
@@ -78,6 +80,41 @@ export function SidePanel(p: Props) {
   const toggleKids = (k: string) => setCollapsed((c) => { const n = new Set(c); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   useEffect(() => { outlineRef.current?.querySelector(".oi.cur")?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [p.currentHeading]);
 
+  /* 目录里拖动标题：整节一起移动。按住拖过 4px 才算拖动，否则就是点击跳转 */
+  const [dropY, setDropY] = useState<number | null>(null);
+  const dragged = useRef(false);
+  const startDrag = (e: React.MouseEvent, i: number) => {
+    if (e.button !== 0 || !p.onMoveHeading || !outlineRef.current) return;
+    const box = outlineRef.current, hs = p.headings, L = hs[i].level;
+    let end = i + 1;
+    while (end < hs.length && hs[end].level > L) end++; // 自己这一节：i .. end-1
+    const x0 = e.clientX, y0 = e.clientY;
+    let on = false, before: number | null | undefined;
+    const mv = (ev: MouseEvent) => {
+      if (!on && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
+      if (!on) { on = true; document.body.classList.add("hm-dragging"); }
+      const rows = [...box.querySelectorAll<HTMLElement>(".oi[data-i]")];
+      const top = box.getBoundingClientRect().top - box.scrollTop;
+      const hit = rows.find((r) => { const b = r.getBoundingClientRect(); return ev.clientY < b.top + b.height / 2; });
+      const k = hit ? +hit.dataset.i! : null;
+      if (k !== null && k >= i && k < end) { before = undefined; setDropY(null); return; } // 放在自己这一节里面
+      if (k === end || (k === null && end >= hs.length)) { before = undefined; setDropY(null); return; } // 原地
+      before = k;
+      const y = hit ? hit.getBoundingClientRect().top : rows[rows.length - 1].getBoundingClientRect().bottom;
+      setDropY(Math.round(y - top));
+    };
+    const up = () => {
+      removeEventListener("mousemove", mv); removeEventListener("mouseup", up);
+      document.body.classList.remove("hm-dragging");
+      setDropY(null);
+      if (!on) return;
+      dragged.current = true;
+      setTimeout(() => { dragged.current = false; }, 0);
+      if (before !== undefined) p.onMoveHeading!(hs[i].pos, before === null ? null : hs[before].pos);
+    };
+    addEventListener("mousemove", mv); addEventListener("mouseup", up);
+  };
+
   return (
     <div className="panel-in">
       <div className="tabs" role="tablist" ref={tabs}>
@@ -93,13 +130,15 @@ export function SidePanel(p: Props) {
             <div className="ol" ref={outlineRef}>
               {p.headings.map((h, i) => hidden[i] ? null : (
                 // 每一级都缩进（一级和二级以前一样靠左）；截断的长标题悬停能看到全文；有子级的标题可以收起（N6）
-                <button key={i} className={"oi l" + Math.min(h.level, 4) + (i === p.currentHeading ? " cur" : "")} style={{ "--lv": Math.max(0, h.level - 1) } as React.CSSProperties} onClick={() => p.onJump(h.pos)} title={h.text}>
+                <button key={i} data-i={i} className={"oi l" + Math.min(h.level, 4) + (i === p.currentHeading ? " cur" : "")} style={{ "--lv": Math.max(0, h.level - 1) } as React.CSSProperties}
+                  onMouseDown={(e) => startDrag(e, i)} onClick={() => { if (!dragged.current) p.onJump(h.pos); }} title={h.text}>
                   {kids[i] && <span className={"ofold" + (collapsed.has(okeys[i]) ? " shut" : "")} role="button" aria-label={collapsed.has(okeys[i]) ? "展开子级" : "收起子级"}
                     onClick={(e) => { e.stopPropagation(); toggleKids(okeys[i]); }}><Icon name="chev" size={12} /></span>}
                   <span className="t">{h.text}</span>
                   {noteCounts[i] > 0 && <span className="cm" title={`${noteCounts[i]} 条批注`}>{noteCounts[i]}</span>}
                 </button>
               ))}
+              {dropY !== null && <div className="ol-drop" style={{ top: dropY }} aria-hidden="true" />}
             </div>
           ) : <Empty icon="outline" text="这篇还没有标题。加上标题，这里就会列出目录。" action={p.onAddHeading && { label: "把这一段设成标题", run: p.onAddHeading }} />}
         </div>

@@ -11,6 +11,7 @@ import { readingMode, ReadingHooks } from "./readingMode";
 import { anchorCompletions } from "./anchorComplete";
 import { writingEnv, EnvHooks } from "./writingEnv";
 import { slashMenu, SlashHooks } from "./slashMenu";
+import { blockMoves } from "./blockMoves";
 
 export interface FeatureHooks {
   /** 字数口径：含不含标点（跟设置走） */
@@ -33,5 +34,6 @@ export function features(hooks: { current: FeatureHooks }): Extension {
     sectionFolding(() => hooks.current.withPunct?.() ?? false),
     readingMode(() => hooks.current.reading),
     writingEnv(() => hooks.current.env),
+    blockMoves(),
   ];
 }

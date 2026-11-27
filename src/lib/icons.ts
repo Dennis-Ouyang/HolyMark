@@ -104,6 +104,11 @@ import i_alignRight from "@tabler/icons/outline/align-right.svg?raw";
 import i_rows from "@tabler/icons/outline/layout-rows.svg?raw";
 import i_outline from "@tabler/icons/outline/list-tree.svg?raw";
 import i_history from "@tabler/icons/outline/history.svg?raw";
+import i_h1 from "@tabler/icons/outline/h-1.svg?raw";
+import i_h2 from "@tabler/icons/outline/h-2.svg?raw";
+import i_h3 from "@tabler/icons/outline/h-3.svg?raw";
+import i_para from "@tabler/icons/outline/pilcrow.svg?raw";
+import i_dup from "@tabler/icons/outline/copy-plus.svg?raw";
 
 const RAW: Record<string, string> = {
   side: i_side,
@@ -207,6 +212,11 @@ const RAW: Record<string, string> = {
   rows: i_rows,
   outline: i_outline,
   history: i_history,
+  h1: i_h1,
+  h2: i_h2,
+  h3: i_h3,
+  para: i_para,
+  dup: i_dup,
 };
 
 /** 去掉外层 svg 和 Tabler 用来占位的透明方块，只留下线条 */

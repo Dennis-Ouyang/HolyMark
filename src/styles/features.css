@@ -233,3 +233,8 @@
 .hm-slash .ins-row.sel .sl-ico { background: var(--raised); color: var(--accent-fg); }
 .hm-slash .sl-key { margin-left: auto; font: 11px var(--f-ui); color: var(--fg-3); background: none; border: 0; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .hm-slash { animation: none; } }
+
+/* ---------- N8 目录里拖动标题：落点一条细线（同正文里的 .hm-dropline） ---------- */
+.ol { position: relative; }
+.ol-drop { position: absolute; left: 4px; right: 4px; height: 2px; margin-top: -1px; border-radius: 1px; background: var(--accent); pointer-events: none; }
+body.hm-dragging .ol .oi { cursor: grabbing; }

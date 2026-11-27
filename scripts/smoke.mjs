@@ -459,6 +459,78 @@ step("N7 斜杠菜单：行首 / 弹出、拼音首字母筛选、回车插入�
   if ((await docText(page)) !== before) throw new Error("没还原");
 });
 
+step("N8 块把手：段落菜单下移、标题整节下移带撤销、目录拖动整节、显示源代码", async (page) => {
+  const before = await docText(page);
+  const lineBox = (text) => page.evaluate((t) => {
+    const v = window.__hm.view(); const p = v.state.doc.toString().indexOf(t);
+    v.dispatch({ effects: window.__hmScroll?.(p) ?? [] });
+    const c = v.coordsAtPos(p, 1); return c && { x: c.left + 30, y: Math.round((c.top + c.bottom) / 2) };
+  }, text);
+  const scrollTo = (text) => page.evaluate((t) => { const v = window.__hm.view(); const p = v.state.doc.toString().indexOf(t); const sc = document.querySelector(".scroller"); const c = v.coordsAtPos(p, 1); if (c) sc.scrollTop += c.top - 260; }, text);
+  // 段落：把手菜单「下移」
+  await page.evaluate(() => document.activeElement?.blur?.());
+  await scrollTo("基于此，本章提出");
+  await page.waitForTimeout(200);
+  let b = await lineBox("基于此，本章提出");
+  await page.mouse.move(b.x, b.y);
+  await page.waitForSelector(".hm-handle.on[aria-label='段落']");
+  await page.click(".hm-handle.on");
+  await page.waitForSelector(".hm-hmenu");
+  const items = await page.$$eval(".hm-hmenu .menu-item .ml", (els) => els.map((e) => e.textContent));
+  for (const want of ["正文", "标题 1", "引用", "在下方复制一份", "上移", "下移", "显示源代码", "删除"]) if (!items.includes(want)) throw new Error("菜单里没有「" + want + "」：" + items);
+  if (!(await page.$(".hm-hmenu .menu-sep + .menu-item.danger"))) throw new Error("删除没有用细线隔开、红色");
+  await page.click(".hm-hmenu .menu-item:has-text('下移')");
+  let t = await docText(page);
+  if (!(t.indexOf("基于此，本章提出") > t.indexOf("1. 作者在不同写作阶段"))) throw new Error("段落没有下移");
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+Z" : "Control+Z");
+  await page.waitForTimeout(100);
+  if ((await docText(page)) !== before) throw new Error("一次撤销没有还原下移");
+  // 标题：整节下移，提示条带撤销
+  await page.mouse.move(700, 120);
+  await scrollTo("## 3.2");
+  await page.waitForTimeout(200);
+  b = await lineBox("## 3.2");
+  await page.mouse.move(b.x, b.y);
+  await page.waitForSelector(".hm-handle.on[aria-label='标题']");
+  await page.click(".hm-handle.on");
+  await page.click(".hm-hmenu .menu-item:has-text('整节下移')");
+  await page.waitForSelector(".toast:has-text('已把「3.2')");
+  t = await docText(page);
+  if (!(t.indexOf("## 3.2") > t.indexOf("## 3.3") && t.indexOf("研究样本来自") > t.indexOf("## 3.3"))) throw new Error("没有整节下移");
+  await page.click(".toast .lnk:has-text('撤销')");
+  await page.waitForTimeout(450); // 目录最多每 250ms 跟一次正文
+  if ((await docText(page)) !== before) throw new Error("提示条撤销没有还原");
+  // 目录里拖动：3.2 拖到 3.4 前面
+  const from = await page.$(".ol .oi:has-text('样本与数据')"), to = await page.$(".ol .oi:has-text('信度与效度')");
+  const fb = await from.boundingBox(), tb = await to.boundingBox();
+  await page.mouse.move(fb.x + 40, fb.y + fb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(fb.x + 40, fb.y + fb.height / 2 + 10, { steps: 3 });
+  await page.mouse.move(tb.x + 40, tb.y + 4, { steps: 6 });
+  await page.waitForSelector(".ol-drop");
+  await page.mouse.up();
+  await page.waitForSelector(".toast:has-text('已把「3.2')");
+  t = await docText(page);
+  if (!(t.indexOf("## 3.2") > t.indexOf("### 3.3.2") && t.indexOf("## 3.2") < t.indexOf("## 3.4"))) throw new Error("目录拖动没有把整节挪到 3.4 前面");
+  await page.click(".toast .lnk:has-text('撤销')");
+  await page.waitForTimeout(150);
+  if ((await docText(page)) !== before) throw new Error("目录拖动撤销没有还原");
+  // 显示源代码：表格
+  await page.mouse.move(700, 120);
+  await scrollTo("| 数据来源");
+  await page.waitForTimeout(200);
+  const tbl = await page.$(".hm-table");
+  const tbb = await tbl.boundingBox();
+  await page.mouse.move(tbb.x + 20, tbb.y + 12);
+  await page.waitForSelector(".hm-handle.on[aria-label='表格']");
+  await page.click(".hm-handle.on");
+  await page.click(".hm-hmenu .menu-item:has-text('显示源代码')");
+  await page.waitForTimeout(200);
+  const line = await page.evaluate(() => { const v = window.__hm.view(); return v.state.doc.lineAt(v.state.selection.main.head).text; });
+  if (!line.startsWith("| 数据来源")) throw new Error("显示源代码后光标不在表格源码里：" + line);
+  await page.mouse.move(700, 120);
+});
+
 /* ---------- 全块测试稿、导出、搜索（放在最后：会把正文换成测试稿） ---------- */
 
 step("全块测试稿：渲染、光标走遍所有行", async (page) => {

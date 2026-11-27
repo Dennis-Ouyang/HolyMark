@@ -42,6 +42,7 @@ import { FolderReplace, ReplaceItem } from "./components/FolderReplace";
 import { ChangeSet } from "@codemirror/state";
 import { findAnchor } from "./lib/anchors";
 import { LinkHooks, openLink } from "./editor/links";
+import { moveSection } from "./editor/blockMoves";
 import { merge3 } from "./lib/merge";
 import { noteAuthor, setNoteAuthor } from "./editor/notes";
 import { NoticeAction, NoticeKind, setNotifier } from "./editor/notice";
@@ -1423,7 +1424,8 @@ export default function App() {
           path={path} readVersion={(p, id) => be ? be.readVersion(p, id) : Promise.resolve("")}
           onAddHeading={() => { const v = view(); if (v) { setBlock(v, "h1"); v.focus(); } }} onAddNote={() => menuRef.current("note")}
           onOpenVersion={(id) => openVersion(id)} onSaveVersion={() => setDlg("save")} onCompareFile={() => setDlg("cmpfile")}
-          canRevert={!!path && text !== live.current.opened} onRevert={revertToOpened} /></>}
+          canRevert={!!path && text !== live.current.opened} onRevert={revertToOpened}
+          onMoveHeading={reading.on ? undefined : (from, before) => { const v = view(); if (v) moveSection(v, from, before ?? v.state.doc.length); }} /></>}
       </aside>
 
       <footer className="statusbar">

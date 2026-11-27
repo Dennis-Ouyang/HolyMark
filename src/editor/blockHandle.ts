@@ -3,10 +3,11 @@
  * - 点一下弹出小菜单（和应用的菜单同一套外观：.menu / .menu-item）；
  * - 按住拖动：上下换位置，左右改层级（由提供者决定能放在哪、放下后怎么改）。
  *
- * 做成通用的：每种块写一个 HandleProvider（给出把手对齐的位置、菜单、拖放规则），
- * 以后段落、标题、表格、图片接上自己的提供者就行。把手只在悬停时出现。
+ * 做成通用的：每种块写一个 HandleProvider（给出把手对齐的位置、菜单、拖放规则），用 blockHandle([…]) 登记。
+ * 所有提供者共用同一个把手（同一个插件，按登记顺序问，第一个认领的算），所以列表和其他块（N8）不会同时冒出两个把手。
+ * 把手只在悬停时出现。
  */
-import type { Extension } from "@codemirror/state";
+import { Facet, type Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { iconSvg } from "../lib/icons";
 import { openDomMenu, type DomMenuItem } from "./domMenu";
@@ -55,7 +56,7 @@ class HandleView {
   menu: { close: () => void } | null = null;
   dragging = false;
   raf = 0;
-  constructor(readonly view: EditorView, readonly providers: HandleProvider[]) {
+  constructor(readonly view: EditorView) {
     this.el = document.createElement("button");
     this.el.type = "button";
     this.el.className = "hm-handle";
@@ -90,7 +91,7 @@ class HandleView {
       if (y < r.top || y > r.bottom || x > r.right || x < r.left - 72) { this.hide(); return; }
       const pos = this.view.posAtCoords({ x: Math.max(x, r.left + 1), y }, false);
       let t: HandleTarget | null = null;
-      for (const p of this.providers) if ((t = p.at(this.view, pos))) break;
+      for (const p of this.view.state.facet(handleProviders)) if ((t = p.at(this.view, pos))) break;
       if (!t) { this.hide(); return; }
       this.cur = t;
       const c = this.view.coordsAtPos(t.anchor, 1);
@@ -151,6 +152,10 @@ class HandleView {
   closeMenu() { this.menu?.close(); }
 }
 
+/** 登记过的把手提供者（按登记顺序） */
+export const handleProviders = Facet.define<HandleProvider>();
+const handlePlugin = ViewPlugin.define((view) => new HandleView(view));
+
 export function blockHandle(providers: HandleProvider[]): Extension {
-  return ViewPlugin.define((view) => new HandleView(view, providers));
+  return [providers.map((p) => handleProviders.of(p)), handlePlugin];
 }
