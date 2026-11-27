@@ -528,6 +528,58 @@ async fn file_preview(path: String) -> Result<preview::FilePreview, String> {
     tauri::async_runtime::spawn_blocking(move || preview::preview(Path::new(&path))).await.map_err(err)?
 }
 
+/// 联网取 DOI 用的客户端：20 秒超时，跟着重定向走；环境变量里设了代理（HTTPS_PROXY）就用它
+fn doi_agent() -> ureq::Agent {
+    ureq::AgentBuilder::new().timeout(std::time::Duration::from_secs(20)).redirects(8).try_proxy_from_env(true).build()
+}
+
+#[cfg(test)]
+mod doi_net {
+    /// 真的联网：cargo test --lib doi_live -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn doi_live() {
+        let r = super::doi_agent().get("https://doi.org/10.1207/s15516709cog1202_4").set("Accept", "application/x-bibtex; charset=utf-8").call();
+        match r {
+            Ok(r) => { let b = r.into_string().unwrap(); println!("{b}"); assert!(b.trim_start().starts_with('@')); }
+            Err(e) => panic!("{e}"),
+        }
+    }
+}
+
+/// 用 DOI 取 BibTeX：向 https://doi.org/<DOI> 请求，Accept: application/x-bibtex，跟着重定向走（到 Crossref 等）。
+/// 在 Rust 端发请求，避开浏览器的跨域限制，也不用放宽前端的 CSP。只在用户主动操作时调用
+#[tauri::command]
+async fn fetch_doi(doi: String) -> Result<String, String> {
+    let ok = doi.starts_with("10.") && doi.contains('/') && !doi.chars().any(|c| c.is_whitespace() || c.is_control());
+    if !ok {
+        return Err("这不像一个 DOI".into());
+    }
+    // DOI 里可能有 < > # ? 这类字符，按路径编码
+    let path: String = doi.bytes().map(|b| match b {
+        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' | b'(' | b')' | b';' | b':' => (b as char).to_string(),
+        _ => format!("%{:02X}", b),
+    }).collect();
+    let url = format!("https://doi.org/{path}");
+    tauri::async_runtime::spawn_blocking(move || {
+        match doi_agent().get(&url).set("Accept", "application/x-bibtex; charset=utf-8").set("User-Agent", "HolyMark (Markdown editor)").call() {
+            Ok(r) => {
+                let body = r.into_string().map_err(|e| format!("读取返回内容失败：{e}"))?;
+                if body.trim_start().starts_with('@') {
+                    Ok(body)
+                } else {
+                    Err("没有拿到 BibTeX，这个 DOI 的注册机构可能不提供".into())
+                }
+            }
+            Err(ureq::Error::Status(404, _)) => Err("找不到这个 DOI".into()),
+            Err(ureq::Error::Status(code, _)) => Err(format!("doi.org 返回了错误（{code}）")),
+            Err(ureq::Error::Transport(_)) => Err("连不上 doi.org，检查一下网络后再试".into()),
+        }
+    })
+    .await
+    .map_err(err)?
+}
+
 /// 非 Markdown 文件的阅读版（正文区的只读预览）
 #[tauri::command]
 async fn file_document(path: String) -> Result<preview::FileDocument, String> {
@@ -626,6 +678,7 @@ pub fn run() {
             close_folder,
             file_preview,
             file_document,
+            fetch_doi,
             list_tree,
             read_text,
             write_text,

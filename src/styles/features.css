@@ -219,3 +219,7 @@
 .edprev.pf .epv-dim { opacity: .35; margin-top: .6em; }
 .presets { display: flex; gap: 6px; flex-wrap: wrap; }
 .presets .btn.on { color: var(--accent-fg); background: var(--accent-soft); border-color: var(--accent-line); }
+
+/* ---------- 用 DOI 生成文献条目（插入浮层里） ---------- */
+.ins-err { margin: 4px 8px; padding: 6px 10px; border-radius: 8px; font-size: 12px; background: var(--del-bg); color: var(--del); }
+.ins-spin { width: 12px; height: 12px; margin-left: auto; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; border-top-color: transparent; animation: spin 700ms linear infinite; color: var(--fg-3); flex: none; }

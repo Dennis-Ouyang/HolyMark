@@ -12,9 +12,12 @@ import { BibEntry, shortAuthor } from "../lib/bib";
 import { baseName, dirOf, relative } from "../lib/paths";
 import { kbd } from "../lib/platform";
 import { CARD_EXT } from "../lib/filePreview";
+import { parseDoi } from "../lib/doi";
 
 export type InsertPick = { kind: "file"; path: string } | { kind: "bib"; key: string };
-type Row = { kind: "file"; node: TreeNode; dir: string } | { kind: "bib"; b: BibEntry };
+type Row = { kind: "file"; node: TreeNode; dir: string } | { kind: "bib"; b: BibEntry } | { kind: "doi"; doi: string; target: DoiTarget };
+/** N21：用 DOI 生成的条目加到哪个 .bib（没有就新建 references.bib） */
+export interface DoiTarget { path: string; label: string; isNew: boolean }
 
 const SHOW = 7;
 const extOf = (n: string) => (n.includes(".") ? n.split(".").pop()!.toLowerCase() : "");
@@ -32,9 +35,15 @@ interface Props {
   onPick: (p: InsertPick) => void;
   onPickOther: () => void;
   onClose: () => void;
+  /** 用 DOI 生成文献条目：联网取 BibTeX、加进 .bib，返回引用键 */
+  doi?: { targets: DoiTarget[]; add: (doi: string, target: DoiTarget) => Promise<string> };
 }
 
-export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPickOther, onClose }: Props) {
+export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPickOther, onClose, doi }: Props) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [doiErr, setDoiErr] = useState("");
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const box = useRef<HTMLDivElement>(null);
@@ -44,7 +53,12 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
   const bibMode = q.startsWith("@");
   const qt = (bibMode ? q.slice(1) : q).trim().toLowerCase();
 
+  // 粘贴或输入 DOI（@ 后面，或者直接粘一个 doi.org 链接）：先确认加到哪个 .bib，再联网
+  const doiHit = doi ? parseDoi(bibMode ? q.slice(1) : q) : null;
   const view = useMemo(() => {
+    if (doiHit && doi) {
+      return { groups: [{ title: "用 DOI 生成文献条目", rows: doi.targets.map((target) => ({ kind: "doi", doi: doiHit, target }) as Row) }], more: 0, total: 0 };
+    }
     if (bibMode) {
       const list = bib.filter((b) => !qt || `${b.key} ${b.author} ${b.year} ${b.title}`.toLowerCase().includes(qt));
       return { groups: [{ title: "文献", rows: list.slice(0, SHOW).map((b) => ({ kind: "bib", b }) as Row) }], more: Math.max(0, list.length - SHOW), total: list.length };
@@ -65,9 +79,9 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
     const score = (f: TreeNode) => { const n = f.name.toLowerCase(); return n.startsWith(qt) ? 0 : n.includes(qt) ? 1 : relative(root, f.path).toLowerCase().includes(qt) ? 2 : 9; };
     const list = others.map((f) => [score(f), f] as const).filter(([s]) => s < 9).sort((a, b) => a[0] - b[0] || a[1].name.localeCompare(b[1].name, "zh")).map(([, f]) => f);
     return { groups: [{ title: "", rows: list.slice(0, SHOW).map((node) => ({ kind: "file", node, dir: rel(node.path) }) as Row) }], more: Math.max(0, list.length - SHOW), total: list.length };
-  }, [bibMode, qt, bib, others, recent, docPath, root]);
+  }, [bibMode, qt, bib, others, recent, docPath, root, doiHit, doi]);
   const rows = view.groups.flatMap((g) => g.rows);
-  useEffect(() => setSel(0), [q]);
+  useEffect(() => { setSel(0); setDoiErr(""); }, [q]);
 
   // 放在光标下面；下面放不下就翻到上面。缩放原点落在光标那一点
   useLayoutEffect(() => {
@@ -83,7 +97,19 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
     return () => removeEventListener("mousedown", down, true);
   }, [onClose]);
 
-  const pick = (r?: Row) => { if (!r) return; onPick(r.kind === "file" ? { kind: "file", path: r.node.path } : { kind: "bib", key: r.b.key }); };
+  const pick = (r?: Row) => {
+    if (!r) return;
+    if (r.kind === "doi") {
+      if (busy || !doi) return;
+      setBusy(r.target.path); setDoiErr("");
+      doi.add(r.doi, r.target)
+        .then((key) => { if (alive.current) onPick({ kind: "bib", key }); })
+        .catch((e) => { if (alive.current) setDoiErr(String(e).replace(/^Error:\s*/, "")); })
+        .finally(() => { if (alive.current) setBusy(null); });
+      return;
+    }
+    onPick(r.kind === "file" ? { kind: "file", path: r.node.path } : { kind: "bib", key: r.b.key });
+  };
   const onKey = (e: React.KeyboardEvent) => {
     if (e.nativeEvent.isComposing) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); if (rows.length) setSel((sel + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length); }
@@ -116,7 +142,11 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
               const i = idx;
               return (
                 <button key={i} type="button" role="option" aria-selected={i === sel} className={"ins-row" + (i === sel ? " sel" : "")} onMouseMove={() => setSel(i)} onClick={() => pick(r)}>
-                  {r.kind === "file" ? <>
+                  {r.kind === "doi" ? <>
+                    <span className="ft bib">DOI</span>
+                    <span className="nm">{busy === r.target.path ? "正在向 doi.org 请求…" : <>加到 {r.target.label}</>}<span className="dim">　{r.doi}</span></span>
+                    {busy === r.target.path && <span className="ins-spin" aria-hidden="true" />}
+                  </> : r.kind === "file" ? <>
                     <span className={"ft " + (TYPE[extOf(r.node.name)] || "other")}>{extOf(r.node.name) || "文件"}</span>
                     <span className="nm">{hl(r.node.name.replace(/\.(md|markdown)$/i, ""))}</span>
                     <span className="dir">{r.dir}</span>
@@ -131,6 +161,8 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
             {!g.rows.length && <div className="ins-empty">{bibMode ? (bib.length ? "没有匹配的文献" : "文件夹里没有 .bib 文献库") : qt ? "文件夹里没有叫这个名字的文件" : "这个文件夹里没有别的文件"}</div>}
           </div>
         ))}
+        {doiErr && <div className="ins-err" role="alert">{doiErr}</div>}
+        {doiHit && !doiErr && <div className="ins-more">回车后联网取这篇文献的 BibTeX，加进 .bib，在光标处插入引用</div>}
         {view.more > 0 && <div className="ins-more">还有 {view.more} 个，继续输入缩小范围</div>}
       </div>
       <div className="ins-foot">

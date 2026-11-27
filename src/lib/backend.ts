@@ -54,6 +54,8 @@ export interface Backend {
   reveal(path: string): Promise<void>;
   /** 用系统默认的程序打开 */
   openPath(path: string): Promise<void>;
+  /** 用 DOI 取 BibTeX（向 doi.org 请求，只在用户主动操作时调用） */
+  fetchDoi(doi: string): Promise<string>;
   /** 用系统浏览器打开网页（只接受 http、https、mailto） */
   openUrl(url: string): Promise<void>;
   /** 导出进行到哪一步：style → pandoc → typst → write */
@@ -130,6 +132,7 @@ async function tauriBackend(): Promise<Backend> {
     reveal: (path) => invoke("reveal", { path }),
     openPath: (path) => invoke("open_path", { path }),
     openUrl: (url) => invoke("open_url", { url }),
+    fetchDoi: (doi) => invoke("fetch_doi", { doi }),
     onExportProgress(cb) {
       let un: (() => void) | null = null, alive = true;
       listen<string>("export-progress", (e) => cb(e.payload)).then((u) => { if (alive) un = u; else u(); });
@@ -252,6 +255,12 @@ function demoBackend(): Backend {
     async reveal() { /* 浏览器里没有 Finder */ },
     async openPath() { /* 浏览器里打不开本机文件 */ },
     async openUrl(url) { window.open(url, "_blank", "noopener"); },
+    async fetchDoi(doi) {
+      // 浏览器预览不联网：只认演示用的这一个 DOI（Sweller 1988），其他的给出说明
+      await new Promise((r) => setTimeout(r, 600));
+      if (doi.toLowerCase() === "10.1207/s15516709cog1202_4") return "@article{Sweller_1988, title={Cognitive Load During Problem Solving: Effects on Learning}, volume={12}, ISSN={1551-6709}, url={http://dx.doi.org/10.1207/s15516709cog1202_4}, DOI={10.1207/s15516709cog1202_4}, number={2}, journal={Cognitive Science}, publisher={Wiley}, author={Sweller, John}, year={1988}, month=apr, pages={257–285} }";
+      throw new Error("浏览器预览里不联网；桌面版会向 doi.org 请求。可以试试 10.1207/s15516709cog1202_4");
+    },
     onExportProgress() { return () => {}; },
     async openFolder(root) { return tree(root); },
     async openSingle(path) { if (!files.has(path)) throw new Error("找不到这个文件"); },

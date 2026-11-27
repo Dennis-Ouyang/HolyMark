@@ -347,6 +347,26 @@ step("N17 复制为带格式的文字：Word（MathML）、公众号（公式图
   if (!c.html.includes("data:image/png")) throw new Error("公众号版的公式没有转成图片");
   if (c.html.includes("<math")) throw new Error("公众号版不该有 MathML");
 });
+step("N21 用 DOI 生成文献条目：加载态、键名去重、追加到 .bib、插入引用、失败说明", async (page) => {
+  await page.evaluate(() => { const v = window.__hm.view(); v.focus(); v.dispatch({ selection: { anchor: v.state.doc.length } }); });
+  await page.waitForTimeout(100);
+  await menu(page, "cite");
+  await page.waitForSelector(".ins input");
+  await page.keyboard.type("@https://doi.org/10.9999/nothing");
+  await page.waitForSelector(".ins-row:has-text('加到')");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".ins-err");
+  // 演示用的 DOI：Sweller 1988 已经在文献库里，键名要变成 sweller1988a
+  await page.fill(".ins input", "@10.1207/s15516709cog1202_4");
+  await page.waitForSelector(".ins-row:has-text('references.bib')");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".ins-row:has-text('正在向 doi.org 请求')");
+  await page.waitForSelector(".ins", { state: "detached", timeout: 5000 });
+  const t = await docText(page);
+  if (!t.endsWith("[@sweller1988a]")) throw new Error("没有插入引用：" + t.slice(-30));
+  await page.waitForSelector(".toast:has-text('sweller1988a')");
+  await page.evaluate(() => { const v = window.__hm.view(); const n = v.state.doc.length; v.dispatch({ changes: { from: n - "[@sweller1988a]".length, to: n } }); });
+});
 
 async function run(theme) {
   const browser = await chromium.launch();

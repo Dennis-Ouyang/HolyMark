@@ -33,6 +33,7 @@ import { useNav, BACK_KEY, FWD_KEY } from "./features/useNav";
 import { FileInfo, FileViewer } from "./components/FileViewer";
 import type { FilePreview } from "./lib/filePreview";
 import { copyRich } from "./features/copyRich";
+import { addDoiEntry, doiTargets } from "./features/useDoi";
 import { findAnchor } from "./lib/anchors";
 
 const AUTHOR = "我";
@@ -439,7 +440,9 @@ export default function App() {
       reveal: (abs: string) => fileHooksRef.current.reveal(abs),
     },
   }), [s.syntax, bibMap, be]);
-  const previewKey = `${s.syntax}|${bib.length}`;
+  // 文献库按内容判断变没变（条目改了、数量没变时也要刷新引用标签）
+  const bibSig = useMemo(() => { let h = 0; for (const b of bib) for (const c of `${b.key}\u0001${b.author}\u0001${b.year}\u0002`) h = (h * 31 + c.charCodeAt(0)) | 0; return h; }, [bib]);
+  const previewKey = `${s.syntax}|${bib.length}|${bibSig}`;
 
   const editorStyle = {
     "--ed-h": fontStack(layout["heading-font"] || s.headingFont),
@@ -1127,6 +1130,14 @@ export default function App() {
       <Presence>{dlg === "palette" && <SearchPanel text={live.current.text} path={path} root={root} headings={hs} folderTexts={folderTexts} commands={commands}
         onJump={jumpTo} onOpenAt={openAt} onClose={() => setDlg(null)} />}</Presence>
       <Presence ms={100}>{insertAt && <InsertFile at={insertAt} files={flatten(tree)} docPath={path} root={root} bib={bib} recent={recentIns}
+        doi={root ? { targets: doiTargets(tree, root), add: async (d, t) => {
+          if (!be) throw new Error("还没准备好");
+          const r = await addDoiEntry(be, d, t, bib, tree);
+          setBib(r.entries);
+          if (t.isNew) await refreshTree();
+          say(`已把这篇文献加进 ${t.label.replace(/（新建）$/, "")}，引用键 ${r.key}`);
+          return r.key;
+        } } : undefined}
         onPick={pickInsert} onPickOther={() => { setInsertAt(null); setTimeout(citeOtherFile, 0); }} onClose={() => { setInsertAt(null); view()?.focus(); }} />}</Presence>
       {tidy.node}
       {wstats.treeTip}

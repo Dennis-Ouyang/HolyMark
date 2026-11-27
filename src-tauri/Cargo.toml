@@ -23,6 +23,8 @@ base64 = "0.22"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 # 删除文件时移到废纸篓 / 回收站，而不是直接删掉
 trash = "5"
+# 用 DOI 取 BibTeX（只在用户主动操作时联网）
+ureq = "2"
 
 # Windows / Linux：再次双击 .md 时交给已经打开的窗口（macOS 系统本身就是单实例）
 [target.'cfg(not(target_os = "macos"))'.dependencies]
