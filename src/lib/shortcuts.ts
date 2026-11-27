@@ -44,6 +44,7 @@ export const SHORTCUTS: [string, string][] = [
   ["Mod+/", "toggle_panel"],
   ["Mod+Alt+R", "toggle_ribbon"],
   ["Mod+Shift+F", "focus"],
+  ["Mod+Shift+R", "reading"],
   ["Mod+Alt+1", "panel_outline"],
   ["Mod+Alt+2", "panel_notes"],
   ["Mod+Alt+3", "panel_versions"],

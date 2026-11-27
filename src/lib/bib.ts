@@ -1,5 +1,5 @@
-/** 极简 BibTeX 解析：只取引用显示需要的作者和年份。 */
-export interface BibEntry { key: string; author: string; year: string; title: string }
+/** 极简 BibTeX 解析：只取引用显示需要的作者、年份、标题和出处。 */
+export interface BibEntry { key: string; author: string; year: string; title: string; venue?: string }
 
 export function parseBib(src: string): BibEntry[] {
   const out: BibEntry[] = [];
@@ -7,7 +7,7 @@ export function parseBib(src: string): BibEntry[] {
   let m: RegExpExecArray | null;
   while ((m = re.exec(src))) {
     const field = (name: string) => (m![2].match(new RegExp(`${name}\\s*=\\s*[{"]([^}"]*)[}"]`, "i")) || [])[1] || "";
-    out.push({ key: m[1], author: field("author"), year: field("year"), title: field("title") });
+    out.push({ key: m[1], author: field("author"), year: field("year"), title: field("title"), venue: field("journal") || field("booktitle") || field("publisher") });
   }
   return out;
 }

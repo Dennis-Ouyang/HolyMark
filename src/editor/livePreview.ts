@@ -14,6 +14,7 @@ import { openNote, parseBody } from "./notes";
 const NOTE_SCAN = /\{==([\s\S]+?)==\}\{>>([\s\S]*?)<<\}/g;
 import { FileCardWidget, FileHooks } from "./fileCard";
 import { CARD_EXT } from "../lib/filePreview";
+import { isReading } from "./readingMode";
 
 export interface PreviewOptions {
   /** 把文档里的图片路径解析成可显示的地址 */
@@ -36,6 +37,7 @@ interface Block {
 /* ---------------- widgets ---------------- */
 
 function focusAt(view: EditorView, dom: HTMLElement, e: Event, offset = 0) {
+  if (isReading(view.state)) return; // 阅读模式：点哪里都不切成源码，留给浏览器选文字
   e.preventDefault();
   const pos = view.posAtDOM(dom) + offset;
   view.dispatch({ selection: { anchor: Math.min(pos, view.state.doc.length) } });
@@ -435,9 +437,11 @@ export function build(state: EditorState, opts: PreviewOptions, memo: Memo = new
   let blocks: Block[];
   if (memo.doc === doc && memo.tree === tree) blocks = memo.blocks;
   else { blocks = topBlocks(state); memo.doc = doc; memo.tree = tree; memo.blocks = blocks; }
-  const isActive = (b: Block) => always || (focused && sel.some((r) => r.from <= b.to && r.to >= b.from));
+  // 阅读模式（N2）：整篇都按格式显示，不管光标在哪、设置是不是「始终显示符号」
+  const reading = isReading(state);
+  const isActive = (b: Block) => !reading && (always || (focused && sel.some((r) => r.from <= b.to && r.to >= b.from)));
   /** 段间空行上有光标时按正常行高显示，光标才有完整的高度；光标离开后再收窄成段距 */
-  const gapShown = (line: number) => line >= 0 && !(focused && sel.some((r) => r.empty && r.head === line));
+  const gapShown = (line: number) => line >= 0 && !(focused && !reading && sel.some((r) => r.empty && r.head === line));
 
   /** 第 j 块的区段信息（要查行号，只对变了的块调用） */
   const zoneOf = (j: number, active: boolean): Zone => {

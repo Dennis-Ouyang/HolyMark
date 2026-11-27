@@ -27,7 +27,10 @@ bibliography: ../资料/references.bib
 | 写作日志 | 受访者每日记录 | 1,036 篇 |
 | 屏幕录制 | 经同意后录制 | 312 小时 |
 
-编码结果见[受访者编码表.xlsx](../资料/受访者编码表.xlsx)。为降低录制本身对写作行为的干扰，前两周的录制数据不纳入正式分析。
+编码结果见[受访者编码表.xlsx](../资料/受访者编码表.xlsx)。各月份的访谈次数见图 3-1。
+
+![图 3-1　各月访谈次数](../资料/图3-1.svg)
+为降低录制本身对写作行为的干扰，前两周的录制数据不纳入正式分析。
 
 ## 3.3　分析框架
 
@@ -82,3 +85,15 @@ export const DEMO_FILES: Record<string, string> = {
   [`${DEMO_ROOT}/README.md`]: "# 写作约定\n\n正文按章拆成单独文件，参考文献维护在 references.bib。\n",
 };
 export const DEMO_START = `${DEMO_ROOT}/正文/03 研究设计.md`;
+
+/** 演示用的图片：一张小柱状图（SVG），浏览器预览里点开能看放大效果 */
+const bars = [6, 9, 8, 7, 8, 6, 4];
+const chart = `<svg xmlns="http://www.w3.org/2000/svg" width="560" height="300" viewBox="0 0 560 300" font-family="PingFang SC, Microsoft YaHei, sans-serif">
+<rect width="560" height="300" fill="#fff"/>
+<line x1="56" y1="250" x2="530" y2="250" stroke="#c9ccd4"/>
+${bars.map((n, i) => `<rect x="${76 + i * 66}" y="${250 - n * 22}" width="38" height="${n * 22}" rx="3" fill="#7d84c8"/><text x="${95 + i * 66}" y="${242 - n * 22}" font-size="13" text-anchor="middle" fill="#444">${n}</text><text x="${95 + i * 66}" y="272" font-size="13" text-anchor="middle" fill="#666">${i + 3} 月</text>`).join("")}
+<text x="28" y="36" font-size="15" fill="#222">各月访谈次数</text>
+</svg>`;
+export const DEMO_IMAGES: Record<string, string> = {
+  [`${DEMO_ROOT}/资料/图3-1.svg`]: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(chart),
+};

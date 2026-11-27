@@ -7,10 +7,13 @@ import { autocompletion } from "@codemirror/autocomplete";
 import { tidyMarks } from "./tidyMarks";
 import { mathCompletions, texPreviewOption } from "./mathComplete";
 import { sectionFolding } from "./sectionFold";
+import { readingMode, ReadingHooks } from "./readingMode";
 
 export interface FeatureHooks {
   /** 字数口径：含不含标点（跟设置走） */
   withPunct?: () => boolean;
+  /** 阅读模式里点链接、点图片、双击、悬停文献 */
+  reading?: ReadingHooks;
 }
 
 export function features(hooks: { current: FeatureHooks }): Extension {
@@ -19,5 +22,6 @@ export function features(hooks: { current: FeatureHooks }): Extension {
     // 补全只在特定位置出现（公式里的 \），各个来源自己判断，正文里打字不会弹出
     autocompletion({ override: [mathCompletions], icons: false, addToOptions: [texPreviewOption], tooltipClass: () => "hm-ac", maxRenderedOptions: 40 }),
     sectionFolding(() => hooks.current.withPunct?.() ?? false),
+    readingMode(() => hooks.current.reading),
   ];
 }

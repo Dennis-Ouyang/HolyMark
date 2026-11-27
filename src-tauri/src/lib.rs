@@ -460,6 +460,22 @@ fn open_path(path: String) -> Result<(), String> {
     export::open_path(&path)
 }
 
+/// 用系统浏览器打开网页（阅读模式里单击链接）。只接受 http、https、mailto，别的协议不打开
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    let lower = url.to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")) {
+        return Err("只能打开网页链接".into());
+    }
+    #[cfg(target_os = "macos")]
+    let r = std::process::Command::new("open").arg(&url).spawn();
+    #[cfg(target_os = "windows")]
+    let r = std::process::Command::new("explorer").arg(&url).spawn();
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let r = std::process::Command::new("xdg-open").arg(&url).spawn();
+    r.map(|_| ()).map_err(err)
+}
+
 #[tauri::command]
 fn take_pending_open(state: State<AppState>) -> Vec<String> {
     std::mem::take(&mut *state.pending_open.lock().unwrap())
@@ -541,6 +557,7 @@ pub fn run() {
             read_reference,
             reveal,
             open_path,
+            open_url,
             create_dir,
             rename_path,
             duplicate_path,

@@ -123,6 +123,49 @@ step("N6 按章节折叠：小三角、占位、命令、跳进去自动展开�
   if (await page.$(".hm-folded")) throw new Error("目录收起影响了正文");
   await page.click(".ol .oi:has-text('分析框架') .ofold");
 });
+step("N2 阅读模式：只读、图片放大、勾选框、悬停文献、双击回到编辑", async (page) => {
+  const before = await docText(page);
+  await page.click("button[aria-label='阅读模式']");
+  await page.waitForSelector(".cm-editor.hm-reading");
+  if (await page.$(".ribbon")) throw new Error("功能区没有隐藏");
+  // 点正文不切成源码、打字不改正文
+  await page.click(".hm-h2 >> nth=1");
+  await page.keyboard.type("x");
+  if ((await docText(page)) !== before) throw new Error("阅读模式里正文被改了");
+  if ((await page.$$(".hm-mark")).length) throw new Error("阅读模式里显示了源码符号");
+  // 编辑命令被挡住
+  await menu(page, "bold");
+  if ((await docText(page)) !== before) throw new Error("阅读模式里格式命令改了正文");
+  // 图片放大：←→、Esc
+  await page.click(".hm-figure img");
+  await page.waitForSelector(".lightbox img");
+  if (!(await page.textContent(".lightbox figcaption")).includes("各月访谈次数")) throw new Error("没有图注");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".lightbox", { state: "detached" });
+  if (!(await page.$(".cm-editor.hm-reading"))) throw new Error("Esc 把阅读模式也关了");
+  // 待办勾选框照样能点
+  await page.evaluate(() => { const sc = document.querySelector(".scroller"); sc.scrollTop = sc.scrollHeight; });
+  await page.waitForTimeout(200);
+  await page.click(".hm-check:not(.on)");
+  if (!(await docText(page)).includes("- [x] 补充第二轮")) throw new Error("勾选框点不动");
+  await page.click(".hm-check.on >> nth=-1");
+  // 悬停文献
+  await page.evaluate(() => { document.querySelector(".scroller").scrollTop = 0; });
+  await page.waitForTimeout(200);
+  await page.hover(".hm-cite >> nth=0");
+  await page.waitForSelector(".hm-hovercard", { timeout: 3000 });
+  if (!(await page.textContent(".hm-hovercard")).includes("学术写作")) throw new Error("文献卡片内容不对");
+  await page.mouse.move(10, 400);
+  // 单击链接：浏览器预览里给出说明
+  await page.click(".hm-link:has-text('受访者编码表')");
+  await page.waitForSelector(".toast:has-text('浏览器预览里打不开本机文件')");
+  // 双击回到编辑，光标在双击处
+  const box = await page.$eval(".hm-h2 >> nth=1", (e) => { const r = e.getBoundingClientRect(); return { x: r.left + 40, y: r.top + r.height / 2 }; });
+  await page.mouse.dblclick(box.x, box.y);
+  await page.waitForSelector(".cm-editor:not(.hm-reading)");
+  const at = await page.evaluate(() => { const v = window.__hm.view(); return v.state.doc.lineAt(v.state.selection.main.head).text; });
+  if (!at.startsWith("## 3.2")) throw new Error("双击后光标不在双击的位置：" + at);
+});
 
 async function run(theme) {
   const browser = await chromium.launch();
@@ -133,7 +176,9 @@ async function run(theme) {
   await page.goto(base);
   await ready(page);
   let failed = 0;
-  for (const s of steps) {
+  // HM_ONLY=关键词 只跑名字里带这个词的步骤（第一步「打开演示文件夹」总会跑）
+  const only = process.env.HM_ONLY;
+  for (const s of steps.filter((x, i) => !only || i === 0 || x.name.includes(only))) {
     try {
       await s.fn(page);
       await page.waitForTimeout(150);
@@ -141,7 +186,7 @@ async function run(theme) {
       console.log(`  ✓ ${s.name}`);
     } catch (e) {
       failed++;
-      console.log(`  ✗ ${s.name}：${String(e.message || e).split("\n")[0]}`);
+      console.log(`  ✗ ${s.name}：${String(e.message || e).split("\n").slice(0, process.env.HM_VERBOSE ? 6 : 1).join("\n      ")}`);
       if (shotDir) await page.screenshot({ path: `${shotDir}/${theme}-FAIL-${s.name.replace(/[\\/:*?"<>| ]/g, "_")}.png` }).catch(() => {});
     }
   }

@@ -27,6 +27,7 @@ import { useTidy } from "./features/useTidy";
 import { useWritingStats } from "./features/useWritingStats";
 import { useSymbols } from "./features/useSymbols";
 import { foldHeadings, foldToLevel, unfoldAll } from "./editor/sectionFold";
+import { useReading } from "./features/useReading";
 
 const AUTHOR = "我";
 /** macOS 有原生菜单负责快捷键；Windows 和浏览器预览里由前端处理 */
@@ -203,13 +204,14 @@ export default function App() {
     }
   }
 
-  async function openFile(p: string) {
+  async function openFile(p: string, opts?: { reading?: boolean }) {
     if (!be) return;
     await flush();
     const content = await be.readText(p);
     live.current = { path: p, text: content, base: content, lastWritten: content, lastVersionAt: Date.now() };
     setPath(p); setText(content); setCmp(null); setFileCmp(null); setFresh(null);
     ed.current?.load(content);
+    reading.afterLoad(p, opts?.reading);
     wstats.noteOpen(p, content);
     if (scroller.current) scroller.current.scrollTop = 0;
     setScrollHeading(0);
@@ -408,7 +410,7 @@ export default function App() {
   /** 点正文下方的空白：光标放到文末；最后一行有字就新起一段 */
   function clickBelow(e: React.MouseEvent) {
     const v = view();
-    if (!v || !path || cmp) return;
+    if (!v || !path || cmp || reading.on) return;
     const t = e.target as HTMLElement;
     if (t.closest(".cm-content") || t.closest("button,input,.welcome")) return;
     const contentBottom = v.contentDOM.getBoundingClientRect().bottom;
@@ -428,6 +430,22 @@ export default function App() {
   const wstats = useWritingStats({ be, tree, livePath: () => live.current.path, liveText: () => live.current.text, withPunct: s.countPunct });
   const symbols = useSymbols(view);
   featureHooks.current.withPunct = () => s.countPunct;
+  const reading = useReading({
+    view, be, livePath: () => live.current.path, resolveImage: (src) => preview.resolveImage(src), bib: bibMap, say,
+    openMarkdown: (abs, o) => { (async () => {
+      if (abs !== live.current.path) { if (root && isInside(root, abs)) await openFile(abs, { reading: o.reading }); else { await openExternalFile(abs); reading.set(o.reading); } }
+      if (o.anchor) jumpAnchor(o.anchor);
+    })().catch(() => say("打不开这篇文稿")); },
+    jumpAnchor: (a) => jumpAnchor(a),
+  });
+  featureHooks.current.reading = reading.hooks;
+  /** 本文里的锚点：N4 会换成和 Pandoc 一致的规则 */
+  function jumpAnchor(anchor: string) {
+    const h = hs.find((x) => x.text.trim() === anchor.trim());
+    if (h) jump(h.pos); else say(`找不到标题「${anchor}」`);
+  }
+  /** 阅读模式里不能编辑：改正文的菜单命令不执行 */
+  const editsDoc = (id: string) => /^(block_|insert_)/.test(id) || ["bold", "italic", "strike", "code", "math", "highlight", "sup", "sub", "link", "cite", "note", "indent", "outdent", "heading_up", "heading_down", "undo", "redo", "tidy", "math_symbols"].includes(id);
   const tidy = useTidy({ view, rules: s.tidy, text, say, openSettings: () => openSettings("tidy") });
 
   /* ---------- 菜单 ---------- */
@@ -440,6 +458,7 @@ export default function App() {
       else if (id === "undo") ed.current?.undo(); else ed.current?.redo();
       return;
     }
+    if (reading.on && editsDoc(id)) { say("阅读模式里不能编辑，双击正文或按 " + kbd("⌘⇧R") + " 回到编辑"); return; }
     const block = id.startsWith("block_") ? (id.slice(6) as BlockKind) : null;
     if (block) { if (v) setBlock(v, block); return; }
     const inline = { bold: "bold", italic: "italic", strike: "strike", code: "code", math: "math", highlight: "highlight", sup: "sup", sub: "sub" } as const;
@@ -447,6 +466,7 @@ export default function App() {
     switch (id) {
       case "settings": openSettings(); break;
       case "tidy": if (path) tidy.open(); break;
+      case "reading": if (path) reading.toggle(); break;
       case "math_symbols": if (path) symbols.open(); break;
       case "fold_all": if (v) foldHeadings(v, 1); break;
       case "unfold_all": if (v) unfoldAll(v); break;
@@ -786,6 +806,7 @@ export default function App() {
     { group: "命令", icon: "cmd", title: "Markdown 语法速查", run: () => setTimeout(() => setDlg("help_syntax"), 0) },
     { group: "命令", icon: "cmd", title: "导出 Word / PDF / Markdown…", keys: ["⌘", "⇧", "E"].map((k) => keyName(k)), run: () => setTimeout(openExport, 0) },
     { group: "命令", icon: "cmd", title: "设置", keys: ["⌘", ","].map((k) => keyName(k)), run: () => setDlg("settings") },
+    ...(path ? [{ group: "命令", icon: "book", title: reading.on ? "退出阅读模式" : "阅读模式", keys: ["⌘", "⇧", "R"].map((k) => keyName(k)), run: () => reading.toggle() }] : []),
     ...(path ? [
       { group: "命令", icon: "chevr", title: "折叠全部章节", run: () => onMenu("fold_all") },
       { group: "命令", icon: "chev", title: "展开全部章节", run: () => onMenu("unfold_all") },
@@ -897,8 +918,8 @@ export default function App() {
   /* ---------- keyboard ---------- */
   // 没有原生菜单时（Windows、浏览器预览），菜单里的快捷键都在这里处理；
   // macOS 上原生菜单先接住这些按键，这里只兜底几个常用的
-  const APP_LEVEL = useMemo(() => new Set(["search", "save_version", "export", "settings", "focus", "toggle_side", "toggle_panel", "toggle_ribbon", "new_file", "open_folder", "panel_outline", "panel_notes", "panel_versions"]), []);
-  const MAC_FALLBACK = useMemo(() => new Set(["search", "save_version", "settings", "focus", "toggle_side", "toggle_panel", "new_file", "open_folder"]), []);
+  const APP_LEVEL = useMemo(() => new Set(["reading", "search", "save_version", "export", "settings", "focus", "toggle_side", "toggle_panel", "toggle_ribbon", "new_file", "open_folder", "panel_outline", "panel_notes", "panel_versions"]), []);
+  const MAC_FALLBACK = useMemo(() => new Set(["reading", "search", "save_version", "settings", "focus", "toggle_side", "toggle_panel", "new_file", "open_folder"]), []);
   useEffect(() => {
     const f = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !dlg) { if (cmp || fileCmp) { setCmp(null); setFileCmp(null); } else if (focus) setFocus(false); return; }
@@ -943,6 +964,7 @@ export default function App() {
         <div className="spacer" data-tauri-drag-region />
         {path && saveState === "error" && <div className="savestate" role="alert" title="自动保存没有成功，继续编辑会再次尝试"><i />保存失败</div>}
         <button className="searchbtn" onClick={() => setDlg("palette")} aria-label="搜索或执行命令"><Icon name="search" size={14} /><span className="lbl">搜索</span><kbd>{kbd("⌘K")}</kbd></button>
+        {path && <button className={"ib" + (reading.on ? " on" : "")} title={kbd(reading.on ? "退出阅读模式 ⌘⇧R" : "阅读模式 ⌘⇧R")} aria-label="阅读模式" aria-pressed={reading.on} onClick={reading.toggle}><Icon name="book" /></button>}
         <button className={"ib" + (focus ? " on" : "")} title={kbd("专注 ⌘⇧F")} aria-label="专注模式" onClick={() => setFocus(!focus)}><Icon name="focus" /></button>
         <button className="ib" title={kbd("导出 ⌘⇧E")} aria-label="导出" disabled={!path} onClick={openExport}><Icon name="export" /></button>
         <button className="ib" title={kbd("切换右栏 ⌘/")} aria-label="切换右栏" onClick={() => setShowPanel(!showPanel)}><Icon name="panel" /></button>
@@ -965,7 +987,7 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {path && <Ribbon view={ed.current?.view() ?? null} author={AUTHOR} settings={s} fonts={fonts} layout={layout} onLayout={applyLayout}
+        {path && !reading.on && <Ribbon view={ed.current?.view() ?? null} author={AUTHOR} settings={s} fonts={fonts} layout={layout} onLayout={applyLayout}
           collapsed={s.ribbonCollapsed} setCollapsed={(c) => update({ ribbonCollapsed: c })}
           onPickImage={pickImage} onCite={openInsert} active={fmt.active} block={fmt.block} onTidy={tidy.open} />}
         <div className="scroller" ref={scroller} onScroll={() => window.requestAnimationFrame(syncScrollHeading)} onMouseDown={clickBelow}>
@@ -974,7 +996,7 @@ export default function App() {
             <div hidden={!path}><Editor ref={ed} initial="" preview={preview} previewKey={previewKey} onChange={onChange} onSelection={onSelection} onImages={insertImages} extra={extra} /></div>
           </div>
         </div>
-        <FloatingToolbar view={ed.current?.view() ?? null} tick={tick} author={AUTHOR} active={fmt.active} />
+        {!reading.on && <FloatingToolbar view={ed.current?.view() ?? null} tick={tick} author={AUTHOR} active={fmt.active} />}
         {fileCmp && <Compare fileLabel={fileCmp.name} oldText={fileCmp.text} newText={live.current.text} against="current" hasPrev={false} prevLabel=""
           onAgainst={() => {}} onClose={() => setFileCmp(null)} onRestore={() => {}} onPick={() => setDlg("cmpfile")} />}
         {cmp && (
@@ -1010,6 +1032,7 @@ export default function App() {
       {tidy.node}
       {wstats.treeTip}
       {symbols.node}
+      {reading.node}
       <Presence>{dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{dlg === "cmpfile" && <Palette items={cmpItems} search={noSearch} pinned={cmpPick} onClose={() => setDlg(null)} placeholder="选一篇文稿，和当前文稿左右对比" />}</Presence>
       <Presence>{dlg === "move" && moving && <Palette items={moveItems} search={noSearch} onClose={() => { setDlg(null); setMoving(null); }} placeholder={`把「${moving.name}」移到哪个文件夹`} />}</Presence>

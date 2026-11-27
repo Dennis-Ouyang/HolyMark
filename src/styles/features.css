@@ -112,3 +112,39 @@
 .oi:hover .ofold, .oi .ofold.shut { opacity: 1; }
 .oi .ofold:hover { background: var(--line); color: var(--fg); }
 .oi .ofold.shut { rotate: -90deg; }
+
+/* ---------- 阅读模式 ---------- */
+.hm-reading .cm-content { caret-color: transparent; }
+.hm-reading .cm-cursorLayer { display: none; }
+.hm-reading .hm-link, .hm-reading .hm-link * { cursor: pointer; }
+.hm-reading .hm-figure img, .hm-reading .hm-img-inline img { cursor: zoom-in; }
+.hm-reading .hm-itools, .hm-reading .hm-igrip, .hm-reading .hm-ttools, .hm-reading .hm-colgrip, .hm-reading .hm-notedot { display: none !important; }
+.hm-reading .hm-table td, .hm-reading .hm-table th { cursor: text; }
+/* 悬停卡片：文献、脚注 */
+.cm-tooltip:has(> .hm-hovercard) { border: 0; background: transparent; }
+.hm-hovercard { max-width: 340px; padding: 10px 12px; border-radius: 12px; background: var(--raised); box-shadow: var(--float); font: 13px/1.6 var(--f-ui); color: var(--fg); animation: floatIn 120ms var(--ease); transform-origin: 50% 100%; }
+.hc-cite + .hc-cite { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.hc-cite b { font-weight: 600; margin-right: 8px; }
+.hc-cite > span.num { color: var(--fg-3); }
+.hc-t { color: var(--fg-2); }
+.hc-v { color: var(--fg-3); font-size: 12px; }
+.hc-miss { color: var(--fg-3); }
+.hc-fn { color: var(--fg-2); }
+/* 图片放大 */
+.lightbox { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: var(--scrim); animation: fade 160ms var(--ease); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+.lightbox figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 92vw; }
+.lb-stage { display: grid; place-items: center; }
+.lightbox img { max-width: 88vw; max-height: 80vh; border-radius: 8px; box-shadow: var(--float); background: var(--bg); animation: lbImg 160ms var(--ease); transition: scale 120ms var(--ease), translate 120ms var(--ease); }
+.lightbox img.zoomed { cursor: grab; transition: none; }
+@keyframes lbImg { from { opacity: 0; } }
+.lightbox figcaption { display: flex; align-items: baseline; gap: 12px; padding: 6px 12px; border-radius: 8px; background: var(--raised); box-shadow: var(--float); font-size: 13px; color: var(--fg); max-width: 80vw; }
+.lb-alt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-n { color: var(--fg-3); font-size: 12px; }
+.lb-nav, .lb-x { position: absolute; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 18px; background: var(--raised); box-shadow: var(--float); color: var(--fg-2); transition: color 120ms; }
+.lb-nav:hover, .lb-x:hover { color: var(--fg); }
+.lb-nav { top: calc(50% - 18px); }
+.lb-nav.l { left: 20px; } .lb-nav.r { right: 20px; rotate: 180deg; }
+.lb-x { top: 16px; right: 20px; }
+.leaving .lightbox { animation: fadeOut 110ms var(--ease-out) forwards; }
+.leaving .lightbox img { animation: lbOut 110ms var(--ease-out) forwards; }
+@keyframes lbOut { to { opacity: 0; scale: .97; } }
