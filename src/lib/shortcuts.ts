@@ -13,6 +13,7 @@ export const SHORTCUTS: [string, string][] = [
   ["Mod+Shift+E", "export"],
   ["Mod+F", "find"],
   ["Mod+K", "search"],
+  ["Mod+Alt+F", "folder_replace"],
   ["Mod+0", "block_p"],
   ["Mod+1", "block_h1"],
   ["Mod+2", "block_h2"],

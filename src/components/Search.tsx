@@ -27,6 +27,8 @@ interface Props {
   onJump: (pos: number, len: number) => void;
   onOpenAt: (path: string, pos: number, len: number) => void;
   onClose: () => void;
+  /** N9：「文件夹」范围里的「替换…」，带着当前的查找文字打开替换 */
+  onReplace?: (q: string) => void;
 }
 
 const MAX_DOC = 300, MAX_PER_FILE = 50;
@@ -50,7 +52,7 @@ function findAll(src: string, q: string, hs: Heading[] | null, max: number): Hit
   return out;
 }
 
-export function SearchPanel({ text, path, root, headings, folderTexts, commands, onJump, onOpenAt, onClose }: Props) {
+export function SearchPanel({ text, path, root, headings, folderTexts, commands, onJump, onOpenAt, onClose, onReplace }: Props) {
   const [q, setQ] = useState("");
   const [scope, setScope] = useState<Scope>("all");
   const [sel, setSel] = useState(0);
@@ -152,6 +154,7 @@ export function SearchPanel({ text, path, root, headings, folderTexts, commands,
               </button>
             ))}
           </div>
+          {scope === "folder" && onReplace && <button type="button" className="btn sm s-repl" onMouseDown={(e) => e.preventDefault()} onClick={() => onReplace(q)}>替换…</button>}
         </div>
         <div className="s-body">
           <div className={"s-list" + (preview ? "" : " wide")} ref={listRef}>

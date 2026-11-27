@@ -34,6 +34,8 @@ import { FileInfo, FileViewer } from "./components/FileViewer";
 import type { FilePreview } from "./lib/filePreview";
 import { copyRich } from "./features/copyRich";
 import { addDoiEntry, doiTargets } from "./features/useDoi";
+import { FolderReplace, ReplaceItem } from "./components/FolderReplace";
+import { ChangeSet } from "@codemirror/state";
 import { findAnchor } from "./lib/anchors";
 
 const AUTHOR = "我";
@@ -88,7 +90,9 @@ export default function App() {
   const [showSide, setShowSide] = useState(true);
   const [showPanel, setShowPanel] = useState(true);
   const [focus, setFocus] = useState(false);
-  const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "help_syntax" | "help_keys" | "export" | "unsaved" | "cmpfile" | "move">(null);
+  const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "help_syntax" | "help_keys" | "export" | "unsaved" | "cmpfile" | "move" | "replace">(null);
+  /** 文件夹替换（N9）打开时带着的查找文字 */
+  const [replaceQ, setReplaceQ] = useState("");
   const [fonts, setFonts] = useState<FontFamily[]>([]);
   /** 设置打开时先显示哪一页 */
   const [settingsPane, setSettingsPane] = useState<Pane | undefined>(undefined);
@@ -502,6 +506,49 @@ export default function App() {
   });
   featureHooks.current.reading = reading.hooks;
   /** 本文里的锚点：N4 会换成和 Pandoc 一致的规则 */
+  /* ---------- N9 在整个文件夹里查找替换 ---------- */
+  const replaceFiles = useMemo(() => flatten(tree).filter((f) => /\.(md|markdown)$/i.test(f.name)).map((f) => f.path), [tree]);
+  const readForReplace = useCallback(async (p: string) => (p === live.current.path ? live.current.text : be ? be.readText(p) : ""), [be]);
+  /** 先给每个要改的文件存一个版本，再写入；当前打开的文件在编辑器里改（进撤销历史）。提示条上可以撤销 */
+  async function applyReplace(items: ReplaceItem[]) {
+    if (!be) return;
+    const cur = live.current.path;
+    let count = 0, after: EditorView["state"]["doc"] | null = null, inverse: ChangeSet | null = null;
+    for (const it of items) {
+      count += it.matches.length;
+      folderCache.current.delete(it.path);
+      if (it.path === cur) {
+        const v = view(); if (!v) continue;
+        await flush();
+        await be.saveVersion(cur, live.current.text, "auto", undefined, "替换前自动保存").catch(() => null);
+        if (v.state.doc.toString() !== it.before) { say("正文刚刚改过，这一篇没有替换，请重新查找"); count -= it.matches.length; continue; }
+        const cs = ChangeSet.of(it.matches.map((m) => ({ from: m.from, to: m.to, insert: m.replacement })), v.state.doc.length);
+        inverse = cs.invert(v.state.doc);
+        v.dispatch({ changes: cs, userEvent: "input.replace" });
+        after = v.state.doc;
+        await flush();
+      } else {
+        await be.saveVersion(it.path, it.before, "auto", undefined, "替换前自动保存").catch(() => null);
+        await be.writeText(it.path, it.after);
+      }
+    }
+    setDlg(null);
+    if (cur) setVersions(await be.listVersions(cur).catch(() => []));
+    const files = items.length;
+    say(`已在 ${files} 个文件里替换 ${count} 处`, { label: "撤销", run: () => { void (async () => {
+      for (const it of items) {
+        folderCache.current.delete(it.path);
+        if (it.path === live.current.path) {
+          const v = view(); if (!v) continue;
+          if (inverse && v.state.doc === after) v.dispatch({ changes: inverse, userEvent: "undo.replace" });
+          else v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: it.before } });
+          await flush();
+        } else await be.writeText(it.path, it.before).catch(() => {});
+      }
+      say("已撤销替换，替换前的内容都存成了版本");
+    })(); } });
+  }
+
   /** N17 复制为带格式的文字：选中的内容，没选中就是全文 */
   function copyFormatted(target: "word" | "wechat") {
     const v = view(); if (!v || !path) return;
@@ -542,6 +589,7 @@ export default function App() {
       case "tidy": if (path) tidy.open(); break;
       case "reading": if (path) reading.toggle(); break;
       case "copy_rich": case "copy_wechat": copyFormatted(id === "copy_wechat" ? "wechat" : "word"); break;
+      case "folder_replace": if (root) { setReplaceQ(v && !v.state.selection.main.empty ? v.state.sliceDoc(v.state.selection.main.from, v.state.selection.main.to).split("\n")[0] : ""); setDlg("replace"); } break;
       case "nav_back": nav.back(); break;
       case "nav_forward": nav.forward(); break;
       case "math_symbols": if (path) symbols.open(); break;
@@ -896,6 +944,7 @@ export default function App() {
     ...(viewing ? [{ group: "命令", icon: "doc", title: "关闭预览，回到正文", keys: ["Esc"], run: () => setViewing("") }] : []),
     ...(nav.canBack ? [{ group: "命令", icon: "left", title: "返回", keys: [kbd(BACK_KEY)], run: () => nav.back() }] : []),
     ...(nav.canForward ? [{ group: "命令", icon: "right", title: "前进", keys: [kbd(FWD_KEY)], run: () => nav.forward() }] : []),
+    ...(root ? [{ group: "命令", icon: "replace", title: "在文件夹里替换…", keys: ["⌘", "⌥", "F"].map((k) => keyName(k)), run: () => setTimeout(() => onMenu("folder_replace"), 0) }] : []),
     ...(path ? [
       { group: "命令", icon: "clip", title: "复制为带格式的文字（Word、邮件）", sub: "选中的文字或全文；公式用 MathML", run: () => copyFormatted("word") },
       { group: "命令", icon: "clip", title: "复制为带格式的文字（公众号）", sub: "选中的文字或全文；公式转成图片", run: () => copyFormatted("wechat") },
@@ -1012,7 +1061,7 @@ export default function App() {
   /* ---------- keyboard ---------- */
   // 没有原生菜单时（Windows、浏览器预览），菜单里的快捷键都在这里处理；
   // macOS 上原生菜单先接住这些按键，这里只兜底几个常用的
-  const APP_LEVEL = useMemo(() => new Set(["reading", "search", "save_version", "export", "settings", "focus", "toggle_side", "toggle_panel", "toggle_ribbon", "new_file", "open_folder", "panel_outline", "panel_notes", "panel_versions"]), []);
+  const APP_LEVEL = useMemo(() => new Set(["folder_replace", "reading", "search", "save_version", "export", "settings", "focus", "toggle_side", "toggle_panel", "toggle_ribbon", "new_file", "open_folder", "panel_outline", "panel_notes", "panel_versions"]), []);
   const MAC_FALLBACK = useMemo(() => new Set(["reading", "search", "save_version", "settings", "focus", "toggle_side", "toggle_panel", "new_file", "open_folder"]), []);
   useEffect(() => {
     const f = (e: KeyboardEvent) => {
@@ -1128,7 +1177,8 @@ export default function App() {
       <Presence>{dlg === "settings" && <SettingsDialog s={s} fonts={fonts} onChange={update} initialPane={settingsPane} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{(dlg === "help_syntax" || dlg === "help_keys") && <HelpDialog kind={dlg === "help_syntax" ? "syntax" : "keys"} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{dlg === "palette" && <SearchPanel text={live.current.text} path={path} root={root} headings={hs} folderTexts={folderTexts} commands={commands}
-        onJump={jumpTo} onOpenAt={openAt} onClose={() => setDlg(null)} />}</Presence>
+        onJump={jumpTo} onOpenAt={openAt} onClose={() => setDlg(null)} onReplace={root ? (q) => { setReplaceQ(q); setDlg("replace"); } : undefined} />}</Presence>
+      <Presence>{dlg === "replace" && <FolderReplace files={replaceFiles} root={root} read={readForReplace} initial={replaceQ} onApply={applyReplace} onClose={() => { setDlg(null); view()?.focus(); }} />}</Presence>
       <Presence ms={100}>{insertAt && <InsertFile at={insertAt} files={flatten(tree)} docPath={path} root={root} bib={bib} recent={recentIns}
         doi={root ? { targets: doiTargets(tree, root), add: async (d, t) => {
           if (!be) throw new Error("还没准备好");

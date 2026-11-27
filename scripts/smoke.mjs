@@ -367,6 +367,35 @@ step("N21 用 DOI 生成文献条目：加载态、键名去重、追加到 .bib
   await page.waitForSelector(".toast:has-text('sweller1988a')");
   await page.evaluate(() => { const v = window.__hm.view(); const n = v.state.doc.length; v.dispatch({ changes: { from: n - "[@sweller1988a]".length, to: n } }); });
 });
+step("N9 在文件夹里替换：预览、取消勾选、执行、存版本、撤销", async (page) => {
+  const before = await docText(page);
+  const other = "/演示/毕业论文/资料/导师意见-1118.md";
+  await menu(page, "search");
+  await page.waitForSelector(".search");
+  await page.keyboard.type("第三章");
+  await page.click(".s-scope button:has-text('文件夹')");
+  await page.click(".s-repl");
+  await page.waitForSelector(".frep");
+  await page.fill(".frep input[aria-label='替换为']", "第 3 章");
+  await page.waitForSelector(".fr-hit del");
+  const n = (await page.$$(".fr-hit")).length;
+  if (n < 2) throw new Error("匹配太少：" + n);
+  if (!(await page.textContent(".fr-hit ins")).includes("第 3 章")) throw new Error("没有显示替换后的样子");
+  // 取消勾选一处，数目跟着变，再勾回来
+  await page.click(".fr-hit >> nth=0");
+  const foot = await page.textContent(".fr-foot");
+  if (!foot.includes(`替换 ${n - 1} 处`)) throw new Error("取消勾选后数目不对：" + foot);
+  await page.click(".fr-hit >> nth=0");
+  await page.click(".fr-foot .btn.acc");
+  await page.waitForSelector(".toast:has-text('个文件里替换')");
+  const after = await docText(page);
+  if (after === before || !after.includes("第 3 章")) throw new Error("当前文件没有替换");
+  const saved = await page.evaluate((p) => localStorage.getItem("holymark-demo-versions:" + p), other);
+  if (!saved || !saved.includes("替换前自动保存")) throw new Error("替换前没有给别的文件存版本");
+  await page.click(".toast .lnk");
+  await page.waitForSelector(".toast:has-text('已撤销替换')");
+  if ((await docText(page)) !== before) throw new Error("撤销没有还原当前文件");
+});
 
 async function run(theme) {
   const browser = await chromium.launch();
