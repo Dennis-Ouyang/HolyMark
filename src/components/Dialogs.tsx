@@ -84,7 +84,6 @@ export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; f
             </Row>
             <Row label="文件树" hint="关闭时只显示 Markdown 文件"><label className="inline">{sw("showAllFiles", "显示所有文件")}<span>显示所有文件</span></label></Row>
             <Row label="启动时" hint="关掉的话，每次从开始页开始"><label className="inline">{sw("reopenLast", "打开上次的文件夹")}<span>打开上次的文件夹</span></label></Row>
-            <Row label="关闭应用时" hint="不保存的修改会留在「版本」里，随时能找回"><label className="inline">{sw("askOnClose", "询问是否保存修改")}<span>有修改时询问是否保存</span></label></Row>
           </>}
           {pane === "editor" && <>
             <EditorPreview s={s} />

@@ -10,7 +10,7 @@ import { FloatingToolbar, Ribbon } from "./components/Toolbars";
 import { activeStyles, BlockKind, blockInsertSpec, currentBlock, indentList, InlineKind, shiftHeading, insertBlock, insertLink, insertNote, setBlock, tableMarkdown, toggleInline } from "./editor/commands";
 import { PanelTab, SidePanel, fmtTime, versionTitle } from "./components/SidePanel";
 import { Compare } from "./components/Compare";
-import { CountPop, HelpDialog, Palette, PaletteItem, SaveVersionDialog, SettingsDialog, UnsavedDialog } from "./components/Dialogs";
+import { CountPop, HelpDialog, Palette, PaletteItem, SaveVersionDialog, SettingsDialog } from "./components/Dialogs";
 import { Icon } from "./components/Icons";
 import { Presence } from "./components/Presence";
 import { WindowControls } from "./components/WindowControls";
@@ -116,7 +116,8 @@ export default function App() {
   const [toast, setToast] = useState<{ msg: string; kind: NoticeKind; action?: NoticeAction } | null>(null);
   const ed = useRef<EditorHandle>(null);
   // base：上一次“保存”时的内容（打开文件、保存版本、外部修改之后）。和 text 不同就是有没保存的修改，关闭应用时会问
-  const live = useRef({ path: "", text: "", base: "", lastWritten: "", lastVersionAt: 0 });
+  // opened：这次打开时的内容（「撤销这次打开以来的修改」回到这里）
+  const live = useRef({ path: "", text: "", base: "", opened: "", lastWritten: "", lastVersionAt: 0 });
   const saveTimer = useRef<number>();
 
   const view = (): EditorView | null => ed.current?.view() ?? null;
@@ -219,7 +220,7 @@ export default function App() {
     await Promise.all([...staged.current.keys()].map((p) => { window.clearTimeout(staged.current.get(p)); return be.commitStaged(p).catch(() => {}); }));
     staged.current.clear();
     await be.closeFolder().catch(() => {});
-    live.current = { path: "", text: "", base: "", lastWritten: "", lastVersionAt: 0 };
+    live.current = { path: "", text: "", base: "", opened: "", lastWritten: "", lastVersionAt: 0 };
     ed.current?.load("");
     setRoot(""); setTree([]); setPath(""); setText(""); setVersions([]); setCmp(null); setFileCmp(null); setBib([]);
     update({ lastFolder: "" });
@@ -244,7 +245,8 @@ export default function App() {
     if (!be) return;
     await flush();
     const content = await be.readText(p);
-    live.current = { path: p, text: content, base: content, lastWritten: content, lastVersionAt: Date.now() };
+    await commitCheckpoint().catch(() => {});
+    live.current = { path: p, text: content, base: content, opened: content, lastWritten: content, lastVersionAt: Date.now() };
     setPath(p); setText(content); setCmp(null); setFileCmp(null); setFresh(null);
     ed.current?.load(content);
     if (scroller.current) scroller.current.scrollTop = 0;
@@ -310,12 +312,12 @@ export default function App() {
   }, [be]);
 
   useEffect(() => {
-    const f = () => { flush(); };
+    const f = () => { flush(); commitCheckpoint(); };
     addEventListener("beforeunload", f);
     return () => removeEventListener("beforeunload", f);
   });
 
-  /* ---------- 关闭应用：有修改时问一声要不要保存 ---------- */
+  /* ---------- 关闭应用：一直在自动保存，直接关（G1） ---------- */
   const closing = useRef(false);
   async function reallyClose() {
     closing.current = true;
@@ -326,27 +328,17 @@ export default function App() {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     await getCurrentWindow().destroy();
   }
-  /** 关窗口（标题栏按钮、Alt+F4、⌘W、⌘Q）：先把没写盘的内容存下来，再看要不要问 */
+  /**
+   * 关窗口（标题栏按钮、Alt+F4、⌘W、⌘Q）：一直在自动保存，不再问「保存还是不保存」，也不把文件改回去（G1）。
+   * 先把没写盘的内容写下去、把还没落定的存档点记下来；这次打开以来有修改的话留一个自动版本。
+   */
   async function requestClose() {
-    await Promise.race([flush().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
-    const l = live.current;
-    if (s.askOnClose && l.path && l.text !== l.base) { setDlg("unsaved"); return; }
-    await reallyClose();
-  }
-  /** 保存：文件已经是现在的内容，记一个版本作为保存点 */
-  async function closeSaving() {
-    const l = live.current;
-    if (be && l.path) await be.saveVersion(l.path, l.text, "auto", undefined, "关闭前保存").catch(() => null);
-    await reallyClose();
-  }
-  /** 不保存：现在的内容先存成版本（找得回来），文件写回上次保存时的样子 */
-  async function closeDiscarding() {
-    const l = live.current;
-    if (be && l.path) {
-      await be.saveVersion(l.path, l.text, "auto", undefined, "关闭时没有保存的修改").catch(() => null);
-      await be.writeText(l.path, l.base).catch(() => null);
-      l.text = l.lastWritten = l.base;
-    }
+    await Promise.race([(async () => {
+      await flush().catch(() => {});
+      await commitCheckpoint().catch(() => {});
+      const l = live.current;
+      if (be && l.path && l.text !== l.opened) await be.saveVersion(l.path, l.text, "auto", undefined, "关闭时").catch(() => null);
+    })(), new Promise((r) => setTimeout(r, 2000))]);
     await reallyClose();
   }
   const closeRef = useRef(requestClose);
@@ -502,7 +494,7 @@ export default function App() {
       case "new_file": newFile(); break;
       case "open_folder": chooseFolder(); break;
       case "close_folder": closeFolder(); break;
-      case "save_version": if (path) setDlg("save"); break;
+      case "save_version": if (path) checkpoint(); break;
       case "find": ed.current?.find(); break;
       case "search": setDlg((d) => (d === "palette" ? null : "palette")); break;
       case "link": if (v) insertLink(v); break;
@@ -569,15 +561,50 @@ export default function App() {
     v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: next } });
     say(Object.keys(l).some((k) => l[k]) ? "已写入本文属性区" : "已清除本文版式", "success");
   }
+  /**
+   * ⌘S 是不打断的存档点（G1）：马上提示「已存档」，提示条上带「起个名字」，点了才弹出起名字的对话框。
+   * 存档点的版本在提示条消失后记下（这期间点了「起个名字」就带着名字记一条，不会记两条）；
+   * 换文件、关窗口、刷新前会先记下。文件本身一直在自动保存。
+   */
+  const pendingCk = useRef<{ timer: number; path: string; text: string } | null>(null);
+  async function commitCheckpoint(name?: string, note?: string) {
+    const ck = pendingCk.current;
+    if (!ck || !be) return;
+    window.clearTimeout(ck.timer);
+    pendingCk.current = null;
+    await be.saveVersion(ck.path, ck.text, "saved", name || undefined, note || undefined);
+    if (ck.path === live.current.path) setVersions(await be.listVersions(ck.path));
+  }
+  async function checkpoint() {
+    if (!be || !path) return;
+    await flush();
+    await commitCheckpoint();
+    live.current.lastVersionAt = Date.now();
+    live.current.base = live.current.text;
+    pendingCk.current = { path, text: live.current.text, timer: window.setTimeout(() => { commitCheckpoint().catch(() => {}); }, 6500) };
+    say("已存档", "success", { label: "起个名字", run: () => { if (pendingCk.current) window.clearTimeout(pendingCk.current.timer); setDlg("save"); } });
+  }
   async function saveVersion(name: string, note: string) {
     if (!be || !path) return;
     await flush();
-    await be.saveVersion(path, live.current.text, "saved", name, note || undefined);
+    if (pendingCk.current) await commitCheckpoint(name, note);
+    else await be.saveVersion(path, live.current.text, "saved", name, note || undefined);
     live.current.lastVersionAt = Date.now();
     live.current.base = live.current.text;
     setVersions(await be.listVersions(path));
     setDlg(null);
-    say(`已保存版本「${name}」`, "success");
+    say(`已存档「${name}」`, "success");
+  }
+  /** 撤销这次打开以来的所有修改：现在的内容先存成版本，再回到打开时的样子（提示条带「撤销」） */
+  async function revertToOpened() {
+    const v = view(); if (!v || !be || !path) return;
+    const l = live.current;
+    if (l.text === l.opened) return;
+    await flush();
+    await be.saveVersion(path, l.text, "auto", undefined, "撤销这次打开以来的修改之前").catch(() => null);
+    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: l.opened } });
+    setVersions(await be.listVersions(path));
+    say("已回到这次打开时的样子", "success", { label: "撤销", run: () => ed.current?.undo() });
   }
   /** against 不给时：默认对比现在；版本和现在一样就改成对比上一版。用户在分段控件里明确选了就照选的来 */
   async function openVersion(id: string, pick?: "current" | "prev") {
@@ -727,7 +754,7 @@ export default function App() {
       if (inside) {
         const next = flatten(t).find((f) => /\.(md|markdown)$/i.test(f.name));
         if (next) await openFile(next.path);
-        else { live.current = { path: "", text: "", base: "", lastWritten: "", lastVersionAt: 0 }; setPath(""); setText(""); setVersions([]); }
+        else { live.current = { path: "", text: "", base: "", opened: "", lastWritten: "", lastVersionAt: 0 }; setPath(""); setText(""); setVersions([]); }
       }
       undoable(`已把「${node.name}」移到${trashName}`, async () => {
         window.clearTimeout(staged.current.get(hold)); staged.current.delete(hold);
@@ -832,7 +859,8 @@ export default function App() {
   }
 
   const commands: PaletteItem[] = [
-    { group: "命令", icon: "cmd", title: "保存版本", keys: ["⌘", "S"].map((k) => keyName(k)), run: () => setDlg("save") },
+    { group: "命令", icon: "cmd", title: "存档（保存一个版本）", keys: ["⌘", "S"].map((k) => keyName(k)), run: checkpoint },
+    { group: "命令", icon: "cmd", title: "保存版本并起名字…", run: () => setTimeout(() => setDlg("save"), 0) },
     { group: "命令", icon: "cmd", title: "插入文件链接…", keys: ["⌘", "⇧", "C"].map((k) => keyName(k)), run: () => setTimeout(openInsert, 0) },
     { group: "命令", icon: "cmd", title: "打开文件夹…", keys: ["⌘", "O"].map((k) => keyName(k)), run: chooseFolder },
     ...(root ? [{ group: "命令", icon: "cmd", title: "关闭文件夹", run: closeFolder }] : []),
@@ -973,7 +1001,6 @@ export default function App() {
   function toggleCount(title: string, t: string, el: HTMLElement) {
     setCountPop((p) => (p?.title === title ? null : { title, text: t, rect: el.getBoundingClientRect() }));
   }
-  const dirty = !!path && text !== live.current.base;
 
   const appCls = [s.eqNumbers ? "eqnum" : "", "app", showSide ? "" : "no-side", showPanel && path ? "" : "no-panel", focus ? "focus" : "", isTauri && isMac ? "mac" : "", customFrame ? "framed" : ""].join(" ");
   const fileName = baseName(path);
@@ -987,7 +1014,6 @@ export default function App() {
         <div className="crumbs" data-tauri-drag-region>
           {root && <span>{baseName(root)}</span>}
           {crumbs.map((c, i) => <span key={i} className={"crumb" + (i === crumbs.length - 1 ? " last" : "")}><span className="sep">/</span>{i === crumbs.length - 1 ? <b><MidName name={c} tail={6} /></b> : <span className="cn" title={c}>{c}</span>}</span>)}
-          {dirty && <span className="dirty" title={kbd("这次打开后有修改（已自动写入文件）。按 ⌘S 保存版本，关闭时也会询问")} aria-label="有修改" />}
         </div>
         <div className="spacer" data-tauri-drag-region />
         {path && saveState === "error" && <div className="savestate" role="alert" title="自动保存没有成功，继续编辑会再次尝试"><i />保存失败</div>}
@@ -1043,7 +1069,8 @@ export default function App() {
           selectedVersion={cmp?.v.id ?? null} fileName={fileName} onJump={jump} onResolve={resolveNote} cursorPos={cursor}
           path={path} readVersion={(p, id) => be ? be.readVersion(p, id) : Promise.resolve("")}
           onAddHeading={() => { const v = view(); if (v) { setBlock(v, "h1"); v.focus(); } }} onAddNote={() => menuRef.current("note")}
-          onOpenVersion={(id) => openVersion(id)} onSaveVersion={() => setDlg("save")} onCompareFile={() => setDlg("cmpfile")} />
+          onOpenVersion={(id) => openVersion(id)} onSaveVersion={() => setDlg("save")} onCompareFile={() => setDlg("cmpfile")}
+          canRevert={!!path && text !== live.current.opened} onRevert={revertToOpened} />
       </aside>
 
       <footer className="statusbar">
@@ -1057,7 +1084,7 @@ export default function App() {
       </footer>
 
       <Presence>{countPop && <CountPop title={countPop.title} text={countPop.text} count={count} anchor={countPop.rect} onClose={() => setCountPop(null)} />}</Presence>
-      <Presence>{dlg === "save" && <SaveVersionDialog changes={saveChanges} fileName={fileName} onSave={saveVersion} onClose={() => setDlg(null)} />}</Presence>
+      <Presence>{dlg === "save" && <SaveVersionDialog changes={saveChanges} fileName={fileName} onSave={saveVersion} onClose={() => { setDlg(null); commitCheckpoint().catch(() => {}); }} />}</Presence>
       <Presence>{dlg === "settings" && <SettingsDialog s={s} fonts={fonts} onChange={update} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{(dlg === "help_syntax" || dlg === "help_keys") && <HelpDialog kind={dlg === "help_syntax" ? "syntax" : "keys"} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{dlg === "palette" && <SearchPanel text={live.current.text} path={path} root={root} headings={hs} folderTexts={folderTexts} commands={commands}
@@ -1069,7 +1096,6 @@ export default function App() {
       <Presence>{dlg === "move" && moving && <Palette items={moveItems} search={noSearch} onClose={() => { setDlg(null); setMoving(null); }} placeholder={`把「${moving.name}」移到哪个文件夹`} />}</Presence>
       {treeMenu && <Menu x={treeMenu.x} y={treeMenu.y} items={treeMenuItems(treeMenu.node)} onClose={() => setTreeMenu(null)} />}
       {folderMenu && <Menu x={folderMenu.x} y={folderMenu.y} items={folderMenuItems()} onClose={() => setFolderMenu(null)} minWidth={232} />}
-      <Presence>{dlg === "unsaved" && <UnsavedDialog fileName={fileName} onSave={closeSaving} onDiscard={closeDiscarding} onCancel={() => setDlg(null)} />}</Presence>
       {dropCaret && <div className="dropcaret" style={{ left: dropCaret.left, top: dropCaret.top, height: dropCaret.height }} aria-hidden="true" />}
       <Presence>{toast && <div className={"toast " + toast.kind} role="status">{toast.kind !== "info" && <i aria-hidden="true" />}{toast.msg}{toast.action && <button className="lnk" onClick={() => { toast.action!.run(); setToast(null); }}>{toast.action.label}</button>}</div>}</Presence>
     </div>

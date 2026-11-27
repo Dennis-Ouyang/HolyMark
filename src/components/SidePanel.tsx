@@ -40,6 +40,9 @@ interface Props {
   /** 空状态里的操作 */
   onAddHeading?: () => void;
   onAddNote?: () => void;
+  /** 这次打开以来有修改：可以一键撤销 */
+  canRevert?: boolean;
+  onRevert?: () => void;
 }
 
 /**
@@ -116,9 +119,10 @@ export function SidePanel(p: Props) {
         <div className="pane">
           {/* 头部只留两个操作（文件名和标题栏重复，去掉）；来源的图例给一次 */}
           <div className="ph">
-            <button className="lnk" onClick={p.onSaveVersion}>{kbd("保存版本 ⌘S")}</button>
+            <button className="lnk" onClick={p.onSaveVersion} title={kbd("⌘S 直接存档，不用起名字")}>保存版本…</button>
             <button className="lnk" onClick={p.onCompareFile} title="选一篇文稿和当前文稿左右对比">与其他文稿对比</button>
           </div>
+          {p.canRevert && <button className="vrevert" onClick={p.onRevert}><Icon name="reset" size={14} />撤销这次打开以来的修改</button>}
           {p.versions.length ? <VersionList {...p} /> : <Empty icon="history" text="还没有版本。自动保存的同时会定时留一个版本，也可以随时自己存一个。" action={{ label: "保存一个版本", run: p.onSaveVersion }} />}
         </div>
       )}

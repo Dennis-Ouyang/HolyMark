@@ -1136,3 +1136,5 @@ textarea.nb-tx::placeholder { color: var(--fg-3); }
 
 .fbwrap { display: inline-grid; flex: none; }
 .dhint { margin-right: auto; font-size: 12px; color: var(--fg-3); }
+.vrevert { display: flex; align-items: center; gap: 6px; width: 100%; margin: 0 0 8px; padding: 7px 8px; border-radius: 7px; font-size: 13px; color: var(--fg-2); text-align: left; transition: background-color 120ms, color 120ms; }
+.vrevert:hover { background: var(--hover); color: var(--fg); }
