@@ -752,6 +752,12 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .help .dh { display: flex; justify-content: space-between; align-items: center; position: relative; }
 .help .db { max-height: 60vh; overflow-y: auto; }
 .kt.syn td:first-child { width: 46%; }
+/* 语法速查：说明左对齐、紧跟在语法后面，眼睛不用来回跳（H36） */
+.kt.syn td:last-child { text-align: left; padding-left: 12px; }
+/* 快捷键表按类别分组（H36） */
+.ktg { display: flex; flex-direction: column; gap: 16px; }
+.ktg h4 { margin: 0 0 2px; font-size: 12px; font-weight: 600; color: var(--fg-3); }
+.ktg .kt td:last-child kbd { font-variant-numeric: tabular-nums; }
 .kt.syn code { font: 12px var(--mono); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
 
 /* ---------- 统一数字输入 ---------- */

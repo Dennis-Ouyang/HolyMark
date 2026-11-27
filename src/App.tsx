@@ -20,8 +20,9 @@ import { InsertFile, InsertPick, linkFor } from "./components/InsertFile";
 import { baseName, dirOf, isInside, isMarkdown, join, normalize, relative, stripMd, toPosix } from "./lib/paths";
 import { MidName } from "./components/MidName";
 import { sortTree } from "./lib/sortTree";
-import { isMac, isWindows, kbd, keyName } from "./lib/platform";
+import { isMac, isWindows, kbd } from "./lib/platform";
 import { menuIdFor } from "./lib/shortcuts";
+import { accelOf, COMMANDS, keyCaps, menuSpec, onShortcutsChange, shortcutOf } from "./lib/commandRegistry";
 import { ExportDialog } from "./components/ExportDialog";
 import { merge3 } from "./lib/merge";
 import { noteAuthor, setNoteAuthor } from "./editor/notes";
@@ -516,6 +517,8 @@ export default function App() {
       case "toggle_syntax": update({ syntax: s.syntax === "always" ? "active" : "always" }); break;
       case "help_syntax": setDlg("help_syntax"); break;
       case "help_keys": setDlg("help_keys"); break;
+      case "save_version_named": if (path) setDlg("save"); break;
+      case "compare_file": if (path) setDlg("cmpfile"); break;
       case "export": openExport(); break;
       case "quit": requestClose(); break;
       case "indent": if (v) indentList(v, 1); break;
@@ -527,6 +530,13 @@ export default function App() {
   const menuRef = useRef(onMenu);
   menuRef.current = onMenu;
   useEffect(() => { if (be) return be.onMenu((id) => menuRef.current(id)); }, [be]);
+  // macOS 原生菜单按命令注册表生成；快捷键在运行时改了就重建（G6）
+  useEffect(() => {
+    if (!be || be.isDemo || !nativeMenu) return;
+    const sync = () => { be.setMenu(menuSpec(), accelOf(shortcutOf("settings"))).catch(() => {}); };
+    sync();
+    return onShortcutsChange(sync);
+  }, [be]);
 
   // 原生应用没有网页右键菜单；正文和输入框里保留系统的拷贝粘贴菜单
   useEffect(() => {
@@ -858,18 +868,12 @@ export default function App() {
     requestAnimationFrame(() => jumpTo(pos, len));
   }
 
+  // ⌘K 里的命令由命令注册表生成：能搜到所有命令（G6）
   const commands: PaletteItem[] = [
-    { group: "命令", icon: "cmd", title: "存档（保存一个版本）", keys: ["⌘", "S"].map((k) => keyName(k)), run: checkpoint },
-    { group: "命令", icon: "cmd", title: "保存版本并起名字…", run: () => setTimeout(() => setDlg("save"), 0) },
-    { group: "命令", icon: "cmd", title: "插入文件链接…", keys: ["⌘", "⇧", "C"].map((k) => keyName(k)), run: () => setTimeout(openInsert, 0) },
-    { group: "命令", icon: "cmd", title: "打开文件夹…", keys: ["⌘", "O"].map((k) => keyName(k)), run: chooseFolder },
-    ...(root ? [{ group: "命令", icon: "cmd", title: "关闭文件夹", run: closeFolder }] : []),
-    { group: "命令", icon: "cmd", title: "新建文稿", keys: ["⌘", "N"].map((k) => keyName(k)), run: newFile },
-    { group: "命令", icon: "cmd", title: "与其他文稿对比…", run: () => setTimeout(() => setDlg("cmpfile"), 0) },
-    { group: "命令", icon: "cmd", title: "Markdown 语法速查", run: () => setTimeout(() => setDlg("help_syntax"), 0) },
-    { group: "命令", icon: "cmd", title: "导出 Word / PDF / Markdown…", keys: ["⌘", "⇧", "E"].map((k) => keyName(k)), run: () => setTimeout(openExport, 0) },
-    { group: "命令", icon: "cmd", title: "设置", keys: ["⌘", ","].map((k) => keyName(k)), run: () => setDlg("settings") },
-    { group: "命令", icon: "cmd", title: "专注模式", keys: ["⌘", "⇧", "F"].map((k) => keyName(k)), run: () => setFocus((f) => !f) },
+    ...COMMANDS.filter((c) => !c.hidden && (c.id !== "close_folder" || root)).map((c) => ({
+      group: "命令", icon: "cmd", title: c.title, sub: c.alias, keys: shortcutOf(c.id) ? keyCaps(shortcutOf(c.id)!) : undefined,
+      run: () => setTimeout(() => menuRef.current(c.id), 0),
+    })),
     ...hs.filter((h) => h.level >= 2).map((h) => ({ group: "跳转", icon: "go", title: h.text, run: () => jump(h.pos) })),
   ];
   /* ---------- 插入文件链接（⌘⇧C）：光标处的小浮层 ---------- */

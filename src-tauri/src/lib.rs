@@ -1,6 +1,7 @@
 //! HolyMark 后端：文件夹、读写、版本库、外部修改监听。
 mod export;
 mod fsops;
+mod menuspec;
 mod preview;
 #[cfg(target_os = "macos")]
 mod menu;
@@ -590,6 +591,18 @@ fn open_path(path: String) -> Result<(), String> {
     export::open_path(&path)
 }
 
+/// 按前端命令注册表重建原生菜单（快捷键在运行时改了以后调用）。只有 macOS 有菜单栏，其他系统什么都不做
+#[tauri::command]
+fn set_menu(app: tauri::AppHandle, sections: Vec<menuspec::SpecSection>, settings_accel: Option<String>) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let m = menuspec::build_from(&app, &sections, settings_accel.as_deref()).map_err(err)?;
+        app.set_menu(m).map_err(err)?;
+    }
+    let _ = (&app, &sections, &settings_accel);
+    Ok(())
+}
+
 /// 系统用户名，给批注署名做默认值。macOS 上优先用账户的全名（「张三」），拿不到就用登录名
 #[tauri::command]
 fn user_name() -> String {
@@ -733,6 +746,7 @@ pub fn run() {
             reveal,
             open_path,
             open_url,
+            set_menu,
             user_name,
             pick_save,
             pick_folder,

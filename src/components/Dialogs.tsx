@@ -5,6 +5,7 @@ import { FontSelect } from "./Select";
 import { NumberField } from "./NumberField";
 import { Icon } from "./Icons";
 import { kbd } from "../lib/platform";
+import { CATEGORY_TITLE, CommandCategory, commandsIn, keyText, shortcutOf } from "../lib/commandRegistry";
 import { Segmented } from "./Segmented";
 
 function Scrim({ onClose, center, children }: { onClose: () => void; center?: boolean; children: React.ReactNode }) {
@@ -204,16 +205,23 @@ export function CountPop({ title, text, count, anchor, onClose }: { title: strin
   );
 }
 
-export const KEYS: [string, string][] = [
-  ["搜索与命令", "⌘ K"], ["保存版本", "⌘ S"], ["新建文稿", "⌘ N"], ["打开文件夹", "⌘ O"], ["设置", "⌘ ,"], ["查找", "⌘ F"],
-  ["粗体 / 斜体", "⌘ B / ⌘ I"], ["删除线", "⌘ ⇧ X"], ["行内代码", "⌘ E"], ["行内公式", "⌘ ⇧ M"], ["链接", "⌘ ⇧ K"],
-  ["正文 / 标题 1–6", "⌘ 0 / ⌘ 1–6"], ["提升 / 降低标题级别", "⌘ = / ⌘ -"], ["高亮", "⌘ ⇧ H"], ["无序 / 有序 / 待办列表", "⌘ ⇧ 8 / 7 / 9"], ["子列表 / 回到上一级", "Tab / ⇧ Tab（或 ⌘ ] / ⌘ [）"], ["引用", "⌘ ⇧ ."],
-  ["插入文件链接", "⌘ ⇧ C"], ["导出", "⌘ ⇧ E"], ["添加批注", "⌘ ⌥ M"], ["插入图片", "⌘ ⇧ I"],
-  ["专注模式", "⌘ ⇧ F"], ["侧栏 / 右栏", "⌘ \\ / ⌘ /"], ["折叠功能区", "⌘ ⌥ R"], ["目录 / 批注 / 版本", "⌘ ⌥ 1 / 2 / 3"],
-  ["表格里换格", "Tab / ⇧ Tab"], ["离开当前块或表格", "Esc"],
-];
+/** 快捷键表（H36）：由命令注册表生成，按「文件 / 编辑 / 段落 / 插入 / 格式 / 视图」分组；
+ *  编辑器自己处理的几个键（Tab、Esc）放在「编辑」最后 */
+const EXTRA_KEYS: Partial<Record<CommandCategory, [string, string][]>> = {
+  edit: [["撤销 / 重做", "⌘ Z / ⌘ ⇧ Z"]],
+  paragraph: [["子列表 / 回到上一级", "Tab / ⇧ Tab"]],
+  view: [["表格里换格", "Tab / ⇧ Tab"], ["离开当前块或表格", "Esc"]],
+};
 export function KeyTable() {
-  return <table className="kt"><tbody>{KEYS.map(([a, b]) => <tr key={a}><td>{a}</td><td><kbd>{kbd(b)}</kbd></td></tr>)}</tbody></table>;
+  const cats = (Object.keys(CATEGORY_TITLE) as CommandCategory[]).filter((c) => c !== "help");
+  return <div className="ktg">{cats.map((cat) => {
+    const rows: [string, string][] = [
+      ...commandsIn(cat).filter((c) => shortcutOf(c.id) && c.id !== "undo" && c.id !== "redo" && c.id !== "quit").map((c) => [c.title.replace(/…$/, ""), keyText(shortcutOf(c.id))] as [string, string]),
+      ...(EXTRA_KEYS[cat] ?? []).map(([a, b]) => [a, kbd(b)] as [string, string]),
+    ];
+    if (!rows.length) return null;
+    return <section key={cat}><h4>{CATEGORY_TITLE[cat]}</h4><table className="kt"><tbody>{rows.map(([a, b]) => <tr key={a}><td>{a}</td><td><kbd>{b}</kbd></td></tr>)}</tbody></table></section>;
+  })}</div>;
 }
 
 const SYNTAX: [string, string][] = [

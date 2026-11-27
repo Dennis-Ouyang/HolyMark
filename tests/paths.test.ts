@@ -61,7 +61,7 @@ describe("菜单快捷键", async () => {
     const native = [...rs.matchAll(/item\("(\w+)", "[^"]*", Some\("CmdOrCtrl\+([^"]+)"\)\)/g)].map((m) => [`Mod+${m[2].replace(/\\\\/g, "\\")}`, m[1]]);
     // 撤销重做交给编辑器；退出只在 Mac 菜单里（Windows 用 Alt+F4 和窗口按钮）
     const skip = new Set(["undo", "redo", "quit"]);
-    expect(native.filter(([, id]) => !skip.has(id)).sort()).toEqual([...SHORTCUTS].sort());
+    expect(native.filter(([, id]) => !skip.has(id)).sort()).toEqual([...SHORTCUTS()].sort());
   });
 });
 
@@ -82,6 +82,34 @@ describe("Markdown 扩展名（B17）", () => {
     for (const n of ["a.md", "a.MD", "a.markdown", "a.Markdown"]) expect(isMarkdown(n)).toBe(true);
     for (const n of ["a.mdx", "a.txt", "md"]) expect(isMarkdown(n)).toBe(false);
     expect(stripMd("第一章.Markdown")).toBe("第一章");
+  });
+});
+
+describe("命令注册表（G6）", async () => {
+  const R = await import("../src/lib/commandRegistry");
+  it("每条命令有类别，id 不重复；「插入」类给斜杠菜单用", () => {
+    const ids = R.COMMANDS.map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(R.commandsIn("insert").map((c) => c.id)).toContain("insert_table");
+  });
+  it("快捷键能在运行时修改，按键分发和菜单描述跟着变", () => {
+    const ev = (code: string, m: Partial<KeyboardEvent> = {}) => ({ code, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...m });
+    let n = 0;
+    const off = R.onShortcutsChange(() => n++);
+    R.setShortcut("insert_table", "Mod+Alt+T");
+    expect(R.commandForKey(ev("KeyT", { ctrlKey: true, altKey: true }), false)).toBe("insert_table");
+    expect(R.menuSpec().find((s) => s.key === "insert")!.items.find((i) => i.id === "insert_table")!.accel).toBe("CmdOrCtrl+Alt+T");
+    R.setShortcut("bold", null);
+    expect(R.commandForKey(ev("KeyB", { ctrlKey: true }), false)).toBe(null);
+    R.resetShortcuts();
+    expect(R.commandForKey(ev("KeyB", { ctrlKey: true }), false)).toBe("bold");
+    expect(n).toBe(3);
+    off();
+  });
+  it("键帽和提示文字按平台", () => {
+    expect(R.keyCaps("Mod+Shift+E", true)).toEqual(["⌘", "⇧", "E"]);
+    expect(R.keyText("Mod+Shift+E", false)).toBe("Ctrl+Shift+E");
+    expect(R.keyText("Mod+\\", true)).toBe("⌘\\");
   });
 });
 
