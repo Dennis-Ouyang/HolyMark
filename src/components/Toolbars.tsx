@@ -5,7 +5,7 @@ import type { EditorView } from "@codemirror/view";
 import { BlockKind, currentBlock, indentList, InlineKind, insertBlock, insertLink, insertNote, setBlock, tableMarkdown, toggleInline } from "../editor/commands";
 import { Icon } from "./Icons";
 import { keyText, shortcutOf, tipOf } from "../lib/commandRegistry";
-import { FontSelect, Select } from "./Select";
+import { FontSelect, Select, type Option as SelectOption } from "./Select";
 import type { Settings } from "../lib/settings";
 import type { FontFamily } from "../lib/backend";
 import { kbd } from "../lib/platform";
@@ -140,13 +140,23 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
   }, [gridOpen]);
   const hasLayout = ["heading-font", "body-font", "font-size", "line-height", "measure"].some((k) => layout[k]);
   const ov = useOverflow(tab);
+  // 窄的时候（H38）：四个段落样式大块收成一个下拉，分组标签收起，省出地方给文字按钮
+  const box = useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = useState(false);
+  useLayoutEffect(() => {
+    const el = box.current; if (!el) return;
+    const f = () => setCompact(el.clientWidth < 760);
+    f();
+    const ro = new ResizeObserver(f); ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const isList = block === "ul" || block === "ol" || block === "task";
   return (
-    <div className={"ribbon" + (collapsed ? " collapsed" : "")}>
+    <div ref={box} className={"ribbon" + (collapsed ? " collapsed" : "") + (compact ? " compact" : "")}>
       <div className="rtabs" role="tablist">
-        {([["home", "开始"], ["insert", "插入"], ["layout", "版式"]] as const).map(([k, l]) => (
+        {([["home", "开始"], ["insert", "插入"], ["layout", "本篇显示"]] as const).map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={"rtab" + (tab === k ? " on" : "")}
-            onClick={() => { setTab(k); setCollapsed(false); }} onDoubleClick={() => setCollapsed(!collapsed)}>{l}{k === "layout" && hasLayout && <i className="rdot" title="这篇文章有单独的版式" />}</button>
+            onClick={() => { setTab(k); setCollapsed(false); }} onDoubleClick={() => setCollapsed(!collapsed)}>{l}{k === "layout" && hasLayout && <i className="rdot" title="这一篇有单独的显示设置" />}</button>
         ))}
         <button className="ib collapse" title={tipOf("toggle_ribbon", collapsed ? "展开功能区" : "折叠功能区")} aria-label="折叠功能区" onClick={() => setCollapsed(!collapsed)}><Icon name="up" /></button>
       </div>
@@ -155,7 +165,13 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
         {ov.edge.r && <button type="button" className="rscroll r" aria-label="向右滚动功能区" onMouseDown={keep} onClick={() => ov.scroll(1)}><Icon name="back" size={12} /></button>}
         <div className="rbody" key={tab} ref={ov.ref}>
           {tab === "home" && <>
-            <Group label="段落样式" className="styles">
+            {compact ? <Group label="段落样式">
+              <Select value={block} ariaLabel="段落样式" keepFocus width={120}
+                options={[...STYLE_CHIPS.map((c) => ({ value: c.value, label: c.label, hint: keyText(shortcutOf("block_" + c.value)) })),
+                  { value: "h4", label: "标题 4", hint: keyText(shortcutOf("block_h4")) }, { value: "h5", label: "标题 5", hint: keyText(shortcutOf("block_h5")) }, { value: "h6", label: "标题 6", hint: keyText(shortcutOf("block_h6")) },
+                  ...(["ul", "ol", "task", "quote"].includes(block) ? [{ value: block, label: { ul: "无序列表", ol: "有序列表", task: "待办列表", quote: "引用" }[block as "ul"] }] : [])] as SelectOption<BlockKind>[]}
+                onChange={(k) => { if (v) setBlock(v, k); }} />
+            </Group> : <Group label="段落样式" className="styles">
               {STYLE_CHIPS.map((c) => (
                 <button key={c.value} type="button" className={"chip " + c.value + (block === c.value ? " on" : "")} title={kbd(c.title)} aria-pressed={block === c.value}
                   onMouseDown={keep} onClick={run((x) => setBlock(x, c.value))}><span>{c.label}</span></button>
@@ -165,7 +181,7 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
                   options={[{ value: "h4", label: "标题 4", hint: keyText(shortcutOf("block_h4")) }, { value: "h5", label: "标题 5", hint: keyText(shortcutOf("block_h5")) }, { value: "h6", label: "标题 6", hint: keyText(shortcutOf("block_h6")) }]}
                   onChange={(k) => { if (v) setBlock(v, k); }} />
               </div>
-            </Group>
+            </Group>}
             <Group label="文字">
               {[...INLINE, ...MORE_INLINE].map((x) => <TB key={x.k} title={x.title} on={active.has(x.k)} onClick={run((y) => toggleInline(y, x.k))}>{x.icon}</TB>)}
               <TB title={tipOf("link")} onClick={run((x) => insertLink(x))}><Icon name="link" /></TB>
@@ -211,8 +227,10 @@ export function Ribbon({ view, author, settings, fonts, layout, collapsed, setCo
               {num("line-height", "行距", String(settings.lineHeight), { min: 1.2, max: 2.6, step: 0.05 })}
               {num("measure", "版心", String(settings.measure), { min: 24, max: 60 }, "字")}
             </Group>
-            <Group label={hasLayout ? "只对这一篇生效" : "跟随默认设置"} className="reset">
-              <TB title="恢复默认：去掉这一篇单独的版式" disabled={!hasLayout} onClick={() => onLayout({})}><Icon name="reset" /></TB>
+            {/* 按钮写清楚做什么；状态另外用一行小字说明（H37） */}
+            <Group label="" className="reset">
+              <span className="rstate">{hasLayout ? "这一篇用自己的设置" : "这一篇跟随默认设置"}</span>
+              <button type="button" className="btn sm" disabled={!hasLayout} onMouseDown={keep} onClick={() => onLayout({})} title="去掉这一篇单独的字体和排版，回到设置里的默认值">恢复默认</button>
             </Group>
           </>}
         </div>

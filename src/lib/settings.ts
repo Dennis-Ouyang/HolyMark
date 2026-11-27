@@ -28,6 +28,10 @@ export interface Settings {
   ribbonCollapsed: boolean;
   /** 文件树里是否显示 Markdown 以外的文件 */
   showAllFiles: boolean;
+  /** ⌘N 新建的文稿放在当前文稿旁边，还是文件夹最外层 */
+  newDocPlace: "current" | "root";
+  /** 粘贴、拖进来的图片存在文稿旁边的哪个文件夹 */
+  imageDir: string;
   /** 左栏、右栏的宽度（可拖动调整，双击拖拽线恢复默认） */
   sideWidth: number;
   panelWidth: number;
@@ -62,6 +66,8 @@ export const DEFAULTS: Settings = {
   ribbonCollapsed: false,
   showAllFiles: false,
   noteAuthor: "",
+  newDocPlace: "current",
+  imageDir: "assets",
   sideWidth: 248,
   panelWidth: 300,
   v: 2,

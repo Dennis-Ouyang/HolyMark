@@ -659,7 +659,7 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .fld textarea { resize: vertical; min-height: 64px; }
 .fld input:focus, .fld textarea:focus { border-color: var(--accent-line); }
 .dnote { font-size: 12px; color: var(--fg-3); margin: 0; } .dnote b { color: var(--fg-2); font-weight: 500; }
-.prefs { width: min(960px,100%); height: min(640px,100%); background: var(--raised); border-radius: 12px; box-shadow: var(--pop); display: grid; grid-template-columns: 176px minmax(0,1fr); overflow: hidden; animation: palIn 160ms var(--ease); }
+.prefs { width: min(860px,100%); height: min(600px,100%); background: var(--raised); border-radius: 12px; box-shadow: var(--pop); display: grid; grid-template-columns: 176px minmax(0,1fr); overflow: hidden; animation: palIn 160ms var(--ease); }
 .prefs nav { background: var(--surface); border-right: 1px solid var(--line); padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; }
 .prefs nav .tl { font-size: 12px; color: var(--fg-3); padding: 4px 10px 10px; }
 .prefs nav button { height: 30px; padding: 0 10px; border-radius: 6px; text-align: left; font-size: 13px; color: var(--fg-2); }
@@ -1158,3 +1158,17 @@ textarea.nb-tx::placeholder { color: var(--fg-3); }
 .numfield { position: relative; overflow: visible; }
 .numfield.invalid { border-color: var(--del); }
 .nf-msg { position: absolute; left: 0; top: calc(100% + 3px); z-index: 2; white-space: nowrap; font-size: 11px; line-height: 1.3; color: var(--del); animation: tipIn 120ms var(--ease); pointer-events: none; }
+.about .ab-v { display: flex; align-items: baseline; gap: 10px; margin: 4px 0; font-size: 15px; }
+.about .ab-v span { font-size: 12px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.about .ab-d { margin: 0 0 16px; font-size: 13px; color: var(--fg-2); }
+.about h5 { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--fg-3); }
+.ribbon .reset { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 6px; }
+.rstate { font-size: 11px; color: var(--fg-3); white-space: nowrap; }
+/* 窄窗口（G4）：窄于 1100 时两侧栏变成浮在正文上的抽屉，正文占满宽度 */
+.app.narrow { --sw: 0px; --pw: 0px; }
+.app.narrow .side, .app.narrow .panel { position: absolute; top: 44px; bottom: 28px; z-index: 30; box-shadow: var(--float); visibility: hidden; transition: translate 200ms var(--ease), visibility 0s 200ms; }
+.app.narrow .side { left: 0; width: var(--sw0, 248px); translate: -100% 0; }
+.app.narrow .panel { right: 0; width: var(--pw0, 300px); translate: 100% 0; }
+.app.narrow.drawer-side .side, .app.narrow.drawer-panel .panel { translate: 0 0; visibility: visible; transition: translate 200ms var(--ease), visibility 0s; }
+/* 窄的功能区：分组标签收起（H38、G4） */
+.ribbon.compact .rgrp .gl { display: none; }

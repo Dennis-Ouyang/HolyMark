@@ -3,7 +3,7 @@ import { EditorView } from "@codemirror/view";
 import { Editor, EditorHandle } from "./editor/Editor";
 import { Backend, demoImages, demoStartFile, FontFamily, getBackend, isTauri, TreeNode, VersionMeta } from "./lib/backend";
 import { alignBlocks, changedLines, countWords, docLayout, headings, Note, parseNotes, plainText, setDocLayout, wordCounter } from "./lib/markdown";
-import { applyAccent, loadSettings, saveSettings, Settings, fontStack } from "./lib/settings";
+import { applyAccent, DEFAULTS, loadSettings, saveSettings, Settings, fontStack } from "./lib/settings";
 import { BibEntry, citeText, parseBib } from "./lib/bib";
 import { FileTree } from "./components/FileTree";
 import { FloatingToolbar, Ribbon } from "./components/Toolbars";
@@ -102,6 +102,18 @@ export default function App() {
   const [tab, setTab] = useState<PanelTab>("outline");
   const [showSide, setShowSide] = useState(true);
   const [showPanel, setShowPanel] = useState(true);
+  /** 窄于 1100 时两侧栏变成浮在正文上的抽屉（G4）：drawer 是现在拉出来的那一个 */
+  const [narrow, setNarrow] = useState(() => matchMedia("(max-width: 1100px)").matches);
+  const [drawer, setDrawer] = useState<null | "side" | "panel">(null);
+  useEffect(() => {
+    const mq = matchMedia("(max-width: 1100px)");
+    const f = () => { setNarrow(mq.matches); setDrawer(null); };
+    mq.addEventListener("change", f);
+    return () => mq.removeEventListener("change", f);
+  }, []);
+  const toggleSide = () => (narrow ? setDrawer((d) => (d === "side" ? null : "side")) : setShowSide((x) => !x));
+  const togglePanel = () => (narrow ? setDrawer((d) => (d === "panel" ? null : "panel")) : setShowPanel((x) => !x));
+  const openPanel = () => (narrow ? setDrawer("panel") : setShowPanel(true));
   const [focus, setFocus] = useState(false);
   const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "help_syntax" | "help_keys" | "export" | "unsaved" | "cmpfile" | "move">(null);
   const [fonts, setFonts] = useState<FontFamily[]>([]);
@@ -208,7 +220,7 @@ export default function App() {
   async function newFile(dir?: string) {
     if (!be || !root) { await chooseFolder(); return; }
     const prev = live.current.path;
-    const p = await be.createFile(dir ?? (path ? dirOf(path) : root), "未命名");
+    const p = await be.createFile(dir ?? (path && s.newDocPlace !== "root" ? dirOf(path) : root), "未命名");
     setTree(sortTree(await be.listTree(root)));
     await openFile(p);
     undoable(`已新建「${baseName(p)}」`, async () => { await be.trashPath(p); if (prev) await openFile(prev); });
@@ -508,13 +520,13 @@ export default function App() {
       case "insert_mermaid": if (v) insertBlock(v, "```mermaid\nflowchart LR\n  A[开始] --> B[结束]\n```", 11); break;
       case "insert_image": pickImage(); break;
       case "insert_hr": if (v) insertBlock(v, "---"); break;
-      case "toggle_side": setShowSide((x) => !x); break;
-      case "toggle_panel": setShowPanel((x) => !x); break;
+      case "toggle_side": toggleSide(); break;
+      case "toggle_panel": togglePanel(); break;
       case "toggle_ribbon": update({ ribbonCollapsed: !s.ribbonCollapsed }); break;
       case "focus": setFocus((x) => !x); break;
-      case "panel_outline": setShowPanel(true); setTab("outline"); break;
-      case "panel_notes": setShowPanel(true); setTab("notes"); break;
-      case "panel_versions": setShowPanel(true); setTab("versions"); break;
+      case "panel_outline": openPanel(); setTab("outline"); break;
+      case "panel_notes": openPanel(); setTab("notes"); break;
+      case "panel_versions": openPanel(); setTab("versions"); break;
       case "toggle_syntax": update({ syntax: s.syntax === "always" ? "active" : "always" }); break;
       case "help_syntax": setDlg("help_syntax"); break;
       case "help_keys": setDlg("help_keys"); break;
@@ -676,7 +688,7 @@ export default function App() {
       const ext = (f.type.split("/")[1] || "png").replace("jpeg", "jpg").replace("svg+xml", "svg");
       const name = f.name && f.name !== "image.png" ? f.name : `图片-${stamp()}.${ext}`;
       try {
-        const dest = await be.saveImage(join(dirOf(path), "assets"), name, await toB64(f));
+        const dest = await be.saveImage(join(dirOf(path), s.imageDir || "assets"), name, await toB64(f));
         parts.push(linkFor(dest, path).text);
       } catch (e) { say(`图片保存失败：${e}`, "error"); }
     }
@@ -933,7 +945,7 @@ export default function App() {
       if (/\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(p)) {
         let src = p;
         if (!(root && isInside(root, p))) {
-          try { src = await be.copyIntoFolder(p, join(dirOf(path), "assets")); copied++; } catch (e) { say(`图片复制失败：${e}`, "error"); continue; }
+          try { src = await be.copyIntoFolder(p, join(dirOf(path), s.imageDir || "assets")); copied++; } catch (e) { say(`图片复制失败：${e}`, "error"); continue; }
         }
         imgs.push(linkFor(src, path).text);
       } else {
@@ -1007,7 +1019,7 @@ export default function App() {
     setCountPop((p) => (p?.title === title ? null : { title, text: t, rect: el.getBoundingClientRect() }));
   }
 
-  const appCls = [s.eqNumbers ? "eqnum" : "", "app", showSide ? "" : "no-side", showPanel && path ? "" : "no-panel", focus ? "focus" : "", isTauri && isMac ? "mac" : "", customFrame ? "framed" : ""].join(" ");
+  const appCls = [narrow ? "narrow" : "", drawer ? "drawer-" + drawer : "", s.eqNumbers ? "eqnum" : "", "app", showSide ? "" : "no-side", showPanel && path ? "" : "no-panel", focus ? "focus" : "", isTauri && isMac ? "mac" : "", customFrame ? "framed" : ""].join(" ");
   const fileName = baseName(path);
   // 标题栏路径：和文件树一样不显示 .md；中间的文件夹可以省略，最后的文稿名中间截断（F12、F4）
   const crumbs = path && root ? relative(root, path).split("/").map((c, i, a) => (i === a.length - 1 ? stripMd(c) : c)) : [];
@@ -1015,7 +1027,7 @@ export default function App() {
   return (
     <div className={appCls} style={{ ...editorStyle, "--sw0": `${s.sideWidth}px`, "--pw0": `${s.panelWidth}px` } as React.CSSProperties}>
       <header className="titlebar" data-tauri-drag-region>
-        <button className="ib" title={kbd("切换侧栏 ⌘\\")} aria-label="切换侧栏" onClick={() => setShowSide(!showSide)}><Icon name="side" /></button>
+        <button className="ib" title={kbd("切换侧栏 ⌘\\")} aria-label="切换侧栏" onClick={toggleSide}><Icon name="side" /></button>
         <div className="crumbs" data-tauri-drag-region>
           {root && <span>{baseName(root)}</span>}
           {crumbs.map((c, i) => <span key={i} className={"crumb" + (i === crumbs.length - 1 ? " last" : "")}><span className="sep">/</span>{i === crumbs.length - 1 ? <b><MidName name={c} tail={6} /></b> : <span className="cn" title={c}>{c}</span>}</span>)}
@@ -1025,12 +1037,12 @@ export default function App() {
         <button className="searchbtn" onClick={() => setDlg("palette")} aria-label="搜索或执行命令"><Icon name="search" size={14} /><span className="lbl">搜索</span><kbd>{kbd("⌘K")}</kbd></button>
         <button className={"ib" + (focus ? " on" : "")} title={kbd("专注 ⌘⇧F")} aria-label="专注模式" onClick={() => setFocus(!focus)}><Icon name="focus" /></button>
         <button className="ib" title={kbd("导出 ⌘⇧E")} aria-label="导出" disabled={!path} onClick={openExport}><Icon name="export" /></button>
-        <button className="ib" title={kbd("切换右栏 ⌘/")} aria-label="切换右栏" onClick={() => setShowPanel(!showPanel)}><Icon name="panel" /></button>
+        <button className="ib" title={kbd("切换右栏 ⌘/")} aria-label="切换右栏" onClick={togglePanel}><Icon name="panel" /></button>
         {customFrame && <WindowControls />}
       </header>
 
-      {showSide && !focus && <Resizer side="left" value={s.sideWidth} min={180} max={420} def={248} onChange={(w) => update({ sideWidth: w })} />}
-      {showPanel && path && !focus && <Resizer side="right" value={s.panelWidth} min={240} max={520} def={300} onChange={(w) => update({ panelWidth: w })} />}
+      {showSide && !focus && !narrow && <Resizer side="left" value={s.sideWidth} min={180} max={420} def={248} onChange={(w) => update({ sideWidth: w })} />}
+      {showPanel && path && !focus && !narrow && <Resizer side="right" value={s.panelWidth} min={240} max={520} def={300} onChange={(w) => update({ panelWidth: w })} />}
       <aside className="side" aria-label="文件夹">
         <div className="side-in">
           <div className="side-scroll" onScroll={(e) => e.currentTarget.classList.toggle("scrolled", e.currentTarget.scrollTop > 2)}>
@@ -1048,7 +1060,7 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="main">
+      <main className="main" onMouseDown={() => { if (drawer) setDrawer(null); }}>
         {path && <Ribbon view={ed.current?.view() ?? null} author={noteAuthor()} settings={s} fonts={fonts} layout={layout} onLayout={applyLayout}
           collapsed={s.ribbonCollapsed} setCollapsed={(c) => update({ ribbonCollapsed: c })}
           onPickImage={pickImage} onCite={openInsert} active={fmt.active} block={fmt.block} />}
@@ -1090,7 +1102,13 @@ export default function App() {
 
       <Presence>{countPop && <CountPop title={countPop.title} text={countPop.text} count={count} anchor={countPop.rect} onClose={() => setCountPop(null)} />}</Presence>
       <Presence>{dlg === "save" && <SaveVersionDialog changes={saveChanges} fileName={fileName} onSave={saveVersion} onClose={() => { setDlg(null); commitCheckpoint().catch(() => {}); }} />}</Presence>
-      <Presence>{dlg === "settings" && <SettingsDialog s={s} fonts={fonts} onChange={update} onClose={() => setDlg(null)} />}</Presence>
+      <Presence>{dlg === "settings" && <SettingsDialog s={s} fonts={fonts} onChange={update} onClose={() => setDlg(null)} onReset={() => {
+        // 恢复默认设置：最近打开的文件夹、上次的文件夹、批注署名和侧栏宽度这类「记住的东西」保留；提示条带撤销
+        const before = s;
+        const keep = { lastFolder: s.lastFolder, recentFolders: s.recentFolders, noteAuthor: s.noteAuthor, v: s.v };
+        update({ ...DEFAULTS, ...keep });
+        say("已恢复默认设置", "success", { label: "撤销", run: () => update(before) });
+      }} />}</Presence>
       <Presence>{(dlg === "help_syntax" || dlg === "help_keys") && <HelpDialog kind={dlg === "help_syntax" ? "syntax" : "keys"} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{dlg === "palette" && <SearchPanel text={live.current.text} path={path} root={root} headings={hs} folderTexts={folderTexts} commands={commands}
         onJump={jumpTo} onOpenAt={openAt} onClose={() => setDlg(null)} />}</Presence>

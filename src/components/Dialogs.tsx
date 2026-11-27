@@ -41,15 +41,32 @@ export function SaveVersionDialog({ changes, fileName, onSave, onClose }: { chan
 }
 
 /* ---------------- 设置 ---------------- */
-type Pane = "general" | "editor" | "count" | "versions" | "keys";
-const PANES: [Pane, string][] = [["general", "通用"], ["editor", "编辑器"], ["count", "字数统计"], ["versions", "版本"], ["keys", "快捷键"]];
+/** 「字数统计」「版本」两页各只有两行，合成一页「写作与版本」（H29）；加「关于」（H30） */
+type Pane = "general" | "editor" | "writing" | "keys" | "about";
+const PANES: [Pane, string][] = [["general", "通用"], ["editor", "编辑器"], ["writing", "写作与版本"], ["keys", "快捷键"], ["about", "关于"]];
+
+/** 关于：版本号和用到的开源项目（H30） */
+const LICENSES: [string, string, string][] = [
+  ["Tauri", "MIT / Apache-2.0", "https://tauri.app"], ["React", "MIT", "https://react.dev"], ["CodeMirror", "MIT", "https://codemirror.net"],
+  ["KaTeX", "MIT", "https://katex.org"], ["Mermaid", "MIT", "https://mermaid.js.org"], ["marked", "MIT", "https://marked.js.org"],
+  ["DOMPurify", "Apache-2.0 / MPL-2.0", "https://github.com/cure53/DOMPurify"], ["pdf.js", "Apache-2.0", "https://mozilla.github.io/pdf.js/"],
+  ["Tabler Icons", "MIT", "https://tabler.io/icons"], ["Pandoc（导出时调用）", "GPL-2.0", "https://pandoc.org"], ["Typst（导出 PDF 时调用）", "Apache-2.0", "https://typst.app"],
+];
+function About() {
+  return <div className="about">
+    <p className="ab-v"><b>HolyMark</b><span>版本 {__APP_VERSION__}</span></p>
+    <p className="ab-d">面向长篇中文写作的本地 Markdown 阅读器和编辑器。稿件就是普通的 .md 文件。</p>
+    <h5>开源许可</h5>
+    <table className="kt"><tbody>{LICENSES.map(([n, l]) => <tr key={n}><td>{n}</td><td>{l}</td></tr>)}</tbody></table>
+  </div>;
+}
 
 /** 设置里的一行：左边名称（可带说明），右边控件 */
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return <div className="prow"><div className="pl">{label}{hint && <small>{hint}</small>}</div><div className="pc">{children}</div></div>;
 }
 
-export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; fonts: FontFamily[]; onChange: (p: Partial<Settings>) => void; onClose: () => void }) {
+export function SettingsDialog({ s, fonts, onChange, onClose, onReset }: { s: Settings; fonts: FontFamily[]; onChange: (p: Partial<Settings>) => void; onClose: () => void; onReset: () => void }) {
   const [pane, setPane] = useState<Pane>(PANES[0][0]);
   const num = (k: keyof Settings, attrs: { min: number; max?: number; step?: number; disabled?: boolean }, unit?: string) => (
     <NumberField value={String(s[k])} {...attrs} unit={unit} ariaLabel={String(k)} onCommit={(v) => { const n = parseFloat(v); if (!Number.isNaN(n)) onChange({ [k]: n } as Partial<Settings>); }} />
@@ -85,6 +102,14 @@ export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; f
             </Row>
             <Row label="文件树" hint="关闭时只显示 Markdown 文件"><label className="inline">{sw("showAllFiles", "显示所有文件")}<span>显示所有文件</span></label></Row>
             <Row label="启动时" hint="关掉的话，每次从开始页开始"><label className="inline">{sw("reopenLast", "打开上次的文件夹")}<span>打开上次的文件夹</span></label></Row>
+            <Row label="新建文稿放在" hint="⌘N 新建的文稿放在哪个文件夹">
+              <Segmented label="新建文稿放在" value={s.newDocPlace} options={[["current", "当前文稿旁边"], ["root", "文件夹最外层"]]} onChange={(v) => onChange({ newDocPlace: v })} />
+            </Row>
+            <Row label="图片保存位置" hint="粘贴、拖进来的图片存在文稿旁边的这个文件夹里">
+              <input className="tin" style={{ width: 200 }} value={s.imageDir} placeholder="assets" aria-label="图片保存位置" maxLength={60}
+                onChange={(e) => onChange({ imageDir: e.target.value.replace(/[\\:*?"<>|]/g, "").replace(/^\/+|\/+$/g, "") })} />
+            </Row>
+            <Row label="恢复默认设置" hint="外观、字体、写作目标等回到默认值；最近打开的文件夹保留。可以撤销"><button className="btn" onClick={onReset}>恢复默认设置</button></Row>
           </>}
           {pane === "editor" && <>
             <EditorPreview s={s} />
@@ -93,18 +118,17 @@ export function SettingsDialog({ s, fonts, onChange, onClose }: { s: Settings; f
             <Row label="字号">{num("fontSize", { min: 12, max: 28 }, "px")}</Row>
             <Row label="行距">{num("lineHeight", { min: 1.2, max: 2.6, step: 0.05 }, "倍")}</Row>
             <Row label="版心宽度" hint="每行大约多少个字">{num("measure", { min: 24, max: 60 }, "字")}</Row>
-            <Row label="公式编号" hint="行间公式 $$…$$ 右侧显示 (1) (2)…"><label className="inline">{sw("eqNumbers", "行间公式编号")}<span>显示编号</span></label></Row>
+            <Row label="公式编号" hint="单独成行的公式右侧显示 (1) (2)…"><label className="inline">{sw("eqNumbers", "行间公式编号")}<span>显示编号</span></label></Row>
             <Row label="Markdown 符号"><Segmented label="Markdown 符号" value={s.syntax} options={[["active", "光标所在处显示"], ["always", "始终显示"]]} onChange={(v) => onChange({ syntax: v })} /></Row>
           </>}
-          {pane === "count" && <>
+          {pane === "writing" && <>
             <Row label="状态栏字数"><Segmented label="状态栏字数" value={s.countPunct} options={[[false, "不含标点"], [true, "含标点"]]} onChange={(v) => onChange({ countPunct: v })} /></Row>
-            <Row label="写作目标" hint="开启后状态栏显示进度"><div className="inline">{sw("goalOn", "写作目标")}{num("goal", { min: 100, step: 500, disabled: !s.goalOn }, "字")}</div></Row>
-          </>}
-          {pane === "versions" && <>
+            <Row label="写作目标" hint="按当前打开的那一篇算，开启后状态栏显示进度"><div className="inline">{sw("goalOn", "写作目标")}{num("goal", { min: 100, step: 500, disabled: !s.goalOn }, "字")}</div></Row>
             <Row label="自动版本间隔">{num("autoMinutes", { min: 1, max: 240 }, "分钟")}</Row>
             <Row label="外部修改合并" hint="这段时间内的连续写入记为一条">{num("mergeSeconds", { min: 1, max: 600 }, "秒")}</Row>
           </>}
           {pane === "keys" && <KeyTable />}
+          {pane === "about" && <About />}
         </div>
       </div>
     </Scrim>
@@ -119,7 +143,7 @@ function EditorPreview({ s }: { s: Settings }) {
       <div className="epv-scroll">
         <div className="epv-col" style={{ width, fontSize: s.fontSize, lineHeight: s.lineHeight }}>
           <div className="epv-h" style={{ fontFamily: fontStack(s.headingFont) }}>这是标题的预览。</div>
-          <p className="epv-b" style={{ fontFamily: fontStack(s.bodyFont) }}>这是正文部分的预览。你在此设置的是 HolyMark 打开所有文件时的默认值，如果你只想设置单个文件的显示方式，请在功能区“版式”中单独设置。</p>
+          <p className="epv-b" style={{ fontFamily: fontStack(s.bodyFont) }}>这是正文部分的预览。你在此设置的是 HolyMark 打开所有文件时的默认值，如果你只想设置单个文件的显示方式，请在功能区「本篇显示」中单独设置。</p>
         </div>
       </div>
     </div>
