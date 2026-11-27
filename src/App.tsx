@@ -224,10 +224,49 @@ export default function App() {
     const p = await be.createFile(dir ?? (path && s.newDocPlace !== "root" ? dirOf(path) : root), "未命名");
     setTree(sortTree(await be.listTree(root)));
     await openFile(p);
+    autoName.current.add(p); saveAutoName();
     undoable(`已新建「${baseName(p)}」`, async () => { await be.trashPath(p); if (prev) await openFile(prev); });
+    // 光标放在标题里、选中「未命名」，直接打字就替换掉（F13）
     const v = view();
-    if (v) { v.focus(); v.dispatch({ selection: { anchor: v.state.doc.length } }); }
+    if (v) {
+      v.focus();
+      const m = v.state.doc.line(1).text.match(/^#\s+(.*)$/);
+      if (m) v.dispatch({ selection: { anchor: v.state.doc.line(1).from + m[0].length - m[1].length, head: v.state.doc.line(1).to } });
+      else v.dispatch({ selection: { anchor: v.state.doc.length } });
+    }
   }
+
+  /**
+   * 新建的文稿在用户手动改名之前，文件名跟着第一个标题走（F13）：标题停止改动 1.2 秒后改文件名，
+   * 不弹提示、不进撤销。手动改过名（或移动过）就不再跟。名单记在本机。
+   */
+  const autoName = useRef<Set<string>>(new Set((() => { try { return JSON.parse(localStorage.getItem("hm-autoname") || "[]"); } catch { return []; } })()));
+  const saveAutoName = () => { try { localStorage.setItem("hm-autoname", JSON.stringify([...autoName.current].slice(-50))); } catch { /* 存不了就算了 */ } };
+  const autoTimer = useRef(0);
+  useEffect(() => {
+    if (!be || !path || !autoName.current.has(path)) return;
+    const h = headings(text)[0];
+    const want = (h?.text || "").replace(/[\\/:*?"<>|\n]/g, "").replace(/^\.+/, "").trim().slice(0, 60);
+    const ext = path.match(/\.[^./]+$/)?.[0] || ".md";
+    if (!want || want === baseName(path).slice(0, -ext.length)) return;
+    window.clearTimeout(autoTimer.current);
+    autoTimer.current = window.setTimeout(async () => {
+      const from = live.current.path;
+      if (from !== path || !autoName.current.has(from)) return;
+      await flush().catch(() => {});
+      for (let n = 1; n < 20; n++) {
+        try {
+          const to = await be.renamePath(from, (n === 1 ? want : `${want} ${n}`) + ext);
+          autoName.current.delete(from); autoName.current.add(to); saveAutoName();
+          await refreshTree();
+          await followMove(from, to);
+          return;
+        } catch (e) { if (!/已经有/.test(String(e))) return; }
+      }
+    }, 1200);
+    return () => window.clearTimeout(autoTimer.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, path, be]);
   /** 关闭文件夹，回到开始页；下次启动也从开始页开始，直到再打开一个文件夹 */
   async function closeFolder() {
     if (!be || !root) return;
@@ -744,6 +783,7 @@ export default function App() {
     setRenaming(null);
     if (be && justCreated.current === p && (name === null || name.trim() === baseName(p))) { justCreated.current = ""; newFolderToast(p); return; }
     if (!be || name === null || name.trim() === baseName(p)) return;
+    autoName.current.delete(p); saveAutoName(); // 手动改过名：文件名不再跟着标题走
     try {
       await flush();
       const to = await be.renamePath(p, name.trim());
