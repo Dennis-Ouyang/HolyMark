@@ -76,14 +76,14 @@ export function SearchPanel({ text, path, root, headings, folderTexts, commands,
   const groups = useMemo(() => {
     const g: { title: string; count: string; rows: Row[] }[] = [];
     const show = (s: Scope) => scope === "all" || scope === s;
-    if (qt && show("doc") && docHits.length) g.push({ title: `本文 · ${baseName(path).replace(/\.(md|markdown)$/i, "")}`, count: `${docHits.length}${docHits.length >= MAX_DOC ? "+" : ""} 处`, rows: docHits.slice(0, scope === "doc" ? MAX_DOC : 6).map((hit) => ({ kind: "doc", hit })) });
+    if (qt && show("doc") && docHits.length) g.push({ title: "本文", count: `${docHits.length}${docHits.length >= MAX_DOC ? "+" : ""} 处`, rows: docHits.slice(0, scope === "doc" ? MAX_DOC : 6).map((hit) => ({ kind: "doc", hit })) });
     if (qt && show("folder") && files.length) {
       const rows: Row[] = [];
       for (const f of files.slice(0, scope === "folder" ? 100 : 8)) {
         rows.push({ kind: "file", file: f, hit: f.hits[0] ?? { pos: 0, len: 0, pre: "", hit: "", post: "文件名匹配", where: "" }, sub: false });
         if (open.has(f.path)) f.hits.slice(1).forEach((hit) => rows.push({ kind: "file", file: f, hit, sub: true }));
       }
-      g.push({ title: `文件夹 · ${files.length} 个文件`, count: `${files.reduce((n, f) => n + f.hits.length, 0)} 处`, rows });
+      g.push({ title: "文件夹", count: `${files.length} 个文件`, rows });
     }
     if (show("cmd") && cmds.length) g.push({ title: qt ? "命令" : "命令与跳转", count: "", rows: cmds.slice(0, qt && scope === "all" ? 6 : 60).map((item) => ({ kind: "cmd", item })) });
     return g;
@@ -95,6 +95,8 @@ export function SearchPanel({ text, path, root, headings, folderTexts, commands,
   const counts: Record<Scope, string> = {
     all: "", doc: qt ? String(docHits.length) : "", folder: qt ? String(files.reduce((n, f) => n + f.hits.length, 0)) : "", cmd: String(cmds.length),
   };
+  // 数量为 0 时不显示（H18）
+  for (const k of Object.keys(counts) as Scope[]) if (counts[k] === "0") counts[k] = "";
   const run = (r?: Row) => {
     if (!r) return;
     onClose();
@@ -141,7 +143,7 @@ export function SearchPanel({ text, path, root, headings, folderTexts, commands,
   let gi = -1, idx = -1;
   return (
     <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="search" role="dialog" aria-label="搜索">
+      <div className={"search" + (preview ? " has-pv" : "") + (groups.length ? "" : " none")} role="dialog" aria-label="搜索">
         <div className="s-top">
           <Icon name="search" size={18} />
           <input autoFocus value={q} placeholder="搜索本文、文件夹，或输入命令" aria-label="搜索" onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} />
@@ -175,14 +177,17 @@ export function SearchPanel({ text, path, root, headings, folderTexts, commands,
                           {r.hit.len ? mark(r.hit) : <span className="s-snip">文件名匹配</span>}
                         </>}
                         {r.kind === "file" && r.sub && mark(r.hit)}
-                        {r.kind === "cmd" && <span className="s-cmd"><Icon name={r.item.icon} size={14} /><span>{r.item.title}</span>{r.item.keys && <span className="sc">{r.item.keys.map((k) => <kbd key={k}>{k}</kbd>)}</span>}</span>}
+                        {r.kind === "cmd" && <span className="s-cmd"><span>{r.item.title}</span>{r.item.keys && <span className="sc">{r.item.keys.map((k) => <kbd key={k}>{k}</kbd>)}</span>}</span>}
                         <kbd className="s-ret" aria-hidden="true">↵</kbd>
                       </button>
                     );
                   })}
                 </div>
               );
-            }) : <div className="empty">{qt ? "没有找到" : "输入要找的文字"}</div>}
+            }) : <div className="s-none">{qt ? <>
+              <p>没有找到「{qt}」。换个词试试{scope !== "all" && scope !== "folder" ? "，或者在整个文件夹里找" : ""}。</p>
+              {scope !== "all" && scope !== "folder" && <button type="button" className="btn sm" onMouseDown={(e) => e.preventDefault()} onClick={() => setScope("folder")}>在文件夹里找</button>}
+            </> : <p>输入要找的文字，或者命令的名字</p>}</div>}
           </div>
           {preview && <Preview {...preview} q={qt} />}
         </div>
@@ -226,13 +231,11 @@ function Preview({ src, name, hit, all, q }: { src: string; name: string; hit: H
     const m = el.querySelector<HTMLElement>("mark.cur");
     if (m) el.scrollTop = m.offsetTop - el.clientHeight / 2 + m.offsetHeight / 2;
   }, [blocks, hit.pos]);
-  const line = src.slice(0, hit.pos).split("\n").length;
   return (
     <div className="s-pv">
-      <div className="s-pvh"><b>{name}</b>{hit.where && <><Icon name="chev" size={10} /><span>{hit.where}</span></>}<span className="ln">第 {line} 行</span></div>
+      <div className="s-pvh"><b>{name}</b>{hit.where && <><Icon name="chev" size={10} /><span>{hit.where}</span></>}</div>
       <div className="s-pvb">
         <div className="s-pvs" ref={box}>
-          <div className="pad" />
           {blocks.map((b, i) => {
             const h = heading(b.text);
             return h ? <div key={i} className={"s-h l" + h[1].length}>{marked(h[2], b.cur, b.from + h[0].length - h[2].length)}</div>

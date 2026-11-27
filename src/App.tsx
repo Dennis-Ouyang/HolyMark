@@ -114,6 +114,17 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [be]);
 
+  // 对话框（搜索、导出、设置……）关掉后，把焦点和原来的光标位置还给正文（H16）；
+  // 光标位置 CodeMirror 自己记着，这里只把焦点还回去
+  const prevDlg = useRef<typeof dlg>(null);
+  useEffect(() => {
+    const was = prevDlg.current;
+    prevDlg.current = dlg;
+    // 正在退场的对话框（.leaving 里）不算
+    if (was && !dlg && path) requestAnimationFrame(() => { if (![...document.querySelectorAll(".scrim, .menu, .ins")].some((e) => !e.closest(".leaving"))) view()?.focus(); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dlg]);
+
   /* ---------- settings & theme ---------- */
   const update = (p: Partial<Settings>) => setS((old) => { const n = { ...old, ...p }; saveSettings(n); return n; });
   useEffect(() => {

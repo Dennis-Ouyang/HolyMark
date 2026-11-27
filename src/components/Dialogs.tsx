@@ -9,7 +9,8 @@ import { Segmented } from "./Segmented";
 
 function Scrim({ onClose, center, children }: { onClose: () => void; center?: boolean; children: React.ReactNode }) {
   useEffect(() => {
-    const f = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    // Esc 只关最上面一层：下拉、菜单开着时先关它们（H28）
+    const f = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.querySelector(".select-pop, .menu")) { e.stopPropagation(); onClose(); } };
     addEventListener("keydown", f, true);
     return () => removeEventListener("keydown", f, true);
   }, [onClose]);
@@ -28,10 +29,11 @@ export function SaveVersionDialog({ changes, fileName, onSave, onClose }: { chan
         <div className="dh"><h3>保存版本</h3></div>
         <div className="db">
           <div className="fld"><label htmlFor="vname">名称</label><input id="vname" autoFocus placeholder={ph} value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" /></div>
-          <div className="fld"><label htmlFor="vnote">备注</label><textarea id="vnote" placeholder="可以不填" value={note} onChange={(e) => setNote(e.target.value)} /></div>
-          <div className="dnote">{fileName} · 与上一个版本相比 <b>{changes} 处改动</b></div>
+          <div className="fld"><label htmlFor="vnote">备注</label><textarea id="vnote" placeholder="可以不填" value={note} onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSave(name.trim() || ph, note.trim()); } }} /></div>
+          <div className="dnote">{changes ? <>和上一个版本相比改了 <b>{changes}</b> 处</> : "和上一个版本相比没有改动"}</div>
         </div>
-        <div className="df"><button type="button" className="btn" onClick={onClose}>取消</button><button type="submit" className="btn acc">保存</button></div>
+        <div className="df"><span className="dhint">{kbd("⌘↩ 保存")}</span><button type="button" className="btn" onClick={onClose}>取消</button><button type="submit" className="btn acc">保存</button></div>
       </form>
     </Scrim>
   );
