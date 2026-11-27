@@ -61,7 +61,7 @@ flowchart LR
 
 ## 3.4　信度与效度
 
-两名研究者独立完成了 30% 样本的编码，用 Cohen's κ 检验一致性：
+样本的构成见[3.2 节](#样本与数据)。两名研究者独立完成了 30% 样本的编码，用 Cohen's κ 检验一致性：
 
 \`\`\`python
 from sklearn.metrics import cohen_kappa_score
@@ -79,7 +79,7 @@ export const DEMO_FILES: Record<string, string> = {
   [`${DEMO_ROOT}/正文/01 绪论.md`]: "# 第一章　绪论\n\n长篇写作是一项持续数月的工作。\n",
   [`${DEMO_ROOT}/正文/02 文献综述.md`]: "# 第二章　文献综述\n\n认知负荷理论由 Sweller 于 1988 年提出。\n",
   [`${DEMO_ROOT}/正文/03 研究设计.md`]: ch3,
-  [`${DEMO_ROOT}/资料/导师意见-1118.md`]: "# 导师意见\n\n第三章：样本部分写得太简略，招募渠道和入选标准要补上。\n",
+  [`${DEMO_ROOT}/资料/导师意见-1118.md`]: "# 导师意见\n\n第三章：[样本部分](<../正文/03 研究设计.md#样本与数据>)写得太简略，招募渠道和入选标准要补上。\n",
   [`${DEMO_ROOT}/资料/references.bib`]:
     "@article{zhang2021,\n  author = {张伟 and 王敏},\n  title = {学术写作中的数字工具使用与产出效率},\n  journal = {中国电化教育},\n  year = {2021}\n}\n\n@article{sweller1988,\n  author = {Sweller, John},\n  title = {Cognitive load during problem solving},\n  journal = {Cognitive Science},\n  year = {1988}\n}\n",
   [`${DEMO_ROOT}/README.md`]: "# 写作约定\n\n正文按章拆成单独文件，参考文献维护在 references.bib。\n",

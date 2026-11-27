@@ -148,3 +148,9 @@
 .leaving .lightbox { animation: fadeOut 110ms var(--ease-out) forwards; }
 .leaving .lightbox img { animation: lbOut 110ms var(--ease-out) forwards; }
 @keyframes lbOut { to { opacity: 0; scale: .97; } }
+
+/* ---------- 跳转历史：标题栏路径左边的两个小箭头 ---------- */
+.navarrows { display: inline-flex; gap: 2px; margin-right: 2px; animation: fade 140ms var(--ease); }
+.navarrows .ib.sm { height: 24px; min-width: 24px; padding: 0; border-radius: 6px; color: var(--fg-3); }
+.navarrows .ib.sm:hover:not(:disabled) { color: var(--fg); }
+.navarrows .ib.sm:disabled { opacity: .35; }

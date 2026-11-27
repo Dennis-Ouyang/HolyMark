@@ -55,7 +55,7 @@ export function useReading(ctx: Ctx) {
       if (!t || !be) { say("打不开这个链接"); return; }
       if (t.kind === "url") be.openUrl(t.url).catch(() => say("没能打开这个网址"));
       else if (t.kind === "anchor") c.current.jumpAnchor(t.anchor);
-      else if (t.kind === "md") c.current.openMarkdown(t.path, { reading: true, anchor: t.anchor });
+      else if (t.kind === "md") c.current.openMarkdown(t.path, { reading: !!c.current.view() && isReading(c.current.view()!.state), anchor: t.anchor });
       else if (be.isDemo) say("浏览器预览里打不开本机文件，桌面版会用默认程序打开");
       else be.openPath(t.path).catch(() => say("没能打开这个文件"));
     },

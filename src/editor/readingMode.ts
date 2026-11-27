@@ -69,6 +69,9 @@ export interface ReadingHooks {
   cite: (key: string) => { author: string; year: string; title: string; venue: string } | null;
 }
 
+const isMacUA = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent);
+const modClick = (e: MouseEvent) => (isMacUA ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey;
+
 function clickHandlers(hooks: () => ReadingHooks | undefined) {
   return ViewPlugin.fromClass(class {
     constructor(readonly view: EditorView) {
@@ -84,6 +87,8 @@ function clickHandlers(hooks: () => ReadingHooks | undefined) {
       this.view.dom.removeEventListener("focusin", this.focusin, true);
     }
     down = (e: MouseEvent) => {
+      // 编辑时按住 ⌘（Windows 上 Ctrl）点链接也能打开；拦下来，免得 CodeMirror 当成多加一个光标
+      if (!isReading(this.view.state) && modClick(e) && (e.target as HTMLElement).closest(".hm-link")) { e.preventDefault(); e.stopPropagation(); return; }
       if (!isReading(this.view.state) || e.button !== 0) return;
       const t = e.target as HTMLElement;
       if (t.closest(".hm-check, .hm-fold, .hm-folded")) return; // 待办勾选框、折叠照常
@@ -102,7 +107,7 @@ function clickHandlers(hooks: () => ReadingHooks | undefined) {
       if (t.closest(".hm-notedot, .hm-table td, .hm-table th, .hm-itools, .hm-igrip, .hm-ttools, .hm-colgrip")) { e.preventDefault(); e.stopPropagation(); }
     };
     click = (e: MouseEvent) => {
-      if (!isReading(this.view.state) || e.button !== 0 || e.detail > 1) return;
+      if (!(isReading(this.view.state) || modClick(e)) || e.button !== 0 || e.detail > 1) return;
       const t = e.target as HTMLElement;
       const el = t.closest<HTMLElement>(".hm-link, .cm-content a");
       if (!el) return;

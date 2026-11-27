@@ -15,6 +15,7 @@ const NOTE_SCAN = /\{==([\s\S]+?)==\}\{>>([\s\S]*?)<<\}/g;
 import { FileCardWidget, FileHooks } from "./fileCard";
 import { CARD_EXT } from "../lib/filePreview";
 import { isReading } from "./readingMode";
+import { HEADING_ATTR } from "../lib/markdown";
 
 export interface PreviewOptions {
   /** 把文档里的图片路径解析成可显示的地址 */
@@ -611,6 +612,9 @@ function blockDecos(state: EditorState, b: Block, active: boolean, decos: Range<
   if (/^ATXHeading(\d)/.test(b.kind)) {
     const lv = +b.kind.slice(-1);
     decos.push(lineCls(`hm-h hm-h${lv}`).range(doc.lineAt(b.from).from));
+    // 标题末尾的 {#id}（N4 文内跳转用）：和其他符号一样，不在编辑这一行时藏起来
+    const line = doc.lineAt(b.from), attr = !active && line.text.match(HEADING_ATTR);
+    if (attr) decos.push(hide.range(line.from + attr.index!, line.to));
   }
   if (b.kind === "Blockquote") linesOf(b, "hm-quote");
   if (b.kind === "BulletList" || b.kind === "OrderedList") listDecos(state, b, active, decos);

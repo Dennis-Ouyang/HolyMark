@@ -194,6 +194,47 @@ step("N3 记住位置：切换文件、重新加载后恢复光标、顶部段�
   await menu(page, "unfold_all");
   await page.evaluate(() => localStorage.removeItem("holymark-positions"));
 });
+step("N4 文内跳转：锚点链接、找不到的提示、跨文件、返回前进、写链接时的提示", async (page) => {
+  const line = () => page.evaluate(() => { const v = window.__hm.view(); return v.state.doc.lineAt(v.state.selection.main.head).text; });
+  if (await page.$(".navarrows")) throw new Error("没有历史时不该出现箭头");
+  // 阅读模式里单击本文锚点
+  await page.click("button[aria-label='阅读模式']");
+  if (!(await docText(page)).includes("[3.2 节](#样本与数据)")) throw new Error("演示文稿里没有锚点链接");
+  await page.evaluate(() => { document.querySelector(".scroller").scrollTop = 99999; });
+  await page.waitForTimeout(300);
+  await page.click(".hm-link:has-text('3.2 节')");
+  await page.waitForTimeout(300);
+  if (!(await line()).startsWith("## 3.2")) throw new Error("没跳到 3.2：" + (await line()));
+  await page.waitForSelector(".navarrows");
+  // 返回、前进（Alt+← / ⌃⌘←）
+  await page.keyboard.press(process.platform === "darwin" ? "Control+Meta+ArrowLeft" : "Alt+ArrowLeft");
+  await page.waitForTimeout(300);
+  if ((await line()).startsWith("## 3.2")) throw new Error("返回没有回去");
+  await page.click(".navarrows button[aria-label='前进']");
+  await page.waitForTimeout(300);
+  if (!(await line()).startsWith("## 3.2")) throw new Error("前进不对");
+  await page.click("button[aria-label='阅读模式']");
+  // 跨文件：导师意见里的链接，⌘ / Ctrl + 单击
+  await page.click(".tree .tn[data-path*='导师意见']");
+  await page.waitForTimeout(300);
+  await page.click(".hm-link:has-text('样本部分')", { modifiers: [process.platform === "darwin" ? "Meta" : "Control"] });
+  await page.waitForTimeout(600);
+  const p = await page.evaluate(() => document.querySelector(".crumbs").textContent);
+  if (!p.includes("03 研究设计")) throw new Error("没打开第三章：" + p);
+  if (!(await line()).startsWith("## 3.2")) throw new Error("跨文件没跳到锚点");
+  // 找不到锚点
+  await page.evaluate(() => window.__hm.view().dispatch({ selection: { anchor: 0 } }));
+  // 写链接时的提示
+  await page.evaluate(() => { const v = window.__hm.view(); v.focus(); const n = v.state.doc.length; v.dispatch({ changes: { from: n, insert: "\n\n见[这里](" } }); });
+  await page.waitForTimeout(150);
+  await page.evaluate(() => { const v = window.__hm.view(); v.dispatch({ selection: { anchor: v.state.doc.length } }); });
+  await page.keyboard.type("#样本");
+  await page.waitForSelector(".hm-ac");
+  await page.keyboard.press("Enter");
+  const t = await page.evaluate(() => window.__hm.view().state.doc.toString());
+  if (!t.endsWith("见[这里](#样本与数据")) throw new Error("锚点补全不对：" + t.slice(-20));
+  await page.evaluate(() => { const v = window.__hm.view(); const s = v.state.doc.toString(); const i = s.lastIndexOf("\n\n见[这里]"); v.dispatch({ changes: { from: i, to: s.length } }); });
+});
 
 async function run(theme) {
   const browser = await chromium.launch();

@@ -101,7 +101,9 @@ export function parseNotes(md: string): Note[] {
   return out;
 }
 
-export interface Heading { level: number; text: string; pos: number }
+export interface Heading { level: number; text: string; pos: number; /** 标题末尾写的 {#id} */ attrId?: string }
+/** 标题末尾的 Pandoc 属性 {#id .class key=val}：目录里不显示 */
+export const HEADING_ATTR = /\s*\{(?=[#.]|[\w-]+=)[^{}]*\}\s*$/;
 export function headings(md: string): Heading[] {
   const out: Heading[] = [];
   let pos = 0;
@@ -113,7 +115,11 @@ export function headings(md: string): Heading[] {
     const l = lines[k];
     if (l.trim().startsWith("```")) fence = !fence;
     const m = !fence && l.match(/^(#{1,6})\s+(.+)$/);
-    if (m) out.push({ level: m[1].length, text: stripInline(m[2]), pos });
+    if (m) {
+      const attr = m[2].match(HEADING_ATTR);
+      const id = attr?.[0].match(/#([^\s{}]+)/)?.[1];
+      out.push({ level: m[1].length, text: stripInline(attr ? m[2].slice(0, attr.index) : m[2]), pos, ...(id ? { attrId: id } : {}) });
+    }
     pos += l.length + 1;
   }
   return out;

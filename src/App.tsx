@@ -29,6 +29,8 @@ import { useSymbols } from "./features/useSymbols";
 import { foldHeadings, foldToLevel, unfoldAll } from "./editor/sectionFold";
 import { useReading } from "./features/useReading";
 import { useRememberSpot, useSpotAutosave } from "./features/useRememberSpot";
+import { useNav, BACK_KEY, FWD_KEY } from "./features/useNav";
+import { findAnchor } from "./lib/anchors";
 
 const AUTHOR = "我";
 /** macOS 有原生菜单负责快捷键；Windows 和浏览器预览里由前端处理 */
@@ -363,7 +365,7 @@ export default function App() {
   // 文件卡片要用到的操作，经由 ref 调用，免得每次重新渲染都重建编辑器装饰
   const fileHooksRef = useRef<{ open: (abs: string) => void; reveal: (abs: string) => void }>({ open: () => {}, reveal: () => {} });
   fileHooksRef.current = {
-    open: (abs) => { if (/\.(md|markdown)$/i.test(abs)) openExternalFile(abs); else be?.openPath(abs).catch(() => say("没能打开这个文件")); },
+    open: (abs) => { if (/\.(md|markdown)$/i.test(abs)) { nav.record(); openExternalFile(abs); } else be?.openPath(abs).catch(() => say("没能打开这个文件")); },
     reveal: (abs) => { be?.reveal(abs).catch(() => {}); },
   };
   const preview = useMemo(() => ({
@@ -442,17 +444,20 @@ export default function App() {
   const reading = useReading({
     view, be, livePath: () => live.current.path, resolveImage: (src) => preview.resolveImage(src), bib: bibMap, say,
     openMarkdown: (abs, o) => { (async () => {
+      nav.record();
       if (abs !== live.current.path) { if (root && isInside(root, abs)) await openFile(abs, { reading: o.reading, target: !!o.anchor }); else { await openExternalFile(abs); reading.set(o.reading); } }
-      if (o.anchor) jumpAnchor(o.anchor);
+      if (o.anchor) requestAnimationFrame(() => jumpAnchor(o.anchor!, false));
     })().catch(() => say("打不开这篇文稿")); },
     jumpAnchor: (a) => jumpAnchor(a),
   });
   featureHooks.current.reading = reading.hooks;
   /** 本文里的锚点：N4 会换成和 Pandoc 一致的规则 */
-  function jumpAnchor(anchor: string) {
-    const h = hs.find((x) => x.text.trim() === anchor.trim());
-    if (h) jump(h.pos); else say(`找不到标题「${anchor}」`);
+  /** 本文里的锚点（规则和 Pandoc 一致，见 lib/anchors.ts）；找不到就用提示条说明，不跳 */
+  function jumpAnchor(anchor: string, rec = true) {
+    const h = findAnchor(live.current.text, anchor);
+    if (h) jump(h.pos, rec); else say(`找不到标题「${anchor}」`);
   }
+  const nav = useNav({ view, livePath: () => live.current.path, open: (p) => openFile(p, { target: true }) });
   /** 阅读模式里不能编辑：改正文的菜单命令不执行 */
   const editsDoc = (id: string) => /^(block_|insert_)/.test(id) || ["bold", "italic", "strike", "code", "math", "highlight", "sup", "sub", "link", "cite", "note", "indent", "outdent", "heading_up", "heading_down", "undo", "redo", "tidy", "math_symbols"].includes(id);
   const tidy = useTidy({ view, rules: s.tidy, text, say, openSettings: () => openSettings("tidy") });
@@ -476,6 +481,8 @@ export default function App() {
       case "settings": openSettings(); break;
       case "tidy": if (path) tidy.open(); break;
       case "reading": if (path) reading.toggle(); break;
+      case "nav_back": nav.back(); break;
+      case "nav_forward": nav.forward(); break;
       case "math_symbols": if (path) symbols.open(); break;
       case "fold_all": if (v) foldHeadings(v, 1); break;
       case "unfold_all": if (v) unfoldAll(v); break;
@@ -530,8 +537,9 @@ export default function App() {
 
   /* ---------- actions ---------- */
   /** 跳到某个位置，并把它滚到顶部（不是刚好露出在底部） */
-  function jump(pos: number) {
+  function jump(pos: number, rec = true) {
     const v = view(); if (!v) return;
+    if (rec) nav.record();
     setCmp(null);
     const at = Math.min(pos, v.state.doc.length);
     const hi = hs.findIndex((h) => h.pos === pos);
@@ -660,6 +668,7 @@ export default function App() {
     const cur = live.current.path;
     wstats.noteMove(from, to);
     spots.move(from, to);
+    nav.rename(from, to);
     if (cur === from || cur.startsWith(from + "/")) {
       const np = to + cur.slice(from.length);
       live.current.path = np;
@@ -697,6 +706,7 @@ export default function App() {
     try {
       const cur = live.current.path;
       const inside = cur === node.path || cur.startsWith(node.path + "/");
+      nav.rename(node.path, null);
       if (inside) await flush();
       const hold = await be.stageDelete(node.path);
       staged.current.set(hold, window.setTimeout(() => commitStaged(hold), 6500));
@@ -794,16 +804,18 @@ export default function App() {
     })();
   }, [dlg, be, tree, path]);
   /** 搜索结果：选中匹配的文字并滚到屏幕中间 */
-  function jumpTo(pos: number, len: number) {
+  function jumpTo(pos: number, len: number, rec = true) {
     const v = view(); if (!v) return;
+    if (rec) nav.record();
     setCmp(null); setFileCmp(null);
     const at = Math.min(pos, v.state.doc.length);
     v.dispatch({ selection: { anchor: at, head: Math.min(at + len, v.state.doc.length) }, effects: EditorView.scrollIntoView(at, { y: "center" }) });
     v.focus();
   }
   async function openAt(p: string, pos: number, len: number) {
+    nav.record();
     if (p !== live.current.path) await openFile(p, { target: true });
-    requestAnimationFrame(() => jumpTo(pos, len));
+    requestAnimationFrame(() => jumpTo(pos, len, false));
   }
 
   const commands: PaletteItem[] = [
@@ -816,6 +828,8 @@ export default function App() {
     { group: "命令", icon: "cmd", title: "Markdown 语法速查", run: () => setTimeout(() => setDlg("help_syntax"), 0) },
     { group: "命令", icon: "cmd", title: "导出 Word / PDF / Markdown…", keys: ["⌘", "⇧", "E"].map((k) => keyName(k)), run: () => setTimeout(openExport, 0) },
     { group: "命令", icon: "cmd", title: "设置", keys: ["⌘", ","].map((k) => keyName(k)), run: () => setDlg("settings") },
+    ...(nav.canBack ? [{ group: "命令", icon: "left", title: "返回", keys: [kbd(BACK_KEY)], run: () => nav.back() }] : []),
+    ...(nav.canForward ? [{ group: "命令", icon: "right", title: "前进", keys: [kbd(FWD_KEY)], run: () => nav.forward() }] : []),
     ...(path ? [{ group: "命令", icon: "book", title: reading.on ? "退出阅读模式" : "阅读模式", keys: ["⌘", "⇧", "R"].map((k) => keyName(k)), run: () => reading.toggle() }] : []),
     ...(path ? [
       { group: "命令", icon: "chevr", title: "折叠全部章节", run: () => onMenu("fold_all") },
@@ -966,6 +980,7 @@ export default function App() {
     <div className={appCls} style={editorStyle}>
       <header className="titlebar" data-tauri-drag-region>
         <button className="ib" title={kbd("切换侧栏 ⌘\\")} aria-label="切换侧栏" onClick={() => setShowSide(!showSide)}><Icon name="side" /></button>
+        {nav.arrows}
         <div className="crumbs" data-tauri-drag-region>
           {root && <span>{baseName(root)}</span>}
           {crumbs.map((c, i) => <span key={i} className="crumb"><span className="sep">/</span>{i === crumbs.length - 1 ? <b>{c}</b> : c}</span>)}
