@@ -266,7 +266,8 @@ fn save_version(
 #[tauri::command]
 fn list_versions(state: State<AppState>, path: String) -> Result<Vec<Meta>, String> {
     let (store, file, _) = store_for(&state, &path)?;
-    Ok(store.records(&file).iter().rev().map(Meta::from).collect())
+    // 稀疏规则（G7）：自动版本一天内全留，两周内每小时一个，更早每天一个；你保存的全留
+    Ok(versions::thin(&store.records(&file), versions::now_ms()).into_iter().rev().map(Meta::from).collect())
 }
 
 #[tauri::command]

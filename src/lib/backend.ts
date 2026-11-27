@@ -7,6 +7,7 @@ import { longManuscript } from "./stress";
 import { toPosix } from "./paths";
 import { isWindows } from "./platform";
 import { splitBlocks } from "./markdown";
+import { thinVersions } from "./versionThin";
 import type { FilePreview } from "./filePreview";
 
 export interface TreeNode { name: string; path: string; dir: boolean; children: TreeNode[] }
@@ -269,7 +270,7 @@ function demoBackend(): Backend {
       try { localStorage.setItem(key(path), JSON.stringify(recs)); } catch { /* ignore */ }
       return { id: rec.id, at: rec.at, source, name: rec.name, note: rec.note };
     },
-    async listVersions(path) { return load(path).slice().reverse().map(({ blocks: _b, ...m }) => m); },
+    async listVersions(path) { return thinVersions(load(path).slice().reverse().map(({ blocks: _b, ...m }) => m)); },
     async readVersion(path, id) { const r = load(path).find((x) => x.id === id); return r ? content(r) : ""; },
     onExternalChange(cb) { listeners.add(cb); return () => listeners.delete(cb); },
     async listFonts() { return isWindows ? WINDOWS_FONTS : MAC_FONTS; },

@@ -139,6 +139,16 @@ src-tauri/tauri.windows.conf.json   Windows 窗口：不要系统标题栏
 - 导出配置：`.holymark/export/` 下的 Pandoc defaults 文件（`word.yaml`、`pdf.yaml`）和版式文件（`word-reference.docx`、`pdf-template.typst`），每次导出时更新，命令行里也能直接用：`pandoc -d .holymark/export/word.yaml 稿件.md -o 稿件.docx`。
 - 应用设置：应用自己的存储里。
 
+
+稿件文件夹放在网盘（iCloud、OneDrive、坚果云等）里、几台电脑轮流用时：版本历史按设备分段写
+（`.holymark/versions/<文稿>/<设备>.jsonl`），每台电脑只写自己的那一段，读的时候合并，网盘不会因为两台电脑同时追加而生成冲突副本。
+设备标识存在用户目录的 `.holymark-device` 里。
+
+用 git 管理稿件时：HolyMark 会在 `.holymark/` 里放一个 `.gitignore`，默认忽略删除暂存区和导出的临时文件；
+版本历史（`versions/`、`objects/`）想跟着稿件提交就保留，不想提交的话按文件里的说明去掉两行前面的 `#`。
+
+版本列表的稀疏规则：自动版本和外部修改一天内全部列出，两周内每小时列一个，更早的每天列一个；你保存的版本全部列出。
+只影响列表，存储里的版本不删除。
 ## 路线
 
 - [x] 文件夹与文件树、自动保存

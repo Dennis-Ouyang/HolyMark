@@ -40,3 +40,13 @@ describe("三方合并（B15）", () => {
     expect(r).toEqual({ text: "# 标题\n\n第二段。\n\n第三段改。\n", conflicts: 0 });
   });
 });
+
+import { thinVersions } from "../src/lib/versionThin";
+describe("版本稀疏规则（G7）", () => {
+  it("一天内全留，两周内每小时一个，更早每天一个，你保存的全留", () => {
+    const H = 3_600_000, D = 24 * H, now = 100 * D;
+    const v = (at: number, source: "auto" | "saved" = "auto") => ({ id: String(at), at, source });
+    const list = [v(now - H + 1), v(now - H), v(now - 5 * D + 120_000, "saved"), v(now - 5 * D + 60_000), v(now - 5 * D), v(now - 40 * D + 10), v(now - 40 * D)];
+    expect(thinVersions(list, now).map((x) => x.at)).toEqual([now - H + 1, now - H, now - 5 * D + 120_000, now - 5 * D + 60_000, now - 40 * D + 10]);
+  });
+});
