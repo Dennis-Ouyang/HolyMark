@@ -69,7 +69,7 @@ jobs:
           mkdir -p binaries-plain
           ln -sf "$PWD/binaries/pandoc-${{ matrix.target }}" binaries-plain/pandoc
           ln -sf "$PWD/binaries/typst-${{ matrix.target }}" binaries-plain/typst
-          for f in docx pdf; do
+          for f in docx pdf html; do
             HOLYMARK_TOOLS_DIR="$PWD/binaries-plain" HM_EXPORT_JOB="$RUNNER_TEMP/smoke/job-$f.json" cargo test --lib e2e_from_env -- --ignored --nocapture
             test -s "$RUNNER_TEMP/smoke/out.$f"
           done

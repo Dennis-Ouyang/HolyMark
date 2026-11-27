@@ -53,7 +53,7 @@ jobs:
           mkdir -p binaries-plain
           cp binaries/pandoc-x86_64-pc-windows-msvc.exe binaries-plain/pandoc.exe
           cp binaries/typst-x86_64-pc-windows-msvc.exe binaries-plain/typst.exe
-          for f in docx pdf; do
+          for f in docx pdf html; do
             HOLYMARK_TOOLS_DIR="$(cygpath -w "$PWD/binaries-plain")" HM_EXPORT_JOB="$SMOKE/job-$f.json" cargo test --lib e2e_from_env -- --ignored --nocapture
             test -s "$SMOKE/out.$f"
           done

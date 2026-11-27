@@ -1,30 +1,42 @@
 /**
- * 导出冒烟测试：把演示文件夹写到磁盘，生成 Word、PDF 两个导出任务（job-docx.json、job-pdf.json）。
+ * 导出冒烟测试：把演示文件夹写到磁盘，生成 Word、PDF、HTML 三个导出任务（job-docx.json、job-pdf.json、job-html.json）。
  * 用法：npx vite-node scripts/export-smoke.ts <输出目录>
  * 然后：HM_EXPORT_JOB=<输出目录>/job-pdf.json cargo test --lib e2e_from_env -- --ignored
  */
 import { mkdirSync, writeFileSync } from "fs";
-import { DEMO_FILES, DEMO_ROOT, DEMO_START } from "../src/lib/demo";
+import { DEMO_FILES, DEMO_IMAGES, DEMO_ROOT, DEMO_START } from "../src/lib/demo";
 import { cloneOpts, defaultsName, defaultsYaml, docxStyle, EMPTY, prepareForPandoc, typstTemplate } from "../src/lib/exporting";
+import { htmlCss } from "../src/lib/htmlExport";
 
 const OUT = process.argv[2];
 if (!OUT) throw new Error("请给出输出目录");
 const cjk = process.env.SMOKE_FONT_CJK || "Songti SC";
 const root = `${OUT}/毕业论文`;
 for (const [p, c] of Object.entries(DEMO_FILES)) {
+  if (!p.startsWith(`${DEMO_ROOT}/`)) continue;
   const f = root + p.slice(DEMO_ROOT.length);
   mkdirSync(f.replace(/\/[^/]*$/, ""), { recursive: true });
   writeFileSync(f, c);
 }
+for (const [p, uri] of Object.entries(DEMO_IMAGES)) {
+  if (!p.startsWith(`${DEMO_ROOT}/`)) continue;
+  const f = root + p.slice(DEMO_ROOT.length);
+  mkdirSync(f.replace(/\/[^/]*$/, ""), { recursive: true });
+  const comma = uri.indexOf(",");
+  if (comma < 0) continue;
+  const meta = uri.slice(0, comma);
+  const body = uri.slice(comma + 1);
+  writeFileSync(f, meta.includes(";base64") ? Buffer.from(body, "base64") : decodeURIComponent(body));
+}
 const docDir = (root + DEMO_START.slice(DEMO_ROOT.length)).replace(/\/[^/]*$/, "");
 // 1×1 的白色 PNG，代替浏览器里才能生成的 Mermaid 图
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-// 再放一张本地图片（中文文件名、在子文件夹里），检查本地图片能进 Word 和 PDF
+// 再放一张本地图片（中文文件名、在子文件夹里），检查本地图片能进 Word、PDF 和 HTML
 mkdirSync(`${docDir}/assets`, { recursive: true });
 writeFileSync(`${docDir}/assets/示意图 1.png`, Buffer.from(png, "base64"));
 const source = DEMO_FILES[DEMO_START] + "\n\n![本地示意图](assets/%E7%A4%BA%E6%84%8F%E5%9B%BE%201.png)\n";
 
-for (const fmt of ["docx", "pdf"] as const) {
+for (const fmt of ["docx", "pdf", "html"] as const) {
   const o = cloneOpts(EMPTY);
   o.fmt = fmt;
   Object.assign(o, { paper: "A4", cjk, latin: "Times New Roman", size: "12", ls: "1.5", indent: "2", align: "justify", before: "0", after: "6" });
@@ -42,9 +54,10 @@ for (const fmt of ["docx", "pdf"] as const) {
     referenceDoc: null,
     docxStyle: fmt === "docx" ? docxStyle(o, title) : null,
     typstTemplate: fmt === "pdf" ? typstTemplate(o, title) : null,
+    htmlCss: fmt === "html" ? htmlCss(o) : null,
     assets: p.mermaid.map((_, i) => ({ name: `mermaid-${i + 1}.png`, data: png })),
     extraArgs: [],
   };
   writeFileSync(`${OUT}/job-${fmt}.json`, JSON.stringify(job, null, 1));
 }
-console.log(`已生成 ${OUT}/job-docx.json、job-pdf.json`);
+console.log(`已生成 ${OUT}/job-docx.json、job-pdf.json、job-html.json`);
