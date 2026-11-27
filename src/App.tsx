@@ -43,6 +43,7 @@ import { ChangeSet } from "@codemirror/state";
 import { findAnchor } from "./lib/anchors";
 import { LinkHooks, openLink } from "./editor/links";
 import { moveSection } from "./editor/blockMoves";
+import { useTreeOrder } from "./features/useTreeOrder";
 import { merge3 } from "./lib/merge";
 import { noteAuthor, setNoteAuthor } from "./editor/notes";
 import { NoticeAction, NoticeKind, setNotifier } from "./editor/notice";
@@ -63,6 +64,8 @@ function reason(e: unknown, fallback: string) {
   return /[\u4e00-\u9fff]/.test(m) ? m : fallback;
 }
 function flatten(nodes: TreeNode[]): TreeNode[] { return nodes.flatMap((n) => (n.dir ? flatten(n.children) : [n])); }
+/** 连文件夹一起摊平 */
+function flatten2(nodes: TreeNode[]): TreeNode[] { return nodes.flatMap((n) => (n.dir ? [n, ...flatten2(n.children)] : [n])); }
 /** 侧栏里显示的路径：太长时只留后半段 */
 function shortPath(p: string) { return p.length > 38 ? "…" + p.slice(-37) : p; }
 
@@ -353,7 +356,9 @@ export default function App() {
   async function exportFolder(node: TreeNode) {
     if (!be) return;
     await flush().catch(() => {});
-    const mds = flatten(sortTree([node])[0].children).filter((f) => isMarkdown(f.name));
+    // 合并的顺序和文件树一样（手动排序时按 .holymark/order.json，N18）
+    const shownNode = flatten2(treeOrder.shown).find((n) => n.path === node.path) ?? sortTree([node])[0];
+    const mds = flatten(shownNode.children).filter((f) => isMarkdown(f.name));
     if (!mds.length) { say("这个文件夹里没有文稿", "info"); return; }
     const files = await Promise.all(mds.map(async (f) => ({ path: f.path, text: f.path === live.current.path ? live.current.text : await be.readText(f.path).catch(() => "") })));
     setBatch({ name: node.name, dir: node.path, files });
@@ -663,6 +668,7 @@ export default function App() {
 
   /* ---------- 新功能 ---------- */
   const openSettings = (pane?: Pane) => { setSettingsPane(pane); setDlg("settings"); };
+  const treeOrder = useTreeOrder(be, root, tree);
   const wstats = useWritingStats({ be, tree, livePath: () => live.current.path, liveText: () => live.current.text, withPunct: s.countPunct });
   const symbols = useSymbols(view);
   featureHooks.current.withPunct = () => s.countPunct;
@@ -1025,6 +1031,7 @@ export default function App() {
   /** 改名、移动之后：正在编辑的文件（或它所在的文件夹）跟着换路径 */
   async function followMove(from: string, to: string) {
     const cur = live.current.path;
+    treeOrder.renamed(from, to);
     wstats.noteMove(from, to);
     spots.move(from, to);
     nav.rename(from, to);
@@ -1050,8 +1057,8 @@ export default function App() {
     } catch (e) { say(String(e).replace(/^Error:\s*/, ""), "error"); }
   }
   const newFolderToast = (p: string) => undoable(`已新建文件夹「${baseName(p)}」`, () => be!.trashPath(p));
-  async function moveTo(node: TreeNode, dir: string) {
-    if (!be) return;
+  async function moveTo(node: TreeNode, dir: string): Promise<string | null> {
+    if (!be) return null;
     try {
       await flush();
       const to = await be.movePath(node.path, dir);
@@ -1059,7 +1066,19 @@ export default function App() {
       await followMove(node.path, to);
       const from = dirOf(node.path);
       undoable(`已把「${node.name}」移到「${dir === root ? baseName(root) : relative(root, dir)}」`, async () => { await be.movePath(to, from); await followMove(to, node.path); });
-    } catch (e) { say(String(e).replace(/^Error:\s*/, ""), "error"); }
+      return to;
+    } catch (e) { say(String(e).replace(/^Error:\s*/, ""), "error"); return null; }
+  }
+  /** 手动排序（N18）：拖到某一项前后。跨文件夹时先移动过去，再排位置 */
+  async function reorderTree(node: TreeNode, dir: string, before: string | null) {
+    const prev = treeOrder.order;
+    if (dirOf(node.path) !== dir) {
+      const to = await moveTo(node, dir);
+      if (to) treeOrder.reorder(dir, baseName(to), before);
+      return;
+    }
+    treeOrder.reorder(dir, node.name, before);
+    say("已调整顺序", "success", { label: "撤销", run: () => treeOrder.restore(prev) });
   }
   async function trash(node: TreeNode) {
     if (!be) return;
@@ -1069,6 +1088,8 @@ export default function App() {
       nav.rename(node.path, null);
       if (inside) await flush();
       const hold = await be.stageDelete(node.path);
+      const orderBefore = treeOrder.order;
+      treeOrder.removed(node.path);
       staged.current.set(hold, window.setTimeout(() => commitStaged(hold), 6500));
       const t = await be.listTree(root);
       setTree(sortTree(t));
@@ -1080,6 +1101,7 @@ export default function App() {
       undoable(`已把「${node.name}」移到${trashName}`, async () => {
         window.clearTimeout(staged.current.get(hold)); staged.current.delete(hold);
         await be.restoreStaged(hold, node.path);
+        treeOrder.restore(orderBefore);
         if (inside) { await refreshTree(); await openFile(cur); }
       });
     } catch (e) { say(String(e).replace(/^Error:\s*/, ""), "error"); }
@@ -1142,7 +1164,16 @@ export default function App() {
     ...(s.recentFolders.filter((f) => f !== root).length ? [{ head: "最近打开" } as MenuEntry, ...s.recentFolders.filter((f) => f !== root).map((f) => ({ label: baseName(f), hint: shortPath(dirOf(f)), icon: "folder", run: () => openFolder(f).catch((e) => say(String(e).includes("重新选择") ? String(e) : "这个文件夹已经不在了", "warn")) }))] : []),
     ...(s.recentFolders.filter((f) => f !== root).length ? [{ sep: true } as MenuEntry] : []),
     { label: "打开其他文件夹…", icon: "folder", hint: "⌘O", run: chooseFolder },
-    ...(root ? [{ label: isWindows ? "在资源管理器中显示" : "在访达中显示", icon: "open", run: () => be?.reveal(root) }, { sep: true } as MenuEntry, { label: "关闭文件夹", icon: "close", run: closeFolder }] : []),
+    ...(root ? [
+      { label: isWindows ? "在资源管理器中显示" : "在访达中显示", icon: "open", run: () => be?.reveal(root) },
+      { sep: true } as MenuEntry,
+      // 排序方式（N18）：按名称 / 手动拖动
+      { head: "排序方式" } as MenuEntry,
+      { label: "按名称", icon: treeOrder.manual ? "" : "check", run: () => treeOrder.setMode("name") },
+      { label: "手动拖动", icon: treeOrder.manual ? "check" : "", hint: treeOrder.manual ? "" : "拖动调整顺序", run: () => { treeOrder.setMode("manual"); say("已改成手动排序：在左栏拖动文件调整顺序", "info"); } },
+      { sep: true } as MenuEntry,
+      { label: "关闭文件夹", icon: "close", run: closeFolder },
+    ] : []),
     ...(single && !root ? [{ label: "打开所在文件夹", icon: "folderOpen", run: adoptSingleFolder }, { label: isWindows ? "在资源管理器中显示" : "在访达中显示", icon: "open", run: () => be?.reveal(single) }, { sep: true } as MenuEntry, { label: "关闭这个文件", icon: "close", run: closeFolder }] : []),
   ];
   const folderList = (nodes: TreeNode[]): TreeNode[] => nodes.flatMap((n) => (n.dir ? [n, ...folderList(n.children)] : []));
@@ -1391,7 +1422,7 @@ export default function App() {
             </button>
             {single && !root && <button className="tn single-open" onClick={adoptSingleFolder} title={`把「${baseName(dirOf(single))}」当作工作区打开，这篇的版本一起带过去`}>
               <span className="slot"><Icon name="folderOpen" size={14} /></span><span className="nm">打开所在文件夹</span></button>}
-            <FileTree nodes={tree} root={root} current={viewing || path} onOpen={openFromTree} onPreview={openFromTree} showAll={s.showAllFiles} renaming={renaming} onRename={renameDone}
+            <FileTree nodes={treeOrder.shown} root={root} manual={treeOrder.manual} onReorder={(n, d, b) => { void reorderTree(n, d, b); }} current={viewing || path} onOpen={openFromTree} onPreview={openFromTree} showAll={s.showAllFiles} renaming={renaming} onRename={renameDone}
               onOpenOther={openOther}
               onStartRename={setRenaming} onDelete={(n) => trash(n)} onMove={(n, d) => moveTo(n, d)}
               onMenu={(e, node) => { if (root) setTreeMenu({ x: e.clientX, y: e.clientY, node }); }} />

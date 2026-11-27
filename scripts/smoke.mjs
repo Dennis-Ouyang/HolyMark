@@ -657,6 +657,50 @@ step("N17 导出 HTML：格式里有 HTML、连续的阅读版式预览、批注
   await page.waitForSelector(".xdlg", { state: "detached" });
 });
 
+step("N18 文件树手动排序：切到手动、拖动调整顺序、撤销、切回按名称、再切回手动顺序还在", async (page) => {
+  const order = () => page.$$eval(".tree .tn[data-path*='/正文/'] .nm", (els) => els.map((e) => e.textContent));
+  await expandTree(page);
+  const before = await order();
+  if (before.join("|") !== "01 绪论|02 文献综述|03 研究设计") throw new Error("开始的顺序不对：" + before);
+  await page.click(".side .folder");
+  await page.click(".menu .menu-item:has-text('手动拖动')");
+  await page.waitForSelector(".toast:has-text('已改成手动排序')");
+  // 把「03 研究设计」拖到「01 绪论」前面
+  const src = await (await page.$(".tree .tn[data-path$='03 研究设计.md']")).boundingBox();
+  const dst = await (await page.$(".tree .tn[data-path$='01 绪论.md']")).boundingBox();
+  await page.mouse.move(src.x + 40, src.y + src.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(src.x + 40, src.y + src.height / 2 - 8, { steps: 3 });
+  await page.mouse.move(dst.x + 40, dst.y + 4, { steps: 8 });
+  await page.waitForSelector(".tree .tn.drop-before");
+  await page.mouse.up();
+  await page.waitForSelector(".toast:has-text('已调整顺序')");
+  const after = await order();
+  if (after.join("|") !== "03 研究设计|01 绪论|02 文献综述") throw new Error("拖动后顺序不对：" + after);
+  // 撤销
+  await page.click(".toast .lnk:has-text('撤销')");
+  await page.waitForTimeout(150);
+  if ((await order()).join("|") !== before.join("|")) throw new Error("撤销没有还原顺序");
+  // 再拖一次，重新加载后还在（存在 .holymark/order.json）
+  await page.mouse.move(src.x + 40, src.y + src.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(src.x + 40, src.y + src.height / 2 - 8, { steps: 3 });
+  await page.mouse.move(dst.x + 40, dst.y + 4, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForSelector(".toast:has-text('已调整顺序')");
+  // 切回按名称；再切回手动时，记下的顺序还在
+  await page.click(".side .folder");
+  await page.click(".menu .menu-item:has-text('按名称')");
+  await page.waitForTimeout(150);
+  if ((await order()).join("|") !== before.join("|")) throw new Error("切回按名称后顺序不对");
+  await page.click(".side .folder");
+  await page.click(".menu .menu-item:has-text('手动拖动')");
+  await page.waitForTimeout(150);
+  if ((await order()).join("|") !== "03 研究设计|01 绪论|02 文献综述") throw new Error("手动顺序没有记住");
+  await page.click(".side .folder");
+  await page.click(".menu .menu-item:has-text('按名称')");
+});
+
 /* ---------- 全块测试稿、导出、搜索（放在最后：会把正文换成测试稿） ---------- */
 
 step("全块测试稿：渲染、光标走遍所有行", async (page) => {

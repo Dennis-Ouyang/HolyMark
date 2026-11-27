@@ -8,8 +8,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface TreeDragOptions<T> {
-  /** 鼠标下面的元素对应的放置目标（比如文件夹路径）；不能放时返回 null */
-  targetAt: (el: Element | null, item: T) => string | null;
+  /** 鼠标下面的元素对应的放置目标（比如文件夹路径）；不能放时返回 null。pt 是鼠标位置（手动排序要看落在一行的上半还是下半） */
+  targetAt: (el: Element | null, item: T, pt: { x: number; y: number }) => string | null;
   onDrop: (item: T, target: string) => void;
   onHoverLong?: (target: string) => void;
 }
@@ -39,7 +39,7 @@ export function useTreeDrag<T>({ targetAt, onDrop, onHoverLong }: TreeDragOption
       }
       ghost.current!.style.left = ev.clientX + 12 + "px";
       ghost.current!.style.top = ev.clientY + 8 + "px";
-      const t = opts.current.targetAt(document.elementFromPoint(ev.clientX, ev.clientY), item);
+      const t = opts.current.targetAt(document.elementFromPoint(ev.clientX, ev.clientY), item, { x: ev.clientX, y: ev.clientY });
       if (t !== target) {
         target = t;
         setOver(t);
