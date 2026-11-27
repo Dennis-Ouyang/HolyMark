@@ -113,6 +113,8 @@ export const COMMANDS: CommandDef[] = [
   { id: "paper_default", title: "纸张底色：默认", category: "view" },
   { id: "paper_cream", title: "纸张底色：米白", category: "view" },
   { id: "paper_gray", title: "纸张底色：护眼灰", category: "view" },
+  { id: "ref_open", title: "在右侧并排参考…", category: "view", sepBefore: true, alias: "对照 参考 分屏" },
+  { id: "ref_close", title: "关闭并排参考", category: "view", paletteOnly: true },
   { id: "close_preview", title: "关闭预览，回到正文", category: "view", keys: "Escape", ownKeys: true, paletteOnly: true },
   { id: "panel_outline", title: "目录", category: "view", keys: "Mod+Alt+1", sepBefore: true },
   { id: "panel_notes", title: "批注列表", category: "view", keys: "Mod+Alt+2" },

@@ -284,3 +284,25 @@ body.hm-dragging .ol .oi { cursor: grabbing; }
 .cmp-grid .cell:hover .cmp-act, .cmp-act:focus-visible { opacity: 1; transform: none; pointer-events: auto; }
 .cmp-act:hover { color: var(--accent-fg); }
 @media (prefers-reduced-motion: reduce) { .cmp-act { transition: none; transform: none; } }
+
+/* ---------- N20 并排参考：正文右边一个只读面板，两边各自滚动 ---------- */
+.main.has-ref > :not(.refpane):not(.ref-switch):not(.lightbox) { margin-right: var(--rw, 440px); }
+.refpane { position: absolute; top: 0; right: 0; bottom: 0; z-index: 4; width: var(--rw, 440px); display: flex; flex-direction: column; background: var(--bg); border-left: 1px solid var(--line); animation: refIn 200ms var(--ease); }
+@keyframes refIn { from { opacity: 0; transform: translateX(12px); } }
+.ref-grip { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 1; }
+.ref-grip:hover { background: linear-gradient(to right, transparent 3px, var(--accent-line) 3px, var(--accent-line) 5px, transparent 5px); }
+.ref-head { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--line); flex: none; }
+.ref-name { min-width: 0; overflow: hidden; font-size: 13px; font-weight: 500; color: var(--fg); }
+.ref-head .sp { flex: 1; }
+.ref-body { flex: 1; min-height: 0; overflow-y: auto; position: relative; }
+.ref-body .fviewer { height: 100%; }
+.ref-doc { padding: 24px 28px 64px; }
+.ref-doc .cm-editor { --measure: 100%; }
+.ref-doc .cm-content { max-width: none; }
+.ref-switch { display: flex; justify-content: center; padding: 6px 0; border-bottom: 1px solid var(--line); flex: none; }
+/* 窄窗口：正文和参考二选一 */
+.main.has-ref.ref-doc > .refpane, .main.has-ref.ref-ref > :not(.refpane):not(.ref-switch):not(.lightbox) { display: none; }
+.main.has-ref.ref-doc > :not(.refpane):not(.ref-switch), .main.has-ref.ref-ref > .refpane { margin-right: 0; width: auto; left: 0; }
+.main.has-ref.ref-ref > .refpane { top: 45px; border-left: 0; }
+body.hm-resizing { cursor: col-resize; user-select: none; }
+@media (prefers-reduced-motion: reduce) { .refpane { animation: none; } }

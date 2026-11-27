@@ -37,6 +37,8 @@ interface Props {
   /** 手动排序（N18）：拖动调整顺序，把 node 放进 dir、排在 before 前面（null 是最后） */
   manual?: boolean;
   onReorder?: (node: TreeNode, dir: string, before: string | null) => void;
+  /** ⌥ / Alt + 点击文件：在右侧并排参考（N20） */
+  onReference?: (path: string) => void;
 }
 
 /** 默认只显示 Markdown 文件和含有 Markdown 的文件夹（空文件夹也显示，刚新建的才看得见） */
@@ -50,7 +52,7 @@ function onlyMarkdown(nodes: TreeNode[]): TreeNode[] {
 
 interface Row { node: TreeNode; depth: number; parent: string | null }
 
-export function FileTree({ nodes, root, current, onOpen, onOpenOther, onPreview, showAll, renaming, onRename, onStartRename, onDelete, onMove, onMenu, manual, onReorder }: Props) {
+export function FileTree({ nodes, root, current, onOpen, onOpenOther, onPreview, showAll, renaming, onRename, onStartRename, onDelete, onMove, onMenu, manual, onReorder, onReference }: Props) {
   const shown = useMemo(() => (showAll ? nodes : onlyMarkdown(nodes)), [nodes, showAll]);
   // 展开状态放在树上（键盘要知道哪些行看得见）；最外层的文件夹默认展开
   const [open, setOpen] = useState<Set<string>>(() => new Set(nodes.filter((n) => n.dir).map((n) => n.path)));
@@ -155,7 +157,7 @@ export function FileTree({ nodes, root, current, onOpen, onOpenOther, onPreview,
         const md = isMarkdown(node.name);
         return (
           <button key={node.path} className={"tn" + (node.path === current ? " active" : "") + (md ? "" : " other") + dragCls} style={style}
-            onClick={() => (md ? onOpen : onPreview)(node.path)} onDoubleClick={() => !md && onOpenOther(node.path)}
+            onClick={(e) => (e.altKey && onReference ? onReference : md ? onOpen : onPreview)(node.path)} onDoubleClick={() => !md && onOpenOther(node.path)}
             title={md ? undefined : "单击预览，双击用默认程序打开"} data-tipsrc={md ? "words" : undefined} aria-current={node.path === current ? "page" : undefined} {...common}>
             <span className="slot">{md ? <Icon name="doc" size={14} /> : <FileBadge name={node.name} />}</span>
             <span className="nm"><MidName name={md ? stripMd(node.name) : node.name} tail={md ? 6 : 8} /></span>

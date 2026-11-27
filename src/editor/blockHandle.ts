@@ -11,6 +11,7 @@ import { Facet, type Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { iconSvg } from "../lib/icons";
 import { openDomMenu, type DomMenuItem } from "./domMenu";
+import { isReading } from "./readingMode";
 
 export type HandleMenuItem = DomMenuItem;
 
@@ -90,6 +91,7 @@ class HandleView {
       if (e.target === this.el || this.el.contains(e.target as Node)) return;
       if (y < r.top || y > r.bottom || x > r.right || x < r.left - 72) { this.hide(); return; }
       // 正文上面盖着别的东西（对比页、浮层、对话框）时不出现：鼠标下最上面的元素得在正文所在的滚动区里
+      if (isReading(this.view.state)) { this.hide(); return; } // 阅读模式（包括并排参考）里不出现
       const top = document.elementFromPoint(x, y);
       const area = this.view.scrollDOM.closest(".scroller") ?? this.view.scrollDOM;
       if (!top || !area.contains(top)) { this.hide(); return; }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorView } from "@codemirror/view";
 import { Editor, EditorHandle } from "./editor/Editor";
+import type { PreviewOptions } from "./editor/livePreview";
 import { Backend, demoImages, demoStartFile, FontFamily, getBackend, isTauri, TreeNode, VersionMeta } from "./lib/backend";
 import { alignBlocks, changedLines, countWords, docLayout, headings, Note, parseNotes, plainText, setDocLayout, wordCounter } from "./lib/markdown";
 import { applyAccent, DEFAULTS, loadSettings, saveSettings, Settings, fontStack } from "./lib/settings";
@@ -44,6 +45,9 @@ import { findAnchor } from "./lib/anchors";
 import { LinkHooks, openLink } from "./editor/links";
 import { moveSection } from "./editor/blockMoves";
 import { useTreeOrder } from "./features/useTreeOrder";
+import { useRefPane } from "./features/useRefPane";
+import { RefPane } from "./features/RefPane";
+import { Segmented } from "./components/Segmented";
 import { alignWithRanges, removeRow, restoreRow } from "./lib/restoreBlock";
 import { merge3 } from "./lib/merge";
 import { noteAuthor, setNoteAuthor } from "./editor/notes";
@@ -54,6 +58,7 @@ const COMMAND_ICON: Record<string, string> = {
   reading: "book", nav_back: "left", nav_forward: "right", fold_all: "chevRight", unfold_all: "chev", fold_h2: "chevRight",
   folder_replace: "replace", tidy: "typography", math_symbols: "symbols", copy_rich: "clip", copy_wechat: "clip",
   typewriter: "typewriter", para_focus: "parafocus", paper_default: "paper", paper_cream: "paper", paper_gray: "paper", close_preview: "doc",
+  ref_open: "panel", ref_close: "close",
 };
 /** macOS 有原生菜单负责快捷键；Windows 和浏览器预览里由前端处理 */
 const nativeMenu = isTauri && isMac;
@@ -149,7 +154,7 @@ export default function App() {
   const togglePanel = () => (narrow ? setDrawer((d) => (d === "panel" ? null : "panel")) : setShowPanel((x) => !x));
   const openPanel = () => (narrow ? setDrawer("panel") : setShowPanel(true));
   const [focus, setFocus] = useState(false);
-  const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "help_syntax" | "help_keys" | "export" | "cmpfile" | "move" | "replace">(null);
+  const [dlg, setDlg] = useState<null | "save" | "settings" | "palette" | "help_syntax" | "help_keys" | "export" | "cmpfile" | "move" | "replace" | "refpick">(null);
   /** 文件夹替换（N9）打开时带着的查找文字 */
   const [replaceQ, setReplaceQ] = useState("");
   const [fonts, setFonts] = useState<FontFamily[]>([]);
@@ -585,7 +590,8 @@ export default function App() {
     open: (abs) => { if (isMarkdown(abs)) openLinkedMarkdown(abs).catch(() => say("没能打开这个文件", "error")); else openOther(abs); },
     reveal: (abs) => { be?.reveal(abs).catch(() => {}); },
   };
-  const preview = useMemo(() => ({
+  /** 编辑器的预览选项；docPath 是解析图片、文件链接用的文稿路径（正文用当前文稿，并排参考用参考的文件，N20） */
+  const makePreview = (docPath: () => string): PreviewOptions => ({
     syntax: () => s.syntax,
     citeLabel: (keys: string[]) => citeText(keys, bibMap),
     citeInfo: (k: string) => bibMap.get(k),
@@ -593,7 +599,7 @@ export default function App() {
       if (/^(https?:|data:)/.test(src)) return src;
       let raw = src.replace(/^<(.*)>$/, "$1");
       try { raw = decodeURI(raw); } catch { /* 原样使用 */ }
-      const abs = /^(\/|[A-Za-z]:[\\/])/.test(raw) ? toPosix(raw) : normalize(join(dirOf(live.current.path), raw));
+      const abs = /^(\/|[A-Za-z]:[\\/])/.test(raw) ? toPosix(raw) : normalize(join(dirOf(docPath()), raw));
       if (!isTauri && demoImages.has(abs)) return demoImages.get(abs)!;
       if (isTauri) return (window as unknown as { __TAURI_INTERNALS__: { convertFileSrc: (p: string) => string } }).__TAURI_INTERNALS__.convertFileSrc(abs);
       return abs;
@@ -602,7 +608,7 @@ export default function App() {
       resolve: (src: string) => {
         let raw = src.replace(/^<(.*)>$/, "$1");
         try { raw = decodeURI(raw); } catch { /* 原样使用 */ }
-        return /^(\/|[A-Za-z]:[\\/])/.test(raw) ? toPosix(raw) : normalize(join(dirOf(live.current.path), raw));
+        return /^(\/|[A-Za-z]:[\\/])/.test(raw) ? toPosix(raw) : normalize(join(dirOf(docPath()), raw));
       },
       url: (abs: string) => (be ? be.fileUrl(abs) : abs),
       preview: (abs: string) => (be ? be.filePreview(abs) : Promise.reject(new Error("no backend"))),
@@ -611,7 +617,7 @@ export default function App() {
       repick: async () => {
         if (!be || be.isDemo) { say("浏览器预览里不能选择本机文件", "info"); return null; }
         const p = await be.pickFile("重新选择文件");
-        return p ? relative(dirOf(live.current.path), p) : null;
+        return p ? relative(dirOf(docPath()), p) : null;
       },
     },
     onAtCite: (pos: number) => { if (!bibMap.size) return false; requestAnimationFrame(() => openInsert("@", pos)); return true; },
@@ -622,7 +628,10 @@ export default function App() {
       openFile: (abs: string, md: boolean, anchor?: string) => linkRef.current.openFile(abs, md, anchor),
       jump: (id: string) => linkRef.current.jump!(id),
     },
-  }), [s.syntax, bibMap, be]);
+  });
+  const preview = useMemo(() => makePreview(() => live.current.path), [s.syntax, bibMap, be]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** 并排参考（N20）的预览选项：没有 @ 弹文献、⌘ 点击（参考面板里单击链接，由面板自己处理） */
+  const refPreview = useMemo(() => (dp: () => string): PreviewOptions => ({ ...makePreview(dp), onAtCite: undefined, links: undefined }), [s.syntax, bibMap, be]); // eslint-disable-line react-hooks/exhaustive-deps
   // 文献库按内容判断变没变（条目改了、数量没变时也要刷新引用标签）
   const bibSig = useMemo(() => { let h = 0; for (const b of bib) for (const c of `${b.key}\u0001${b.author}\u0001${b.year}\u0002`) h = (h * 31 + c.charCodeAt(0)) | 0; return h; }, [bib]);
   const previewKey = `${s.syntax}|${bib.length}|${bibSig}`;
@@ -670,6 +679,10 @@ export default function App() {
   /* ---------- 新功能 ---------- */
   const openSettings = (pane?: Pane) => { setSettingsPane(pane); setDlg("settings"); };
   const treeOrder = useTreeOrder(be, root, tree);
+  // 并排参考（N20）：打开时右栏自动收起，关掉后恢复
+  const showPanelRef = useRef(showPanel);
+  showPanelRef.current = showPanel;
+  const refPane = useRefPane(root, tree, { hide: () => { const was = showPanelRef.current; if (was) setShowPanel(false); return was; }, restore: () => setShowPanel(true) });
   const wstats = useWritingStats({ be, tree, livePath: () => live.current.path, liveText: () => live.current.text, withPunct: s.countPunct });
   const symbols = useSymbols(view);
   featureHooks.current.withPunct = () => s.countPunct;
@@ -796,6 +809,8 @@ export default function App() {
       case "para_focus": update({ paraFocus: !s.paraFocus }); break;
       case "paper_default": case "paper_cream": case "paper_gray": update({ paper: id.slice(6) as Settings["paper"] }); break;
       case "close_preview": setViewing(""); break;
+      case "ref_open": if (root || single) setDlg("refpick"); break;
+      case "ref_close": refPane.close(); break;
       case "new_file": newFile(); break;
       case "open_folder": chooseFolder(); break;
       case "close_folder": closeFolder(); break;
@@ -1174,6 +1189,7 @@ export default function App() {
         ...(node.path !== path && path ? [{ label: "与当前文稿对比", icon: "compare", run: () => compareWith(node.path) }] : []),
         { sep: true } as MenuEntry,
       ] : []),
+      ...(!node.dir ? [{ label: "在右侧并排参考", icon: "panel", hint: isMac ? "⌥ 点击" : "Alt+点击", run: () => refPane.open(node.path) }, { sep: true } as MenuEntry] : []),
       { label: "重命名", icon: "edit", run: () => setRenaming(node.path) },
       ...(!node.dir ? [{ label: "创建副本", icon: "copy", run: async () => { if (!be) return; const c = await be.duplicatePath(node.path); await refreshTree(); undoable(`已创建「${baseName(c)}」`, () => be.trashPath(c)); } }] : []),
       { label: "移动到…", icon: "moveTo", run: () => { setMoving(node); setDlg("move"); } },
@@ -1245,6 +1261,8 @@ export default function App() {
       case "nav_back": return nav.canBack;
       case "nav_forward": return nav.canForward;
       case "close_preview": return !!viewing;
+      case "ref_open": return !!(root || single);
+      case "ref_close": return !!refPane.path;
       case "folder_replace": return !!root;
       case "paper_default": case "paper_cream": case "paper_gray": return s.paper !== id.slice(6);
       case "reading": case "fold_all": case "unfold_all": case "fold_h2": case "tidy": case "math_symbols": case "copy_rich": case "copy_wechat": return !!path;
@@ -1446,7 +1464,7 @@ export default function App() {
             </button>
             {single && !root && <button className="tn single-open" onClick={adoptSingleFolder} title={`把「${baseName(dirOf(single))}」当作工作区打开，这篇的版本一起带过去`}>
               <span className="slot"><Icon name="folderOpen" size={14} /></span><span className="nm">打开所在文件夹</span></button>}
-            <FileTree nodes={treeOrder.shown} root={root} manual={treeOrder.manual} onReorder={(n, d, b) => { void reorderTree(n, d, b); }} current={viewing || path} onOpen={openFromTree} onPreview={openFromTree} showAll={s.showAllFiles} renaming={renaming} onRename={renameDone}
+            <FileTree nodes={treeOrder.shown} root={root} manual={treeOrder.manual} onReorder={(n, d, b) => { void reorderTree(n, d, b); }} onReference={refPane.open} current={viewing || path} onOpen={openFromTree} onPreview={openFromTree} showAll={s.showAllFiles} renaming={renaming} onRename={renameDone}
               onOpenOther={openOther}
               onStartRename={setRenaming} onDelete={(n) => trash(n)} onMove={(n, d) => moveTo(n, d)}
               onMenu={(e, node) => { if (root) setTreeMenu({ x: e.clientX, y: e.clientY, node }); }} />
@@ -1456,7 +1474,8 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="main" onMouseDown={() => { if (drawer) setDrawer(null); }}>
+      <main className={"main" + (refPane.path ? " has-ref" + (narrow ? " ref-" + refPane.focus : "") : "")} style={refPane.path ? { "--rw": `${refPane.width}px` } as React.CSSProperties : undefined} onMouseDown={() => { if (drawer) setDrawer(null); }}>
+        {refPane.path && narrow && <div className="ref-switch"><Segmented label="正文或参考" value={refPane.focus} options={[["doc", "正文"], ["ref", "参考"]]} onChange={refPane.setFocus} /></div>}
         {path && !reading.on && !viewing && <Ribbon view={ed.current?.view() ?? null} author={noteAuthor()} settings={s} fonts={fonts} layout={layout} onLayout={applyLayout}
           collapsed={s.ribbonCollapsed} setCollapsed={(c) => update({ ribbonCollapsed: c })}
           onPickImage={pickImage} onCite={openInsert} active={fmt.active} block={fmt.block} onTidy={tidy.open} />}
@@ -1468,6 +1487,8 @@ export default function App() {
         </div>
         {!reading.on && !viewing && <FloatingToolbar view={ed.current?.view() ?? null} tick={tick} author={noteAuthor()} active={fmt.active} />}
         {viewing && be && <FileViewer be={be} path={viewing} onInfo={setViewInfo} say={say} onOpenDefault={openOther} />}
+        {refPane.path && be && <RefPane key={refPane.path} be={be} path={refPane.path} width={refPane.width} onWidth={refPane.setWidth} onClose={refPane.close} onPath={refPane.open}
+          preview={refPreview} openOther={openOther} openUrl={(u) => { be.openUrl(u).catch((e) => say(reason(e, "没能打开这个链接"), "error")); }} say={(m) => say(m)} />}
         {fileCmp && <Compare fileLabel={fileCmp.name} oldText={fileCmp.text} newText={live.current.text} against="current" hasPrev={false} prevLabel=""
           onAgainst={() => {}} onClose={() => setFileCmp(null)} onRestore={() => {}} onPick={() => setDlg("cmpfile")} />}
         {cmp && (
@@ -1526,6 +1547,8 @@ export default function App() {
       {symbols.node}
       {reading.node}
       <Presence>{dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => { setDlg(null); if (batch) refreshTree(); setBatch(null); }} say={say} batch={batch ?? undefined} />}</Presence>
+      <Presence>{dlg === "refpick" && <Palette items={flatten(treeOrder.shown).filter((f) => f.path !== path).map((f) => ({ group: "在右侧并排参考", icon: isMarkdown(f.name) ? "doc" : "file", title: root ? relative(root, f.path) : f.name, run: () => refPane.open(f.path) }))}
+        search={noSearch} onClose={() => setDlg(null)} placeholder="选一个文件，放在正文右边对照着看" />}</Presence>
       <Presence>{dlg === "cmpfile" && <Palette items={cmpItems} search={noSearch} pinned={cmpPick} onClose={() => setDlg(null)} placeholder="选一篇文稿，和当前文稿左右对比" />}</Presence>
       <Presence>{dlg === "move" && moving && <Palette items={moveItems} search={noSearch} onClose={() => { setDlg(null); setMoving(null); }} placeholder={`把「${moving.name}」移到哪个文件夹`} />}</Presence>
       {treeMenu && <Menu x={treeMenu.x} y={treeMenu.y} items={treeMenuItems(treeMenu.node)} onClose={() => setTreeMenu(null)} />}

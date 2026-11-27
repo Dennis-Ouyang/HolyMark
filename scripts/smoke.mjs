@@ -740,6 +740,40 @@ step("N19 只恢复某一段：对比现在里恢复改过的一段、移除新�
   await menu(page, "panel_outline");
 });
 
+step("N20 并排参考：⌥ 点击打开、右栏收起、阅读渲染、各自滚动、记住、窄窗口切换、关闭后右栏恢复", async (page) => {
+  await expandTree(page);
+  if (!(await page.$(".app:not(.no-panel)"))) throw new Error("开始时右栏应该开着");
+  await page.click(await treeItem(page, "02 文献综述"), { modifiers: ["Alt"] });
+  await page.waitForSelector(".refpane .cm-editor.hm-reading");
+  if (!(await page.textContent(".refpane")).includes("第二章")) throw new Error("参考面板内容不对");
+  if (!(await page.$(".app.no-panel"))) throw new Error("打开参考时右栏没有收起");
+  if (!(await docText(page)).includes("研究设计")) throw new Error("正文被换掉了");
+  // 重新加载：记住了参考的文件
+  await page.reload();
+  await ready(page);
+  await page.waitForSelector(".refpane .cm-editor.hm-reading", { timeout: 8000 });
+  // ⌘K 里换一个参考
+  await menu(page, "ref_open");
+  await page.waitForSelector(".pal, .palette, [role=dialog]");
+  await page.keyboard.type("绪论");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelector(".refpane")?.textContent?.includes("绪论"));
+  // 窄窗口：正文和参考二选一
+  await page.setViewportSize({ width: 1000, height: 760 });
+  await page.waitForSelector(".ref-switch");
+  await page.click(".ref-switch button:has-text('正文')");
+  await page.waitForTimeout(150);
+  if (await page.isVisible(".refpane")) throw new Error("窄窗口选正文时参考还在");
+  await page.click(".ref-switch button:has-text('参考')");
+  await page.waitForSelector(".refpane", { state: "visible" });
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.waitForTimeout(200);
+  await page.click(".refpane button[aria-label='关闭并排参考']");
+  await page.waitForSelector(".refpane", { state: "detached" });
+  await page.waitForTimeout(150);
+  if (!(await page.$(".app:not(.no-panel)"))) throw new Error("关掉参考后右栏没有恢复");
+});
+
 /* ---------- 全块测试稿、导出、搜索（放在最后：会把正文换成测试稿） ---------- */
 
 step("全块测试稿：渲染、光标走遍所有行", async (page) => {
