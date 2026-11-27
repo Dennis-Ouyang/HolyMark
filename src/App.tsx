@@ -264,9 +264,7 @@ export default function App() {
     setSingle("");
     setRoot(dir); setTree(sortTree(t)); update({ lastFolder: dir, recentFolders: [dir, ...s.recentFolders.filter((x) => x !== dir)].slice(0, 8) });
     const files = flatten(t);
-    const bibs = files.filter((f) => f.name.endsWith(".bib"));
-    const entries = (await Promise.all(bibs.map((b) => be.readText(b.path).catch(() => "")))).flatMap(parseBib);
-    setBib(entries);
+    await reloadBib(t);
     const first = file || files.find((f) => isMarkdown(f.name))?.path;
     if (first) await openFile(first);
   }
@@ -275,6 +273,29 @@ export default function App() {
    * fromLink：文稿里链接指向工作区以外的 .md。后端只让单独打开系统交来的、或用户亲自选的文件，
    * 所以这种被拒绝时交给默认程序打开（默认程序是 HolyMark 时，系统会把它再交回来）
    */
+  /** 重新读文件夹里所有的 .bib（打开文件夹时；外部程序改写了文献库时，N21） */
+  async function reloadBib(t: TreeNode[]) {
+    if (!be) return;
+    const bibs = flatten(t).filter((f) => /\.bib$/i.test(f.name));
+    setBib((await Promise.all(bibs.map((b) => be.readText(b.path).catch(() => "")))).flatMap(parseBib));
+  }
+  // Zotero 这类程序改写 .bib 后：重新读文献库，正文里的引用标签跟着刷新（连续写入只读一次）
+  const bibTimer = useRef(0);
+  const treeRef = useRef(tree);
+  treeRef.current = tree;
+  useEffect(() => {
+    if (!be || !root) return;
+    return be.onBibChange(() => {
+      window.clearTimeout(bibTimer.current);
+      bibTimer.current = window.setTimeout(async () => {
+        // 新建的 .bib 也要算进来：先刷新文件树
+        const t = await be.listTree(root).catch(() => treeRef.current);
+        setTree(sortTree(t));
+        await reloadBib(t);
+      }, 400);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [be, root]);
   async function openExternalFile(p: string, fromLink = false) {
     if (root && isInside(root, p)) await openFile(p);
     else if (!(await openSingle(p, fromLink)) && fromLink) openOther(p);

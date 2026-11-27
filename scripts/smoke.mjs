@@ -774,6 +774,18 @@ step("N20 并排参考：⌥ 点击打开、右栏收起、阅读渲染、各自
   if (!(await page.$(".app:not(.no-panel)"))) throw new Error("关掉参考后右栏没有恢复");
 });
 
+step("N21 .bib 自动刷新：外部程序改写文献库后，正文里的引用标签跟着变", async (page) => {
+  await page.evaluate(() => { document.querySelector(".scroller").scrollTop = 0; });
+  const label = () => page.textContent(".hm-cite >> nth=0");
+  if (!(await label()).includes("张伟")) throw new Error("开始时的引用标签不对：" + await label());
+  const bibPath = "/演示/毕业论文/资料/references.bib";
+  await page.evaluate((p) => window.holymarkSimulateExternal(p, "@article{zhang2021,\n  author = {李华 and 王敏},\n  title = {学术写作中的认知负荷},\n  journal = {心理学报},\n  year = {2023}\n}\n"), bibPath);
+  await page.waitForFunction(() => document.querySelector(".hm-cite")?.textContent?.includes("李华"), null, { timeout: 4000 });
+  if (!(await label()).includes("2023")) throw new Error("年份没刷新：" + await label());
+  await page.evaluate((p) => window.holymarkSimulateExternal(p, "@article{zhang2021,\n  author = {张伟 and 王敏},\n  title = {学术写作中的认知负荷},\n  journal = {心理学报},\n  year = {2021}\n}\n"), bibPath);
+  await page.waitForFunction(() => document.querySelector(".hm-cite")?.textContent?.includes("张伟"), null, { timeout: 4000 });
+});
+
 /* ---------- 全块测试稿、导出、搜索（放在最后：会把正文换成测试稿） ---------- */
 
 step("全块测试稿：渲染、光标走遍所有行", async (page) => {

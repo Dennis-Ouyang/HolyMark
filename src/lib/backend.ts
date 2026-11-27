@@ -83,6 +83,8 @@ export interface Backend {
   listVersions(path: string): Promise<VersionMeta[]>;
   readVersion(path: string, id: string): Promise<string>;
   onExternalChange(cb: (path: string) => void): () => void;
+  /** 文件夹里的 .bib 被外部程序（Zotero 这类）改写了（N21） */
+  onBibChange(cb: (path: string) => void): () => void;
   listFonts(): Promise<FontFamily[]>;
   /** 保存粘贴或拖进来的图片，data 是 base64，返回保存后的路径 */
   saveImage(dir: string, name: string, data: string): Promise<string>;
@@ -170,6 +172,12 @@ async function tauriBackend(): Promise<Backend> {
       listen<{ path: string }>("external-change", (e) => cb(e.payload.path)).then((u) => (un = u));
       return () => un?.();
     },
+    onBibChange(cb) {
+      let un: (() => void) | null = null;
+      let dead = false;
+      listen<string>("bib-change", (e) => cb(toPosix(e.payload))).then((u) => (dead ? u() : (un = u)));
+      return () => { dead = true; un?.(); };
+    },
     listFonts: () => invoke("list_fonts"),
     saveImage: (dir, name, data) => invoke("save_image", { dir, name, data }),
     readBase64: (path) => invoke("read_base64", { path }),
@@ -238,6 +246,7 @@ function demoBackend(): Backend {
   const dirs = new Set<string>(); // 空文件夹
   if (stressChars) files.set(STRESS_PATH, longManuscript(stressChars));
   const listeners = new Set<(p: string) => void>();
+  const bibListeners = new Set<(p: string) => void>();
   const key = (p: string) => "holymark-demo-versions:" + p;
   const objKey = "holymark-demo-objects";
   const load = (p: string): DemoRecord[] => { try { return JSON.parse(localStorage.getItem(key(p)) || "[]"); } catch { return []; } };
@@ -309,6 +318,7 @@ function demoBackend(): Backend {
     async listVersions(path) { return thinVersions(load(path).slice().reverse().map(({ blocks: _b, ...m }) => m)); },
     async readVersion(path, id) { const r = load(path).find((x) => x.id === id); return r ? content(r) : ""; },
     onExternalChange(cb) { listeners.add(cb); return () => listeners.delete(cb); },
+    onBibChange(cb) { bibListeners.add(cb); return () => bibListeners.delete(cb); },
     async listFonts() { return isWindows ? WINDOWS_FONTS : MAC_FONTS; },
     // 演示文件夹里的二进制文件（参考文档、引用样式）存成 base64 字符串
     async readBase64(path) { if (binFiles.has(path)) return binFiles.get(path)!; if (files.has(path)) return btoa(unescape(encodeURIComponent(files.get(path)!))); throw new Error("找不到这个文件"); },
@@ -389,6 +399,8 @@ function demoBackend(): Backend {
   }
   // 演示用：模拟 AI 在编辑器外改写文件
   (window as unknown as { holymarkSimulateExternal: (p: string, c: string) => Promise<void> }).holymarkSimulateExternal = async (p, c) => {
+    // 文献库：和桌面版一样只发「.bib 变了」，不记版本
+    if (/\.bib$/i.test(p)) { files.set(p, c); bibListeners.forEach((l) => l(p)); return; }
     const prev = files.get(p) ?? "";
     await b.saveVersion(p, prev, "auto");
     files.set(p, c);
