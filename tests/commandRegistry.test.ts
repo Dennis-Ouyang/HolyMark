@@ -28,3 +28,40 @@ describe("命令注册表：第一批新增的命令", () => {
     expect(matchKeys(ev("ArrowLeft", { altKey: true, ctrlKey: true }), "Alt+Left", false)).toBe(false);
   });
 });
+
+import { commandWithKeys, customShortcuts, isReservedKeys, keysFromEvent, loadShortcuts, resetShortcuts, setKeyRecording, setShortcut, shortcutOf } from "../src/lib/commandRegistry";
+
+describe("自定义快捷键（N15）", () => {
+  it("按下的组合键 → 注册表写法", () => {
+    expect(keysFromEvent(ev("KeyE", { metaKey: true, shiftKey: true }), true)).toBe("Mod+Shift+E");
+    expect(keysFromEvent(ev("Comma", { ctrlKey: true, altKey: true }), false)).toBe("Mod+Alt+,");
+    expect(keysFromEvent(ev("ArrowLeft", { metaKey: true, ctrlKey: true }), true)).toBe("Ctrl+Mod+Left");
+    expect(keysFromEvent(ev("KeyE"), true)).toBeNull(); // 没有修饰键
+    expect(keysFromEvent(ev("F5"), true)).toBe("F5");
+    expect(keysFromEvent(ev("KeyE", { metaKey: true }), false)).toBeNull(); // Windows 上按着 Win 键
+  });
+  it("冲突和保留的组合", () => {
+    expect(commandWithKeys("Mod+Shift+E")?.id).toBe("export");
+    expect(commandWithKeys("Mod+Shift+E", "export")).toBeUndefined();
+    expect(isReservedKeys("Mod+C")).toBe(true);
+    expect(isReservedKeys("Mod+Shift+C")).toBe(false);
+  });
+  it("改、存、恢复；改了以后按键分发跟着变", () => {
+    setShortcut("export", "Mod+Alt+E");
+    setShortcut("reading", null);
+    expect(customShortcuts()).toEqual({ export: "Mod+Alt+E", reading: null });
+    expect(commandForKey(ev("KeyE", { metaKey: true, altKey: true }), true)).toBe("export");
+    expect(commandForKey(ev("KeyR", { metaKey: true, shiftKey: true }), true)).toBeNull();
+    resetShortcuts();
+    expect(shortcutOf("export")).toBe("Mod+Shift+E");
+    loadShortcuts({ export: "Mod+Alt+E", nope: "Mod+J", reading: "Mod+Shift+R" }); // 不认识的、和默认一样的不记
+    expect(customShortcuts()).toEqual({ export: "Mod+Alt+E" });
+    resetShortcuts();
+  });
+  it("录按键时原生菜单不挂加速键", () => {
+    setKeyRecording(true);
+    expect(menuSpec().find((s) => s.key === "file")!.items.find((i) => i.id === "export")!.accel).toBeNull();
+    setKeyRecording(false);
+    expect(menuSpec().find((s) => s.key === "file")!.items.find((i) => i.id === "export")!.accel).toBe("CmdOrCtrl+Shift+E");
+  });
+});

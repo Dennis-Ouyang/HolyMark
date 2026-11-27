@@ -135,6 +135,17 @@ const listeners = new Set<() => void>();
 export function setShortcut(id: string, keys: string | null) { overrides.set(id, keys); listeners.forEach((f) => f()); }
 export function resetShortcuts() { overrides.clear(); listeners.forEach((f) => f()); }
 export function onShortcutsChange(f: () => void) { listeners.add(f); return () => { listeners.delete(f); }; }
+/** 用户改过的快捷键（存进设置用）：{ 命令 id: 按键或 null（不要快捷键） } */
+export function customShortcuts(): Record<string, string | null> { return Object.fromEntries(overrides); }
+/** 启动时从设置里恢复（不和默认值一样的才记）；会通知订阅者 */
+export function loadShortcuts(map: Record<string, string | null> | undefined) {
+  overrides.clear();
+  for (const [id, k] of Object.entries(map ?? {})) if (byId.has(id) && (k ?? undefined) !== byId.get(id)!.keys) overrides.set(id, k);
+  listeners.forEach((f) => f());
+}
+export const isCustomShortcut = (id: string) => overrides.has(id);
+/** 恢复一条命令的默认快捷键 */
+export function resetShortcut(id: string) { overrides.delete(id); listeners.forEach((f) => f()); }
 export function shortcutOf(id: string): string | undefined {
   if (overrides.has(id)) return overrides.get(id) ?? undefined;
   return byId.get(id)?.keys;
@@ -154,6 +165,34 @@ export function parseKeys(s: string): Combo {
   const parts = s.split("+");
   const key = s.endsWith("++") ? "+" : parts[parts.length - 1];
   return { mod: parts.includes("Mod"), shift: parts.includes("Shift"), alt: parts.includes("Alt"), ctrl: parts.includes("Ctrl"), code: codeOf(key) };
+}
+
+const sameKeys = (a: string, b: string) => { const x = parseKeys(a), y = parseKeys(b); return x.code === y.code && x.mod === y.mod && x.shift === y.shift && x.alt === y.alt && x.ctrl === y.ctrl; };
+/** 这组按键已经给了哪条命令（不算 except 自己） */
+export function commandWithKeys(keys: string, except?: string): CommandDef | undefined {
+  return COMMANDS.find((c) => c.id !== except && !c.paletteOnly && shortcutOf(c.id) && sameKeys(shortcutOf(c.id)!, keys));
+}
+
+/** 留给系统和编辑器的组合：拷贝、粘贴、剪切、全选、撤销、重做、退出、关窗口、隐藏、最小化 */
+const RESERVED = ["Mod+C", "Mod+V", "Mod+X", "Mod+A", "Mod+Z", "Mod+Shift+Z", "Mod+Y", "Mod+Q", "Mod+W", "Mod+H", "Mod+M"];
+export const isReservedKeys = (keys: string) => RESERVED.some((r) => sameKeys(r, keys));
+
+const CODE_KEY: Record<string, string> = Object.fromEntries(Object.entries(CODE).map(([k, v]) => [v, k]));
+/**
+ * 按下的组合键 → 注册表的写法（"Mod+Shift+E"）。只按了修饰键、或者没有修饰键（F1–F12 除外）时返回 null。
+ * Windows 上按着 Win 键的不算。
+ */
+export function keysFromEvent(e: Pick<KeyboardEvent, "code" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">, mac = isMac): string | null {
+  let key: string | undefined;
+  if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3);
+  else if (/^Digit\d$/.test(e.code)) key = e.code.slice(5);
+  else if (/^F\d{1,2}$/.test(e.code)) key = e.code;
+  else key = CODE_KEY[e.code];
+  if (!key) return null;
+  if (!mac && e.metaKey) return null;
+  const mod = mac ? e.metaKey : e.ctrlKey, ctrl = mac && e.ctrlKey;
+  if (!mod && !ctrl && !e.altKey && !/^F\d/.test(key)) return null;
+  return [ctrl && "Ctrl", mod && "Mod", e.altKey && "Alt", e.shiftKey && "Shift", key].filter(Boolean).join("+");
 }
 
 /** 按键是不是这一组快捷键（按物理键位；Mod 在 macOS 是 ⌘、其他是 Ctrl） */
@@ -207,11 +246,18 @@ export function tipOf(id: string, title?: string): string {
 /** macOS 原生菜单的加速键写法（Tauri）："CmdOrCtrl+Shift+E" */
 export const accelOf = (keys: string | undefined) => (keys ? keys.replace(/^Mod\+|\+Mod\+/g, (m) => m.replace("Mod", "CmdOrCtrl")) : null);
 
+/**
+ * 正在设置页里录新的快捷键：macOS 的原生菜单会先接住按键（按下 ⌘⇧E 就导出了），
+ * 所以录的时候把菜单的加速键都先摘掉，录完再挂回去（订阅者会重建菜单）
+ */
+let recording = false;
+export function setKeyRecording(on: boolean) { if (recording !== on) { recording = on; listeners.forEach((f) => f()); } }
+
 /** 给 Rust 重建原生菜单用的描述：按类别分组 */
 export function menuSpec() {
   return (Object.keys(CATEGORY_TITLE) as CommandCategory[]).map((cat) => ({
     key: cat,
     title: CATEGORY_TITLE[cat],
-    items: commandsIn(cat).filter((c) => c.id !== "quit" && c.id !== "settings" && !c.paletteOnly).map((c) => ({ id: c.id, label: c.title, accel: c.ownKeys ? null : accelOf(shortcutOf(c.id)), sepBefore: !!c.sepBefore })),
+    items: commandsIn(cat).filter((c) => c.id !== "quit" && c.id !== "settings" && !c.paletteOnly).map((c) => ({ id: c.id, label: c.title, accel: c.ownKeys || recording ? null : accelOf(shortcutOf(c.id)), sepBefore: !!c.sepBefore })),
   }));
 }

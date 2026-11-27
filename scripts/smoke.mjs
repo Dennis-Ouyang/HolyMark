@@ -556,6 +556,48 @@ step("N11 从 Excel 粘贴成表格：数字列右对齐、提示条「改为纯
   if ((await docText(page)) !== before) throw new Error("没还原");
 });
 
+step("N15 自定义快捷键：录新按键、冲突替换、立即生效、重新打开还在、全部恢复默认", async (page) => {
+  const mod = process.platform === "darwin" ? "Meta" : "Control";
+  await menu(page, "settings");
+  await page.click(".prefs nav button:has-text('快捷键')");
+  const row = (title) => `.kedit tr:has(td:text-is('${title}')) .kbtn`;
+  await page.click(row("导出"));
+  await page.waitForSelector(".kbtn.on");
+  await page.keyboard.press(`${mod}+Alt+E`);
+  await page.waitForSelector(".kbtn:not(.on)");
+  if (!(await page.textContent(row("导出"))).match(/Alt.*E|⌥.*E/)) throw new Error("没录上：" + await page.textContent(row("导出")));
+  if (!(await page.$(".prefs")) ) throw new Error("录按键时按键把设置关了");
+  // 冲突：把「导出」改成搜索的 ⌘K
+  await page.click(row("导出"));
+  await page.keyboard.press(`${mod}+K`);
+  await page.waitForSelector(".kclash:has-text('已被「搜索与命令」占用')");
+  await page.click(".kclash .btn.acc");
+  if ((await page.textContent(row("搜索与命令"))).trim() !== "无") throw new Error("替换后搜索的快捷键没去掉");
+  // Esc 只取消录制，不关设置
+  await page.click(row("导出"));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(150);
+  if (!(await page.$(".prefs"))) throw new Error("Esc 把设置关了");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".prefs", { state: "detached" });
+  // 立即生效：⌘K 现在是导出
+  await page.keyboard.press(`${mod}+K`);
+  await page.waitForSelector(".exp, [aria-label='导出']", { timeout: 4000 });
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(400);
+  // 重新打开还在
+  await page.reload();
+  await ready(page);
+  await menu(page, "settings");
+  await page.click(".prefs nav button:has-text('快捷键')");
+  if ((await page.textContent(row("搜索与命令"))).trim() !== "无") throw new Error("重新打开后自定义快捷键没了");
+  await page.click(".kfoot .btn");
+  await page.waitForSelector(".kundo:has-text('已全部恢复默认')");
+  if (!(await page.textContent(row("搜索与命令"))).includes("K")) throw new Error("全部恢复默认没有恢复");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".prefs", { state: "detached" });
+});
+
 /* ---------- 全块测试稿、导出、搜索（放在最后：会把正文换成测试稿） ---------- */
 
 step("全块测试稿：渲染、光标走遍所有行", async (page) => {

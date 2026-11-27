@@ -37,6 +37,8 @@ export interface Settings {
   externalReading: boolean;
   /** 中文排版整理的规则 */
   tidy: TidyRules;
+  /** 自定义快捷键（N15）：{ 命令 id: 按键或 null（不要快捷键） }，只记改过的 */
+  shortcuts: Record<string, string | null>;
   /** ⌘N 新建的文稿放在当前文稿旁边，还是文件夹最外层 */
   newDocPlace: "current" | "root";
   /** 粘贴、拖进来的图片存在文稿旁边的哪个文件夹 */
@@ -74,6 +76,7 @@ export const DEFAULTS: Settings = {
   ribbonCollapsed: false,
   showAllFiles: false,
   tidy: TIDY_DEFAULTS,
+  shortcuts: {},
   externalReading: true,
   paper: "default",
   typewriter: false,
@@ -130,6 +133,7 @@ export function loadSettings(): Settings {
   const out = { ...DEFAULTS, ...saved, v: 2 };
   // 嵌套的设置：新加的规则用默认值
   out.tidy = { ...TIDY_DEFAULTS, ...(saved.tidy || {}) };
+  if (!out.shortcuts || typeof out.shortcuts !== "object") out.shortcuts = {};
   if (!(out.accent in ACCENTS)) out.accent = "indigo";
   return out;
 }

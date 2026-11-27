@@ -23,7 +23,7 @@ import { TooltipLayer } from "./components/Tooltip";
 import { sortTree } from "./lib/sortTree";
 import { isMac, isWindows, kbd } from "./lib/platform";
 import { menuIdFor } from "./lib/shortcuts";
-import { accelOf, COMMANDS, keyCaps, menuSpec, onShortcutsChange, shortcutOf, tipOf } from "./lib/commandRegistry";
+import { accelOf, COMMANDS, customShortcuts, keyCaps, loadShortcuts, menuSpec, onShortcutsChange, shortcutOf, tipOf } from "./lib/commandRegistry";
 import { ExportDialog } from "./components/ExportDialog";
 import type { Pane } from "./components/Dialogs";
 import { features, FeatureHooks } from "./editor/features";
@@ -828,6 +828,12 @@ export default function App() {
   const menuRef = useRef(onMenu);
   menuRef.current = onMenu;
   useEffect(() => { if (be) return be.onMenu((id) => menuRef.current(id)); }, [be]);
+  // 自定义快捷键（N15）：启动时从设置里恢复；之后改了就存回设置（原生菜单的重建见下面）
+  useEffect(() => {
+    loadShortcuts(sRef.current.shortcuts);
+    return onShortcutsChange(() => update({ shortcuts: customShortcuts() }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // macOS 原生菜单按命令注册表生成；快捷键在运行时改了就重建（G6）
   useEffect(() => {
     if (!be || be.isDemo || !nativeMenu) return;
@@ -1441,9 +1447,9 @@ export default function App() {
       <Presence>{countPop && <CountPop title={countPop.title} text={countPop.text} count={count} anchor={countPop.rect} onClose={() => setCountPop(null)}>{countPop.title === "全文" && <wstats.Section />}</CountPop>}</Presence>
       <Presence>{dlg === "save" && <SaveVersionDialog changes={saveChanges} fileName={fileName} onSave={saveVersion} onClose={() => { setDlg(null); commitCheckpoint().catch(() => {}); }} />}</Presence>
       <Presence>{dlg === "settings" && <SettingsDialog s={s} fonts={fonts} onChange={update} initialPane={settingsPane} onClose={() => setDlg(null)} onReset={() => {
-        // 恢复默认设置：最近打开的文件夹、上次的文件夹、批注署名和侧栏宽度这类「记住的东西」保留；提示条带撤销
+        // 恢复默认设置：最近打开的文件夹、上次的文件夹、批注署名、自定义快捷键这类「记住的东西」保留（快捷键在快捷键页单独恢复）；提示条带撤销
         const before = s;
-        const keep = { lastFolder: s.lastFolder, recentFolders: s.recentFolders, noteAuthor: s.noteAuthor, v: s.v };
+        const keep = { lastFolder: s.lastFolder, recentFolders: s.recentFolders, noteAuthor: s.noteAuthor, shortcuts: s.shortcuts, v: s.v };
         update({ ...DEFAULTS, ...keep });
         say("已恢复默认设置", "success", { label: "撤销", run: () => update(before) });
       }} />}</Presence>

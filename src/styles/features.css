@@ -238,3 +238,20 @@
 .ol { position: relative; }
 .ol-drop { position: absolute; left: 4px; right: 4px; height: 2px; margin-top: -1px; border-radius: 1px; background: var(--accent); pointer-events: none; }
 body.hm-dragging .ol .oi { cursor: grabbing; }
+
+/* ---------- N15 自定义快捷键 ---------- */
+.kedit .kt td { vertical-align: middle; }
+.kedit .kt td:last-child { white-space: nowrap; }
+.kedit .kbtn { min-width: 64px; height: 26px; padding: 0 8px; border-radius: 6px; border: 1px solid transparent; color: var(--fg-3); font-size: 12px; transition: background 120ms, border-color 120ms; }
+.kedit .kbtn:hover { background: var(--hover); }
+.kedit .kbtn.on { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-fg); }
+.kedit .kbtn kbd { font-variant-numeric: tabular-nums; }
+.kedit .kreset { margin-right: 8px; font-size: 12px; }
+.kedit tr.rec td:first-child { color: var(--fg); }
+.kedit tr.fixed td { color: var(--fg-3); }
+.kedit .kclash td, .kedit .kwarn td { padding: 6px 0; border-bottom: 0; font-size: 12px; text-align: left !important; }
+.kedit .kclash td > div { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); }
+.kedit .kclash span { flex: 1; }
+.kedit .kwarn td { color: var(--fg-2); }
+.kedit .kfoot { display: flex; align-items: center; gap: 8px; padding-top: 4px; }
+.kedit .kundo { font-size: 12px; color: var(--fg-2); display: inline-flex; gap: 6px; align-items: center; }

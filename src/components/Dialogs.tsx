@@ -8,11 +8,12 @@ import { kbd } from "../lib/platform";
 import { CATEGORY_TITLE, CommandCategory, commandsIn, keyText, shortcutOf } from "../lib/commandRegistry";
 import { Segmented } from "./Segmented";
 import { EnvSettings, FontPresets, TidySettings } from "./FeatureSettings";
+import { KeyEditor } from "./KeyEditor";
 
 function Scrim({ onClose, center, children }: { onClose: () => void; center?: boolean; children: React.ReactNode }) {
   useEffect(() => {
     // Esc 只关最上面一层：下拉、菜单开着时先关它们（H28）
-    const f = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.querySelector(".select-pop, .menu")) { e.stopPropagation(); onClose(); } };
+    const f = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.querySelector(".select-pop, .menu, .kbtn.on")) { e.stopPropagation(); onClose(); } };
     addEventListener("keydown", f, true);
     return () => removeEventListener("keydown", f, true);
   }, [onClose]);
@@ -132,7 +133,7 @@ export function SettingsDialog({ s, fonts, onChange, onClose, onReset, initialPa
             <Row label="外部修改合并" hint="这段时间内的连续写入记为一条">{num("mergeSeconds", { min: 1, max: 600 }, "秒")}</Row>
           </>}
           {pane === "tidy" && <TidySettings s={s} onChange={onChange} />}
-          {pane === "keys" && <KeyTable />}
+          {pane === "keys" && <KeyEditor />}
           {pane === "about" && <About />}
         </div>
       </div>
