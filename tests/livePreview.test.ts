@@ -147,3 +147,13 @@ describe("公式编辑：光标所在的公式", async () => {
     expect(at("$$\na\n$$\n正|文\n$$\nb\n$$", "|")).toBeNull();
   });
 });
+
+describe("脚注（G10）", async () => {
+  const { footnoteText } = await import("../src/editor/footnotes");
+  it("找到定义和续行", () => {
+    const st = EditorState.create({ doc: "正文[^1]。\n\n[^1]: 第一行\n    续行\n[^2]: 二" });
+    expect(footnoteText(st, "1")).toBe("第一行 续行");
+    expect(footnoteText(st, "2")).toBe("二");
+    expect(footnoteText(st, "3")).toBeNull();
+  });
+});

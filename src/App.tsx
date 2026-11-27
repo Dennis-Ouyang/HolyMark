@@ -494,6 +494,7 @@ export default function App() {
         return p ? relative(dirOf(live.current.path), p) : null;
       },
     },
+    onAtCite: (pos: number) => { if (!bibMap.size) return false; requestAnimationFrame(() => openInsert("@", pos)); return true; },
     links: {
       docPath: () => live.current.path,
       openUrl: (url: string) => { be?.openUrl(url).catch(() => say("没能打开这个链接", "error")); },
@@ -945,7 +946,8 @@ export default function App() {
     ...hs.filter((h) => h.level >= 2).map((h) => ({ group: "跳转", icon: "go", title: h.text, run: () => jump(h.pos) })),
   ];
   /* ---------- 插入文件链接（⌘⇧C）：光标处的小浮层 ---------- */
-  const [insertAt, setInsertAt] = useState<{ left: number; top: number; bottom: number } | null>(null);
+  /** 插入浮层：位置；atPos 是在正文里打 @ 弹出时那个 @ 的位置（选中文献后把它换掉，G11） */
+  const [insertAt, setInsertAt] = useState<{ left: number; top: number; bottom: number; q?: string; atPos?: number } | null>(null);
   const RECENT_KEY = "holymark-recent-insert";
   const [recentIns, setRecentIns] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); } catch { return []; } });
   const rememberInsert = (p: string) => setRecentIns((r) => {
@@ -953,15 +955,26 @@ export default function App() {
     try { localStorage.setItem(RECENT_KEY, JSON.stringify(n)); } catch { /* 存不了就算了 */ }
     return n;
   });
-  function openInsert() {
+  function openInsert(q?: string, atPos?: number) {
     const v = view(); if (!v || !path) return;
     const c = v.coordsAtPos(v.state.selection.main.head);
     const r = c ?? (() => { const b = v.contentDOM.getBoundingClientRect(); return { left: b.left, top: b.top + 40, bottom: b.top + 60 }; })();
-    setInsertAt({ left: Math.round(r.left), top: Math.round(r.top), bottom: Math.round(r.bottom) });
+    setInsertAt({ left: Math.round(r.left), top: Math.round(r.top), bottom: Math.round(r.bottom), q, atPos });
   }
   function pickInsert(p: InsertPick) {
+    const at = insertAt?.atPos;
     setInsertAt(null);
-    if (p.kind === "bib") { insertAtCursor(`[@${p.key}]`); return; }
+    if (p.kind === "bib") {
+      // 正文里打 @ 弹出的：把那个 @ 换成 [@key]
+      const v = view();
+      if (v && at !== undefined && v.state.sliceDoc(at, at + 1) === "@") {
+        const t = `[@${p.key}]`;
+        v.dispatch({ changes: { from: at, to: v.state.selection.main.head > at ? v.state.selection.main.head : at + 1, insert: t }, selection: { anchor: at + t.length } });
+        v.focus();
+        return;
+      }
+      insertAtCursor(`[@${p.key}]`); return;
+    }
     const l = linkFor(p.path, path);
     insertAtCursor(l.text, l.block);
     rememberInsert(p.path);
@@ -1167,7 +1180,7 @@ export default function App() {
       <Presence>{(dlg === "help_syntax" || dlg === "help_keys") && <HelpDialog kind={dlg === "help_syntax" ? "syntax" : "keys"} onClose={() => setDlg(null)} />}</Presence>
       <Presence>{dlg === "palette" && <SearchPanel text={live.current.text} path={path} root={root} headings={hs} folderTexts={folderTexts} commands={commands}
         onJump={jumpTo} onOpenAt={openAt} onClose={() => setDlg(null)} />}</Presence>
-      <Presence ms={100}>{insertAt && <InsertFile at={insertAt} files={flatten(tree)} docPath={path} root={root} bib={bib} recent={recentIns}
+      <Presence ms={100}>{insertAt && <InsertFile at={insertAt} initialQuery={insertAt.q} files={flatten(tree)} docPath={path} root={root} bib={bib} recent={recentIns}
         onPick={pickInsert} onPickOther={() => { setInsertAt(null); setTimeout(citeOtherFile, 0); }} onClose={() => { setInsertAt(null); view()?.focus(); }} />}</Presence>
       <Presence>{dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => setDlg(null)} say={say} />}</Presence>
       <Presence>{dlg === "cmpfile" && <Palette items={cmpItems} search={noSearch} pinned={cmpPick} onClose={() => setDlg(null)} placeholder="选一篇文稿，和当前文稿左右对比" />}</Presence>

@@ -1177,3 +1177,10 @@ textarea.nb-tx::placeholder { color: var(--fg-3); }
 .hm-tip.up { translate: 0 -100%; }
 .hm-tip span { overflow: hidden; text-overflow: ellipsis; white-space: pre-line; }
 .hm-tip kbd { margin-left: auto; font: 11px var(--f-ui); color: var(--fg-3); background: none; border: 0; padding: 0; font-variant-numeric: tabular-nums; }
+/* 脚注（G10）：上标编号，悬停浮出内容；定义行小一号 */
+.hm-fn { padding: 0 2px; font: 600 .72em/1 var(--f-ui); color: var(--accent-fg); cursor: pointer; vertical-align: super; }
+.hm-fn::before { content: "["; opacity: .5; } .hm-fn::after { content: "]"; opacity: .5; }
+.hm-fn-src { color: var(--accent-fg); }
+.hm-fndef { font-size: .88em; color: var(--fg-2); }
+.hm-fndef-n { display: inline-block; min-width: 1.4em; margin-right: .3em; font: 600 .8em var(--f-ui); color: var(--accent-fg); vertical-align: .2em; }
+.hm-fntip { position: fixed; z-index: 70; max-width: 360px; padding: 8px 12px; border-radius: 10px; background: var(--raised); box-shadow: var(--float); font: 13px/1.6 var(--f-ui); color: var(--fg); pointer-events: none; animation: tipIn 120ms var(--ease); }

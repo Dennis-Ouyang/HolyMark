@@ -16,6 +16,8 @@ import { FileCardWidget, FileHooks } from "./fileCard";
 import { CARD_EXT } from "../lib/filePreview";
 import { isLocalHref, links, LinkHooks } from "./links";
 import { listFolds, listRendered, lists, renderList } from "./lists";
+import { FN_REF, footnoteDecos } from "./footnotes";
+import { atCite } from "./atCite";
 
 export interface PreviewOptions {
   /** 把文档里的图片路径解析成可显示的地址 */
@@ -30,6 +32,8 @@ export interface PreviewOptions {
   files?: FileHooks;
   /** ⌘ / Ctrl + 点击打开链接（见 links.ts） */
   links?: LinkHooks;
+  /** 正文里打 @ 时弹出文献（见 atCite.ts）；返回是否弹出了 */
+  onAtCite?: (pos: number) => boolean;
 }
 
 interface Block {
@@ -803,11 +807,18 @@ function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range
     taken.push([from, quoteFrom], [quoteTo, end]);
   }
 
+  // 脚注 [^1] 和定义行 [^1]: 内容（G10）。先处理：上标语法 ^…^ 会把两个 [^ 之间的字当成上标
+  const fnBefore = taken.length;
+  footnoteDecos(state, b.from, b.to, active, decos, free, taken);
+  const fnRanges = taken.slice(fnBefore);
+  if (active) { FN_REF.lastIndex = 0; for (let m: RegExpExecArray | null; (m = FN_REF.exec(text)); ) fnRanges.push([b.from + m.index, b.from + m.index + m[0].length]); }
+
   syntaxTree(state).iterate({
     from: b.from,
     to: b.to,
     enter: (n) => {
       const name = n.name;
+      if ((name === "Superscript" || name === "SuperscriptMark" || name === "Link") && fnRanges.some(([f, t]) => n.from < t && n.to > f)) return false;
       if (skip.some(([f, t]) => n.from >= f && n.to <= t)) return false; // 已经按插图整行替换掉了
       if (hidden.some(([f, t]) => n.from >= f && n.to <= t)) return false; // 藏起来的批注符号和内容
       if (name === "InlineCode") { codeRanges.push([n.from, n.to]); decos.push(markCls("hm-icode").range(n.from, n.to)); }
@@ -819,6 +830,8 @@ function inlineDecos(state: EditorState, b: Block, active: boolean, decos: Range
       if (name === "Highlight") decos.push(markCls("hm-hl").range(n.from, n.to));
       // [@key] 是文献引用，不按链接处理
       if (name === "Link" && /^\[@[\w:-]+\]$/.test(doc.sliceString(n.from, n.to))) return false;
+      // [^1] 是脚注（文末有 [^1]: 定义时 CommonMark 会把它当成引用式链接），交给 footnotes.ts
+      if (name === "Link" && /^\[\^[^\]\s]+\]$/.test(doc.sliceString(n.from, n.to))) return false;
       if (name === "Link") {
         decos.push(markCls("hm-link").range(n.from, n.to));
         // 本机文件链接前加一个小文件图标，和网页链接区分开
@@ -938,5 +951,5 @@ export function livePreview(opts: PreviewOptions): Extension {
     provide: (f) => EditorView.decorations.from(f),
   });
   // lists() 里的状态（显示源代码、折叠）要排在装饰前面：装饰重算时会读它们
-  return [lists(() => opts.syntax() === "always"), focusField, field, flashField, glowField, EditorView.focusChangeEffect.of((_s, focusing) => setFocus.of(focusing)), opts.links ? links(opts.links) : []];
+  return [lists(() => opts.syntax() === "always"), focusField, field, flashField, glowField, EditorView.focusChangeEffect.of((_s, focusing) => setFocus.of(focusing)), opts.links ? links(opts.links) : [], opts.onAtCite ? atCite(opts.onAtCite) : []];
 }

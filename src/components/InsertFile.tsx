@@ -24,6 +24,8 @@ const TYPE: Record<string, string> = { md: "md", markdown: "md", pdf: "pdf", doc
 interface Props {
   /** 光标的位置（窗口坐标）：浮层从这里长出来 */
   at: { left: number; top: number; bottom: number };
+  /** 打开时搜索框里已有的内容（正文里打 @ 弹出时是 "@"，直接进文献模式） */
+  initialQuery?: string;
   files: TreeNode[];
   docPath: string;
   root: string;
@@ -34,8 +36,8 @@ interface Props {
   onClose: () => void;
 }
 
-export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPickOther, onClose }: Props) {
-  const [q, setQ] = useState("");
+export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPickOther, onClose, initialQuery }: Props) {
+  const [q, setQ] = useState(initialQuery ?? "");
   const [sel, setSel] = useState(0);
   const box = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: at.left - 12, top: at.bottom + 6, up: false });
