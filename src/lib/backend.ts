@@ -59,6 +59,10 @@ export interface Backend {
   /** 导出进行到哪一步：style → pandoc → typst → write */
   onExportProgress(cb: (stage: string) => void): () => void;
   openFolder(root: string): Promise<TreeNode[]>;
+  /** 单独打开一个不在工作区里的文件：不扫描目录、只监听这个文件，版本存在应用自己的数据目录 */
+  openSingle(path: string): Promise<void>;
+  /** 单独打开的文件改用所在文件夹作工作区：之前的版本搬进那个文件夹的 .holymark/，返回搬了几个 */
+  adoptSingle(path: string, root: string): Promise<number>;
   /** 关闭文件夹：停止监听外部修改 */
   closeFolder(): Promise<void>;
   listTree(root: string): Promise<TreeNode[]>;
@@ -128,6 +132,8 @@ async function tauriBackend(): Promise<Backend> {
       return () => { alive = false; un?.(); };
     },
     openFolder: (root) => invoke("open_folder", { root }),
+    openSingle: (path) => invoke("open_single", { path }),
+    adoptSingle: (path, root) => invoke("adopt_single", { path, root }),
     closeFolder: () => invoke("close_folder"),
     listTree: (root) => invoke("list_tree", { root }),
     readText: (path) => invoke("read_text", { path }),
@@ -208,21 +214,21 @@ function demoBackend(): Backend {
   const hash = (s: string) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(16) + s.length.toString(16); };
   const content = (r: DemoRecord) => { const o = objs(); return r.blocks.map((h) => o[h] ?? "").join(""); };
 
-  const tree = (): TreeNode[] => {
-    const root: TreeNode = { name: "", path: DEMO_ROOT, dir: true, children: [] };
+  const tree = (top = DEMO_ROOT): TreeNode[] => {
+    const root: TreeNode = { name: "", path: top, dir: true, children: [] };
     const add = (p: string, isDir: boolean) => {
-      const parts = p.slice(DEMO_ROOT.length + 1).split("/");
+      const parts = p.slice(top.length + 1).split("/");
       let cur = root;
       parts.forEach((part, i) => {
-        const path = DEMO_ROOT + "/" + parts.slice(0, i + 1).join("/");
+        const path = top + "/" + parts.slice(0, i + 1).join("/");
         let n = cur.children.find((c) => c.name === part);
         if (!n) { n = { name: part, path, dir: isDir || i < parts.length - 1, children: [] }; cur.children.push(n); }
         cur = n;
       });
     };
-    const hidden = (p: string) => p.slice(DEMO_ROOT.length + 1).split("/").some((x) => x.startsWith("."));
-    for (const p of [...files.keys()].sort()) if (!hidden(p)) add(p, false);
-    for (const d of dirs) if (!hidden(d)) add(d, true);
+    const hidden = (p: string) => p.slice(top.length + 1).split("/").some((x) => x.startsWith("."));
+    for (const p of [...files.keys()].sort()) if (p.startsWith(top + "/") && !hidden(p)) add(p, false);
+    for (const d of dirs) if (d.startsWith(top + "/") && !hidden(d)) add(d, true);
     const sort = (ns: TreeNode[]) => { ns.sort((a, b) => (+b.dir - +a.dir) || a.name.localeCompare(b.name, "zh")); ns.forEach((n) => sort(n.children)); };
     sort(root.children);
     return root.children;
@@ -240,9 +246,12 @@ function demoBackend(): Backend {
     async openPath() { /* 浏览器里打不开本机文件 */ },
     async openUrl(url) { window.open(url, "_blank", "noopener"); },
     onExportProgress() { return () => {}; },
-    async openFolder() { return tree(); },
+    async openFolder(root) { return tree(root); },
+    async openSingle(path) { if (!files.has(path)) throw new Error("找不到这个文件"); },
+    // 演示后端的版本按绝对路径存在 localStorage 里，换成工作区后照样找得到，不用搬
+    async adoptSingle() { return 0; },
     async closeFolder() { /* 演示文件夹没有监听 */ },
-    async listTree() { return tree(); },
+    async listTree(root) { return tree(root); },
     async readText(path) { return files.get(path) ?? ""; },
     async writeText(path, c) { files.set(path, c); },
     async saveVersion(path, c, source, name, note) {

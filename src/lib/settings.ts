@@ -29,6 +29,8 @@ export interface Settings {
   ribbonCollapsed: boolean;
   /** 文件树里是否显示 Markdown 以外的文件 */
   showAllFiles: boolean;
+  /** 从访达 / 资源管理器单独打开的文件默认用阅读模式 */
+  externalReading: boolean;
   /** 中文排版整理的规则 */
   tidy: TidyRules;
   /** 设置格式版本，用来迁移旧的默认值 */
@@ -60,6 +62,7 @@ export const DEFAULTS: Settings = {
   ribbonCollapsed: false,
   showAllFiles: false,
   tidy: TIDY_DEFAULTS,
+  externalReading: true,
   v: 2,
 };
 

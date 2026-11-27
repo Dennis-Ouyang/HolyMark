@@ -52,7 +52,7 @@ export function SettingsDialog({ s, fonts, onChange, onClose, initialPane }: { s
   const num = (k: keyof Settings, attrs: { min: number; max?: number; step?: number; disabled?: boolean }, unit?: string) => (
     <NumberField value={String(s[k])} {...attrs} unit={unit} ariaLabel={String(k)} onCommit={(v) => { const n = parseFloat(v); if (!Number.isNaN(n)) onChange({ [k]: n } as Partial<Settings>); }} />
   );
-  const sw = (k: "showAllFiles" | "goalOn" | "askOnClose" | "reopenLast" | "eqNumbers", label: string) => (
+  const sw = (k: "showAllFiles" | "goalOn" | "askOnClose" | "reopenLast" | "eqNumbers" | "externalReading", label: string) => (
     <button className={"switch" + (s[k] ? " on" : "")} role="switch" aria-checked={s[k]} aria-label={label} onClick={() => onChange({ [k]: !s[k] } as Partial<Settings>)} />
   );
   return (
@@ -79,6 +79,7 @@ export function SettingsDialog({ s, fonts, onChange, onClose, initialPane }: { s
             </Row>
             <Row label="文件树" hint="关闭时只显示 Markdown 文件"><label className="inline">{sw("showAllFiles", "显示所有文件")}<span>显示所有文件</span></label></Row>
             <Row label="启动时" hint="关掉的话，每次从开始页开始"><label className="inline">{sw("reopenLast", "打开上次的文件夹")}<span>打开上次的文件夹</span></label></Row>
+            <Row label="从外部打开的文件" hint="双击、拖到程序图标上打开的单个文件"><label className="inline">{sw("externalReading", "默认用阅读模式")}<span>默认用阅读模式</span></label></Row>
             <Row label="关闭应用时" hint="不保存的修改会留在「版本」里，随时能找回"><label className="inline">{sw("askOnClose", "询问是否保存修改")}<span>有修改时询问是否保存</span></label></Row>
           </>}
           {pane === "editor" && <>

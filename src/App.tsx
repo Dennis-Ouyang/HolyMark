@@ -100,7 +100,10 @@ export default function App() {
   const [toast, setToast] = useState<{ msg: string; action?: { label: string; run: () => void } } | null>(null);
   const ed = useRef<EditorHandle>(null);
   // base：上一次“保存”时的内容（打开文件、保存版本、外部修改之后）。和 text 不同就是有没保存的修改，关闭应用时会问
-  const live = useRef({ path: "", text: "", base: "", lastWritten: "", lastVersionAt: 0 });
+  // needBase：打开后还没存过起点版本。打开时不写盘，第一次真正改动前才存（只看不改的文件夹里不会出现 .holymark/）
+  const live = useRef<{ path: string; text: string; base: string; lastWritten: string; lastVersionAt: number; needBase?: boolean }>({ path: "", text: "", base: "", lastWritten: "", lastVersionAt: 0 });
+  /** 单独打开的文件（不在工作区里）：只有这一个文件，不扫描它所在的文件夹 */
+  const [single, setSingle] = useState("");
   const saveTimer = useRef<number>();
 
   const view = (): EditorView | null => ed.current?.view() ?? null;
@@ -108,7 +111,7 @@ export default function App() {
   const featureHooks = useRef<FeatureHooks>({});
   const extra = useMemo(() => features(featureHooks), []);
   // 方便自动化测试读取编辑器状态
-  (window as unknown as { __hm: unknown }).__hm = { view, menu: (id: string) => menuRef.current(id) };
+  (window as unknown as { __hm: unknown }).__hm = { view, menu: (id: string) => menuRef.current(id), openExternal: (p: string) => openExternalFile(p) };
   const say = useCallback((m: string, action?: { label: string; run: () => void }) => {
     setToast({ msg: m, action });
     window.clearTimeout((say as unknown as { t: number }).t);
@@ -147,6 +150,7 @@ export default function App() {
   async function openFolder(dir: string, file?: string) {
     if (!be) return;
     const t = await be.openFolder(dir);
+    setSingle("");
     setRoot(dir); setTree(t); update({ lastFolder: dir, recentFolders: [dir, ...s.recentFolders.filter((x) => x !== dir)].slice(0, 8) });
     const files = flatten(t);
     const bibs = files.filter((f) => f.name.endsWith(".bib"));
@@ -156,9 +160,28 @@ export default function App() {
     if (first) await openFile(first);
   }
   /** 从访达或资源管理器打开的文件：在当前文件夹里就直接打开，否则把它所在的文件夹作为工作区 */
+  /** 从访达或资源管理器打开的文件：在当前工作区里就直接打开，否则只打开这一个文件（不动它所在的文件夹） */
   async function openExternalFile(p: string) {
     if (isInside(root, p)) await openFile(p);
-    else await openFolder(dirOf(p), p);
+    else await openSingle(p);
+  }
+  async function openSingle(p: string) {
+    if (!be) return;
+    if (live.current.path) spots.capture(live.current.path);
+    await flush().catch(() => {});
+    try { await be.openSingle(p); } catch (e) { say(String(e).replace(/^Error:\s*/, "")); return; }
+    setRoot(""); setSingle(p); setBib([]); setCmp(null); setFileCmp(null);
+    setTree([{ name: baseName(p), path: p, dir: false, children: [] }]);
+    await openFile(p, { readingDefault: s.externalReading });
+  }
+  /** 「打开所在文件夹」：把它所在的文件夹当工作区打开，之前的版本搬进那个工作区的 .holymark/ */
+  async function adoptSingleFolder() {
+    if (!be || !single) return;
+    const p = single, dir = dirOf(p);
+    await flush().catch(() => {});
+    const n = await be.adoptSingle(p, dir).catch(() => 0);
+    await openFolder(dir, p);
+    if (n) say(`已把这篇的 ${n} 个版本带进「${baseName(dir)}」`);
   }
   useEffect(() => {
     if (!be) return;
@@ -180,7 +203,8 @@ export default function App() {
   }
   /** 关闭文件夹，回到开始页；下次启动也从开始页开始，直到再打开一个文件夹 */
   async function closeFolder() {
-    if (!be || !root) return;
+    if (!be || (!root && !single)) return;
+    setSingle("");
     spots.capture(live.current.path);
     await flush().catch(() => {});
     await Promise.all([...staged.current.keys()].map((p) => { window.clearTimeout(staged.current.get(p)); return be.commitStaged(p).catch(() => {}); }));
@@ -189,7 +213,7 @@ export default function App() {
     live.current = { path: "", text: "", base: "", lastWritten: "", lastVersionAt: 0 };
     ed.current?.load("");
     setRoot(""); setTree([]); setPath(""); setText(""); setVersions([]); setCmp(null); setFileCmp(null); setBib([]);
-    update({ lastFolder: "" });
+    if (root) update({ lastFolder: "" }); // 关掉单独打开的文件时，不忘掉上次的工作区
   }
   async function chooseFolder() {
     if (!be) return;
@@ -201,6 +225,12 @@ export default function App() {
     window.clearTimeout(saveTimer.current);
     const l = live.current;
     if (be && l.path && l.text !== l.lastWritten) {
+      // 第一次真正改动：先把打开时的内容存成起点版本，再写入改动
+      if (l.needBase) {
+        l.needBase = false;
+        const v = await be.saveVersion(l.path, l.base, "auto").catch(() => null);
+        if (v) { const at = l.path; be.listVersions(at).then((vs) => { if (live.current.path === at) setVersions(vs); }).catch(() => {}); }
+      }
       await be.writeText(l.path, l.text);
       l.lastWritten = l.text;
       setSaveState("saved");
@@ -209,22 +239,21 @@ export default function App() {
   }
 
   /** target：从搜索结果、文内链接这类有明确目标的方式打开，不恢复上次的位置 */
-  async function openFile(p: string, opts?: { reading?: boolean; target?: boolean }) {
+  async function openFile(p: string, opts?: { reading?: boolean; target?: boolean; readingDefault?: boolean }) {
     if (!be) return;
     if (live.current.path) spots.capture(live.current.path);
     await flush();
     const content = await be.readText(p);
-    live.current = { path: p, text: content, base: content, lastWritten: content, lastVersionAt: Date.now() };
+    live.current = { path: p, text: content, base: content, lastWritten: content, lastVersionAt: Date.now(), needBase: true };
     setPath(p); setText(content); setCmp(null); setFileCmp(null); setFresh(null);
     ed.current?.load(content);
     const spot = opts?.target ? null : spots.recall(p);
-    reading.afterLoad(p, opts?.reading ?? spot?.reading);
+    reading.afterLoad(p, opts?.reading ?? spot?.reading ?? opts?.readingDefault);
     wstats.noteOpen(p, content);
     if (scroller.current) scroller.current.scrollTop = 0;
     setScrollHeading(0);
     if (spot) spots.restore(spot);
-    // 打开时留一个基线版本，之后的任何修改都能回到这里
-    await be.saveVersion(p, content, "auto").catch(() => null);
+    // 起点版本不在打开时存（不写盘），见 flush()；这里只读已有的版本
     setVersions(await be.listVersions(p).catch(() => []));
   }
 
@@ -244,7 +273,7 @@ export default function App() {
     if (!be) return;
     const id = window.setInterval(async () => {
       const l = live.current;
-      if (!l.path || Date.now() - l.lastVersionAt < s.autoMinutes * 60_000) return;
+      if (!l.path || l.needBase || Date.now() - l.lastVersionAt < s.autoMinutes * 60_000) return; // 打开后没改过就不存（不建版本库）
       await flush();
       const v = await be.saveVersion(l.path, l.text, "auto").catch(() => null);
       l.lastVersionAt = Date.now();
@@ -779,6 +808,7 @@ export default function App() {
     ...(s.recentFolders.filter((f) => f !== root).length ? [{ sep: true } as MenuEntry] : []),
     { label: "打开其他文件夹…", icon: "folder", hint: "⌘O", run: chooseFolder },
     ...(root ? [{ label: isWindows ? "在资源管理器中显示" : "在访达中显示", icon: "open", run: () => be?.reveal(root) }, { sep: true } as MenuEntry, { label: "关闭文件夹", icon: "close", run: closeFolder }] : []),
+    ...(single && !root ? [{ label: "打开所在文件夹", icon: "folderOpen", run: adoptSingleFolder }, { label: isWindows ? "在资源管理器中显示" : "在访达中显示", icon: "open", run: () => be?.reveal(single) }, { sep: true } as MenuEntry, { label: "关闭这个文件", icon: "close", run: closeFolder }] : []),
   ];
   const folderList = (nodes: TreeNode[]): TreeNode[] => nodes.flatMap((n) => (n.dir ? [n, ...folderList(n.children)] : []));
   const moveItems: PaletteItem[] = moving ? [
@@ -974,7 +1004,7 @@ export default function App() {
 
   const appCls = [s.eqNumbers ? "eqnum" : "", "app", showSide ? "" : "no-side", showPanel ? "" : "no-panel", focus ? "focus" : "", isTauri && isMac ? "mac" : "", customFrame ? "framed" : ""].join(" ");
   const fileName = baseName(path);
-  const crumbs = path && root ? relative(root, path).split("/") : [];
+  const crumbs = path && root ? relative(root, path).split("/") : path && single ? [baseName(path)] : [];
 
   return (
     <div className={appCls} style={editorStyle}>
@@ -983,7 +1013,7 @@ export default function App() {
         {nav.arrows}
         <div className="crumbs" data-tauri-drag-region>
           {root && <span>{baseName(root)}</span>}
-          {crumbs.map((c, i) => <span key={i} className="crumb"><span className="sep">/</span>{i === crumbs.length - 1 ? <b>{c}</b> : c}</span>)}
+          {crumbs.map((c, i) => <span key={i} className="crumb">{(root || i > 0) && <span className="sep">/</span>}{i === crumbs.length - 1 ? <b>{c}</b> : c}</span>)}
           {dirty && <span className="dirty" title={kbd("这次打开后有修改（已自动写入文件）。按 ⌘S 保存版本，关闭时也会询问")} aria-label="有修改" />}
         </div>
         <div className="spacer" data-tauri-drag-region />
@@ -999,10 +1029,12 @@ export default function App() {
       <aside className="side" aria-label="文件夹">
         <div className="side-in">
           <div className="side-scroll">
-            <button className={"folder" + (root ? "" : " none")} onClick={(e) => { if (!root) { chooseFolder(); return; } const r = e.currentTarget.getBoundingClientRect(); setFolderMenu({ x: r.left + 8, y: r.bottom }); }} title={root ? root : "选择一个放稿件的文件夹"} aria-haspopup="menu">
-              <span className="fname">{root ? baseName(root) : "打开文件夹"}</span>
-              <span className="fpath">{root ? shortPath(root) : "选择一个放稿件的文件夹"}</span>
+            <button className={"folder" + (root || single ? "" : " none")} onClick={(e) => { if (!root && !single) { chooseFolder(); return; } const r = e.currentTarget.getBoundingClientRect(); setFolderMenu({ x: r.left + 8, y: r.bottom }); }} title={root ? root : single ? single : "选择一个放稿件的文件夹"} aria-haspopup="menu">
+              <span className="fname">{root ? baseName(root) : single ? "单个文件" : "打开文件夹"}</span>
+              <span className="fpath">{root ? shortPath(root) : single ? shortPath(dirOf(single)) : "选择一个放稿件的文件夹"}</span>
             </button>
+            {single && !root && <button className="tn single-open" onClick={adoptSingleFolder} title={`把「${baseName(dirOf(single))}」当作工作区打开，这篇的版本一起带过去`}>
+              <span className="ico"><Icon name="folderOpen" size={14} /></span><span className="nm">打开所在文件夹</span></button>}
             <FileTree nodes={tree} current={path} onOpen={openFile} showAll={s.showAllFiles} renaming={renaming} onRename={renameDone}
               onMenu={(e, node) => { if (root) setTreeMenu({ x: e.clientX, y: e.clientY, node }); }} />
           </div>

@@ -1,6 +1,6 @@
 //! 版本库：按段落内容寻址存储。
 //!
-//! 目录结构（都在用户的文件夹里）：
+//! 目录结构（工作区在用户的文件夹里；单独打开的文件存在应用自己的数据目录里，见 lib.rs 的 locate）：
 //!   .holymark/objects/<sha256>          每个段落块的原文，相同内容只存一次
 //!   .holymark/versions/<文件路径哈希>.jsonl  每行一个版本记录，只记块哈希列表
 //!
@@ -98,8 +98,46 @@ pub struct Store {
 }
 
 impl Store {
+    /// 工作区的版本库：文件夹里的 .holymark/
     pub fn new(root: &Path) -> Self {
         Store { dir: root.join(".holymark") }
+    }
+
+    /// 放在别处的版本库（单独打开的文件：应用数据目录）。格式和工作区的一样
+    pub fn at(dir: PathBuf) -> Self {
+        Store { dir }
+    }
+
+    /// 把另一个版本库里 from 的全部版本搬进来，记在 to 名下（单独打开的文件改用「所在文件夹」作工作区时）。
+    /// 已有的版本保留，按时间合在一起；没有可搬的就什么都不写（不会建出空的 .holymark/）。
+    pub fn import(&self, other: &Store, from: &str, to: &str) -> std::io::Result<usize> {
+        let recs = other.records(from);
+        if recs.is_empty() {
+            return Ok(0);
+        }
+        fs::create_dir_all(self.dir.join("objects"))?;
+        fs::create_dir_all(self.dir.join("versions"))?;
+        for r in &recs {
+            for h in &r.blocks {
+                let dest = self.dir.join("objects").join(h);
+                if !dest.exists() {
+                    fs::copy(other.dir.join("objects").join(h), dest)?;
+                }
+            }
+        }
+        let mut all = self.records(to);
+        let n = recs.len();
+        for mut r in recs {
+            // 同一毫秒里存的两个版本 id 会一样，所以连内容一起比
+            if all.iter().any(|x| x.id == r.id && x.blocks == r.blocks) {
+                continue;
+            }
+            r.file = to.to_string();
+            all.push(r);
+        }
+        all.sort_by_key(|r| r.at);
+        self.write_records(to, &all)?;
+        Ok(n)
     }
 
     fn log_path(&self, file: &str) -> PathBuf {
@@ -247,6 +285,29 @@ mod tests {
         let recs = s.records("a.md");
         assert_eq!(recs.len(), 1);
         assert_eq!(s.content(&recs[0]).unwrap(), "一二");
+    }
+
+    #[test]
+    fn reading_does_not_create_store_and_import_merges() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = Store::new(d.path());
+        assert!(ws.records("a.md").is_empty());
+        assert!(!d.path().join(".holymark").exists(), "只读不建目录");
+        // 单独打开时的版本库，搬进工作区
+        let app = tempfile::tempdir().unwrap();
+        let single = Store::at(app.path().join("single"));
+        single.save("/x/a.md", "甲\n", Source::Auto, None, None, 0).unwrap();
+        single.save("/x/a.md", "甲\n\n乙\n", Source::Saved, Some("改过".into()), None, 0).unwrap();
+        assert_eq!(ws.import(&single, "/x/nothing.md", "a.md").unwrap(), 0);
+        assert!(!d.path().join(".holymark").exists(), "没有可搬的不建目录");
+        assert_eq!(ws.import(&single, "/x/a.md", "a.md").unwrap(), 2);
+        let recs = ws.records("a.md");
+        assert_eq!(recs.len(), 2);
+        assert_eq!(recs[1].name.as_deref(), Some("改过"));
+        assert_eq!(ws.content(&recs[1]).unwrap(), "甲\n\n乙\n");
+        // 再搬一次不重复
+        ws.import(&single, "/x/a.md", "a.md").unwrap();
+        assert_eq!(ws.records("a.md").len(), 2);
     }
 
     #[test]

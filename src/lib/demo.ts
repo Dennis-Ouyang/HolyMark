@@ -85,6 +85,9 @@ export const DEMO_FILES: Record<string, string> = {
   [`${DEMO_ROOT}/README.md`]: "# 写作约定\n\n正文按章拆成单独文件，参考文献维护在 references.bib。\n",
 };
 export const DEMO_START = `${DEMO_ROOT}/正文/03 研究设计.md`;
+/** 工作区以外的一个文件：浏览器预览里用 __hm.openExternal(DEMO_OUTSIDE) 试「单独打开一个文件」 */
+export const DEMO_OUTSIDE = "/演示/下载/会议纪要.md";
+DEMO_FILES[DEMO_OUTSIDE] = "# 会议纪要\n\n11 月 25 日，讨论第三章的修改。\n\n- [ ] 补充招募渠道\n- [ ] 重画图 3-1\n";
 
 /** 演示用的图片：一张小柱状图（SVG），浏览器预览里点开能看放大效果 */
 const bars = [6, 9, 8, 7, 8, 6, 4];

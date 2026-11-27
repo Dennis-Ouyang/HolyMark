@@ -154,3 +154,7 @@
 .navarrows .ib.sm { height: 24px; min-width: 24px; padding: 0; border-radius: 6px; color: var(--fg-3); }
 .navarrows .ib.sm:hover:not(:disabled) { color: var(--fg); }
 .navarrows .ib.sm:disabled { opacity: .35; }
+
+/* ---------- 单独打开的文件：左栏下面「打开所在文件夹」 ---------- */
+.tn.single-open { margin-bottom: 4px; color: var(--fg-3); }
+.tn.single-open:hover { color: var(--fg); }

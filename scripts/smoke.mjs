@@ -235,6 +235,43 @@ step("N4 文内跳转：锚点链接、找不到的提示、跨文件、返回�
   if (!t.endsWith("见[这里](#样本与数据")) throw new Error("锚点补全不对：" + t.slice(-20));
   await page.evaluate(() => { const v = window.__hm.view(); const s = v.state.doc.toString(); const i = s.lastIndexOf("\n\n见[这里]"); v.dispatch({ changes: { from: i, to: s.length } }); });
 });
+step("N1 单独打开一个文件、只看不改不存版本、改了才存、打开所在文件夹后版本还在", async (page) => {
+  const OUT = "/演示/下载/会议纪要.md";
+  const vkey = "holymark-demo-versions:" + OUT;
+  // 工作区里：打开不存版本，改一个字才存起点
+  await page.click(".tree .tn[data-path*='02 文献综述']");
+  await page.waitForTimeout(400);
+  const k2 = "holymark-demo-versions:/演示/毕业论文/正文/02 文献综述.md";
+  if (await page.evaluate((k) => localStorage.getItem(k), k2)) throw new Error("只打开没改就存了版本");
+  await page.evaluate(() => { const v = window.__hm.view(); v.focus(); v.dispatch({ changes: { from: v.state.doc.length, insert: "补" } }); });
+  await page.waitForTimeout(1000);
+  if (!(await page.evaluate((k) => localStorage.getItem(k), k2))) throw new Error("改了以后没有存起点版本");
+  await page.evaluate(() => { const v = window.__hm.view(); v.dispatch({ changes: { from: v.state.doc.length - 1, to: v.state.doc.length } }); });
+  // 单独打开：左栏只有这一个文件，默认阅读模式
+  await page.evaluate((p) => window.__hm.openExternal(p), OUT);
+  await page.waitForTimeout(500);
+  if ((await page.textContent(".side .folder .fname")) !== "单个文件") throw new Error("左栏不是单个文件");
+  if ((await page.$$(".tree .tn")).length !== 1) throw new Error("左栏应该只有这一个文件");
+  if (!(await page.$(".cm-editor.hm-reading"))) throw new Error("从外部打开没有默认用阅读模式");
+  if (await page.evaluate((k) => localStorage.getItem(k), vkey)) throw new Error("只看不改就存了版本");
+  // 改一个字以后版本能用
+  await page.click("button[aria-label='阅读模式']");
+  await page.evaluate(() => { const v = window.__hm.view(); v.focus(); v.dispatch({ changes: { from: v.state.doc.length, insert: "- [ ] 改一个字\n" } }); });
+  await page.waitForTimeout(1000);
+  await menu(page, "panel_versions");
+  await page.waitForSelector(".ver");
+  // 打开所在文件夹：之前的版本都还在
+  await page.click(".tn.single-open");
+  await page.waitForTimeout(500);
+  if ((await page.textContent(".side .folder .fname")) !== "下载") throw new Error("没有把所在文件夹当工作区打开");
+  await page.waitForSelector(".ver");
+  await menu(page, "panel_outline");
+  // 回到演示文件夹
+  await page.evaluate(() => window.__hm.openExternal("/演示/毕业论文/正文/03 研究设计.md"));
+  await page.waitForTimeout(300);
+  await page.goto(page.url());
+  await page.waitForFunction(() => window.__hm?.view?.()?.state.doc.length > 100);
+});
 
 async function run(theme) {
   const browser = await chromium.launch();

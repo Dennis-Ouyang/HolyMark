@@ -19,6 +19,10 @@ use versions::{Meta, Source, Store};
 #[derive(Default)]
 struct Inner {
     root: Option<PathBuf>,
+    /// 单独打开的文件（从访达 / 资源管理器双击、不在当前工作区里）：只读这一个文件，只监听它
+    single: Option<PathBuf>,
+    /// 应用自己的数据目录，单独打开的文件的版本存在这里
+    data_dir: Option<PathBuf>,
     /// 编辑器自己最近写入的内容，用来区分外部修改。键用 key() 统一过斜杠方向
     written: HashMap<String, String>,
     merge_ms: u64,
@@ -56,6 +60,45 @@ fn rel(root: &Path, p: &Path) -> String {
     p.strip_prefix(root).unwrap_or(p).to_string_lossy().replace('\\', "/")
 }
 
+/// 单独打开的文件的版本库：应用数据目录下，按文件的绝对路径分开记（键就是绝对路径）
+fn single_store(data_dir: &Path) -> Store {
+    Store::at(data_dir.join("single-file-versions"))
+}
+
+/// 这个文件的版本存在哪个版本库、用什么键：工作区里的用 .holymark/ 和相对路径；单独打开的用应用数据目录和绝对路径
+fn locate(i: &Inner, p: &Path) -> Option<(Store, String)> {
+    if let Some(root) = &i.root {
+        if p.starts_with(root) {
+            return Some((Store::new(root), rel(root, p)));
+        }
+    }
+    if let (Some(single), Some(data)) = (&i.single, &i.data_dir) {
+        if key(single) == key(p) {
+            return Some((single_store(data), key(p)));
+        }
+    }
+    None
+}
+
+/// 文件被外部程序写过：先给编辑器里最后保存的状态留一个自动版本，再记外部写入的版本，通知前端
+fn on_external_write(inner: &Arc<Mutex<Inner>>, handle: &tauri::AppHandle, p: &Path) {
+    let Ok(now) = std::fs::read_to_string(p) else { return };
+    let (prev, merge, loc) = {
+        let i = inner.lock().unwrap();
+        (i.written.get(&key(p)).cloned(), i.merge_ms, locate(&i, p))
+    };
+    if prev.as_deref() == Some(now.as_str()) {
+        return; // 编辑器自己写的
+    }
+    let Some((store, file)) = loc else { return };
+    if let Some(prev) = prev {
+        let _ = store.save(&file, &prev, Source::Auto, None, None, merge);
+    }
+    let version = store.save(&file, &now, Source::External, None, None, merge).ok().flatten();
+    inner.lock().unwrap().written.insert(key(p), now);
+    let _ = handle.emit("external-change", ExternalChange { path: slash(p), version });
+}
+
 #[derive(Serialize, Clone)]
 struct ExternalChange {
     path: String,
@@ -73,6 +116,7 @@ fn open_folder(app: tauri::AppHandle, state: State<AppState>, root: String) -> R
     {
         let mut i = state.inner.lock().unwrap();
         i.root = Some(rootp.clone());
+        i.single = None;
         i.written.clear();
         if i.merge_ms == 0 {
             i.merge_ms = 5000;
@@ -89,24 +133,7 @@ fn open_folder(app: tauri::AppHandle, state: State<AppState>, root: String) -> R
             if p.extension().and_then(|e| e.to_str()) != Some("md") || p.components().any(|c| c.as_os_str() == ".holymark") {
                 continue;
             }
-            let Ok(now) = std::fs::read_to_string(&p) else { continue };
-            let (root, prev, merge) = {
-                let i = inner.lock().unwrap();
-                (i.root.clone(), i.written.get(&key(&p)).cloned(), i.merge_ms)
-            };
-            let Some(root) = root else { continue };
-            if prev.as_deref() == Some(now.as_str()) {
-                continue; // 编辑器自己写的
-            }
-            let store = Store::new(&root);
-            let file = rel(&root, &p);
-            // 外部写入前，编辑器里最后保存的状态先留一个自动版本，保证能回到改动前
-            if let Some(prev) = prev {
-                let _ = store.save(&file, &prev, Source::Auto, None, None, merge);
-            }
-            let version = store.save(&file, &now, Source::External, None, None, merge).ok().flatten();
-            inner.lock().unwrap().written.insert(key(&p), now);
-            let _ = handle.emit("external-change", ExternalChange { path: slash(&p), version });
+            on_external_write(&inner, &handle, &p);
         }
     })
     .map_err(err)?;
@@ -121,7 +148,54 @@ fn close_folder(state: State<AppState>) {
     *state.watcher.lock().unwrap() = None;
     let mut i = state.inner.lock().unwrap();
     i.root = None;
+    i.single = None;
     i.written.clear();
+}
+
+/// 单独打开一个文件（不在当前工作区里）：不扫描目录树，不在那个文件夹里写任何东西。
+/// 只监听这个文件：监听它所在的目录（很多程序保存时先写临时文件再改名），但只处理这一个文件。
+#[tauri::command]
+fn open_single(app: tauri::AppHandle, state: State<AppState>, path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if !p.is_file() {
+        return Err("找不到这个文件".into());
+    }
+    let dir = p.parent().ok_or("没有上一级文件夹")?.to_path_buf();
+    {
+        let mut i = state.inner.lock().unwrap();
+        i.root = None;
+        i.single = Some(p.clone());
+        i.written.clear();
+        if i.merge_ms == 0 {
+            i.merge_ms = 5000;
+        }
+    }
+    let inner = state.inner.clone();
+    let handle = app.clone();
+    let target = key(&p);
+    let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        let Ok(ev) = res else { return };
+        if !(ev.kind.is_modify() || ev.kind.is_create()) {
+            return;
+        }
+        for q in ev.paths {
+            if key(&q) == target {
+                on_external_write(&inner, &handle, &q);
+            }
+        }
+    })
+    .map_err(err)?;
+    w.watch(&dir, RecursiveMode::NonRecursive).map_err(err)?;
+    *state.watcher.lock().unwrap() = Some(w);
+    Ok(())
+}
+
+/// 单独打开的文件改用「所在文件夹」作工作区：之前的版本搬进那个文件夹的 .holymark/（没有版本就什么都不写）
+#[tauri::command]
+fn adopt_single(state: State<AppState>, path: String, root: String) -> Result<usize, String> {
+    let data = state.inner.lock().unwrap().data_dir.clone().ok_or("找不到应用数据目录")?;
+    let (p, r) = (PathBuf::from(&path), PathBuf::from(&root));
+    Store::new(&r).import(&single_store(&data), &key(&p), &rel(&r, &p)).map_err(err)
 }
 
 #[tauri::command]
@@ -146,8 +220,8 @@ fn write_text(state: State<AppState>, path: String, content: String) -> Result<(
 
 fn store_for(state: &State<AppState>, path: &str) -> Result<(Store, String, u64), String> {
     let i = state.inner.lock().unwrap();
-    let root = i.root.clone().ok_or("还没有打开文件夹")?;
-    Ok((Store::new(&root), rel(&root, Path::new(path)), i.merge_ms))
+    let (store, file) = locate(&i, Path::new(path)).ok_or("还没有打开文件夹")?;
+    Ok((store, file, i.merge_ms))
 }
 
 #[tauri::command]
@@ -524,6 +598,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(state)
         .setup(|app| {
+            {
+                use tauri::Manager;
+                let dir = app.path().app_data_dir().ok();
+                app.state::<AppState>().inner.lock().unwrap().data_dir = dir;
+            }
             // macOS 用原生菜单栏；Windows 上窗口没有系统标题栏，菜单里的命令在功能区、⌘K 和快捷键里都有
             #[cfg(target_os = "macos")]
             {
@@ -558,6 +637,8 @@ pub fn run() {
             reveal,
             open_path,
             open_url,
+            open_single,
+            adopt_single,
             create_dir,
             rename_path,
             duplicate_path,
