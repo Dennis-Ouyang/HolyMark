@@ -19,6 +19,7 @@ import { SearchPanel } from "./components/Search";
 import { InsertFile, InsertPick, linkFor } from "./components/InsertFile";
 import { baseName, dirOf, isInside, isMarkdown, join, normalize, relative, stripMd, toPosix } from "./lib/paths";
 import { MidName } from "./components/MidName";
+import { sortTree } from "./lib/sortTree";
 import { isMac, isWindows, kbd, keyName } from "./lib/platform";
 import { menuIdFor } from "./lib/shortcuts";
 import { ExportDialog } from "./components/ExportDialog";
@@ -33,6 +34,29 @@ const customFrame = isTauri && isWindows;
 function flatten(nodes: TreeNode[]): TreeNode[] { return nodes.flatMap((n) => (n.dir ? flatten(n.children) : [n])); }
 /** 侧栏里显示的路径：太长时只留后半段 */
 function shortPath(p: string) { return p.length > 38 ? "…" + p.slice(-37) : p; }
+
+/**
+ * 侧栏宽度的拖拽线（H9）：拖的时候直接改 CSS 变量（不重画整个应用），松手后记进设置；双击恢复默认宽度。
+ */
+function Resizer({ side, value, min, max, def, onChange }: { side: "left" | "right"; value: number; min: number; max: number; def: number; onChange: (w: number) => void }) {
+  const down = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const app = (e.currentTarget as HTMLElement).closest<HTMLElement>(".app")!;
+    const x0 = e.clientX;
+    let w = value;
+    app.classList.add("resizing");
+    const move = (ev: MouseEvent) => {
+      w = Math.round(Math.max(min, Math.min(max, value + (side === "left" ? ev.clientX - x0 : x0 - ev.clientX))));
+      app.style.setProperty(side === "left" ? "--sw0" : "--pw0", w + "px");
+    };
+    const up = () => { removeEventListener("mousemove", move); removeEventListener("mouseup", up); app.classList.remove("resizing"); onChange(w); };
+    addEventListener("mousemove", move);
+    addEventListener("mouseup", up);
+  };
+  return <div className={"resizer " + side} role="separator" aria-orientation="vertical" aria-label="拖动调整宽度，双击恢复默认" title="拖动调整宽度，双击恢复默认"
+    onMouseDown={down} onDoubleClick={() => onChange(def)} />;
+}
 
 /** 开始页：没有打开文件夹（或文件夹里还没有文稿）时显示 */
 function Welcome({ hasRoot, recent, onOpen, onNew, onRecent }: { hasRoot: boolean; recent: string[]; onOpen: () => void; onNew: () => void; onRecent: (f: string) => void }) {
@@ -157,7 +181,7 @@ export default function App() {
   async function openFolder(dir: string, file?: string) {
     if (!be) return;
     const t = await be.openFolder(dir);
-    setRoot(dir); setTree(t); update({ lastFolder: dir, recentFolders: [dir, ...s.recentFolders.filter((x) => x !== dir)].slice(0, 8) });
+    setRoot(dir); setTree(sortTree(t)); update({ lastFolder: dir, recentFolders: [dir, ...s.recentFolders.filter((x) => x !== dir)].slice(0, 8) });
     const files = flatten(t);
     const bibs = files.filter((f) => f.name.endsWith(".bib"));
     const entries = (await Promise.all(bibs.map((b) => be.readText(b.path).catch(() => "")))).flatMap(parseBib);
@@ -182,7 +206,7 @@ export default function App() {
     if (!be || !root) { await chooseFolder(); return; }
     const prev = live.current.path;
     const p = await be.createFile(dir ?? (path ? dirOf(path) : root), "未命名");
-    setTree(await be.listTree(root));
+    setTree(sortTree(await be.listTree(root)));
     await openFile(p);
     undoable(`已新建「${baseName(p)}」`, async () => { await be.trashPath(p); if (prev) await openFile(prev); });
     const v = view();
@@ -644,7 +668,7 @@ export default function App() {
   const resolveImage = useCallback((src: string) => preview.resolveImage(src), [preview]);
 
   /* ---------- 文件管理（右键菜单）---------- */
-  const refreshTree = async () => { if (be && root) setTree(await be.listTree(root)); };
+  const refreshTree = async () => { if (be && root) setTree(sortTree(await be.listTree(root))); };
   /** 先做后撤销：提示条右边带「撤销」 */
   const undoable = (msg: string, undo: () => Promise<unknown>) => say(msg, "success", { label: "撤销", run: async () => {
     try { await undo(); await refreshTree(); } catch (e) { say(String(e).replace(/^Error:\s*/, ""), "error"); }
@@ -699,7 +723,7 @@ export default function App() {
       const hold = await be.stageDelete(node.path);
       staged.current.set(hold, window.setTimeout(() => commitStaged(hold), 6500));
       const t = await be.listTree(root);
-      setTree(t);
+      setTree(sortTree(t));
       if (inside) {
         const next = flatten(t).find((f) => /\.(md|markdown)$/i.test(f.name));
         if (next) await openFile(next.path);
@@ -735,8 +759,8 @@ export default function App() {
   function treeMenuItems(node: TreeNode | null): MenuEntry[] {
     const reveal = isWindows ? "在资源管理器中显示" : "在访达中显示";
     if (!node) return [
-      { label: "新建文稿", icon: "doc", hint: "⌘N", run: () => newFile(root) },
-      { label: "新建文件夹", icon: "folder", run: () => newFolder(root) },
+      { label: "新建文稿", icon: "filePlus", hint: "⌘N", run: () => newFile(root) },
+      { label: "新建文件夹", icon: "folderPlus", run: () => newFolder(root) },
       { sep: true },
       { label: reveal, icon: "open", run: () => be?.reveal(root) },
       { label: "刷新", icon: "reset", run: refreshTree },
@@ -744,8 +768,11 @@ export default function App() {
     const md = /\.(md|markdown)$/i.test(node.name);
     return [
       ...(node.dir ? [
-        { label: "新建文稿", icon: "doc", run: () => newFile(node.path) },
-        { label: "新建文件夹", icon: "folder", run: () => newFolder(node.path) },
+        { label: "新建文稿", icon: "filePlus", run: () => newFile(node.path) },
+        { label: "新建文件夹", icon: "folderPlus", run: () => newFolder(node.path) },
+        { sep: true } as MenuEntry,
+      ] : !md ? [
+        { label: "用默认程序打开", icon: "external", run: () => be?.openPath(node.path).catch(() => say("没能打开这个文件", "error")) },
         { sep: true } as MenuEntry,
       ] : md ? [
         { label: "打开", icon: "doc", run: () => openFile(node.path) },
@@ -754,7 +781,7 @@ export default function App() {
       ] : []),
       { label: "重命名", icon: "edit", run: () => setRenaming(node.path) },
       ...(!node.dir ? [{ label: "创建副本", icon: "copy", run: async () => { if (!be) return; const c = await be.duplicatePath(node.path); await refreshTree(); undoable(`已创建「${baseName(c)}」`, () => be.trashPath(c)); } }] : []),
-      { label: "移到…", icon: "folder", run: () => { setMoving(node); setDlg("move"); } },
+      { label: "移动到…", icon: "moveTo", run: () => { setMoving(node); setDlg("move"); } },
       { sep: true },
       { label: reveal, icon: "open", run: () => be?.reveal(node.path) },
       { label: "拷贝路径", icon: "link", run: () => { navigator.clipboard?.writeText(node.path).then(() => say("已拷贝路径", "success")).catch(() => {}); } },
@@ -954,7 +981,7 @@ export default function App() {
   const crumbs = path && root ? relative(root, path).split("/").map((c, i, a) => (i === a.length - 1 ? stripMd(c) : c)) : [];
 
   return (
-    <div className={appCls} style={editorStyle}>
+    <div className={appCls} style={{ ...editorStyle, "--sw0": `${s.sideWidth}px`, "--pw0": `${s.panelWidth}px` } as React.CSSProperties}>
       <header className="titlebar" data-tauri-drag-region>
         <button className="ib" title={kbd("切换侧栏 ⌘\\")} aria-label="切换侧栏" onClick={() => setShowSide(!showSide)}><Icon name="side" /></button>
         <div className="crumbs" data-tauri-drag-region>
@@ -971,14 +998,18 @@ export default function App() {
         {customFrame && <WindowControls />}
       </header>
 
+      {showSide && !focus && <Resizer side="left" value={s.sideWidth} min={180} max={420} def={248} onChange={(w) => update({ sideWidth: w })} />}
+      {showPanel && path && !focus && <Resizer side="right" value={s.panelWidth} min={240} max={520} def={300} onChange={(w) => update({ panelWidth: w })} />}
       <aside className="side" aria-label="文件夹">
         <div className="side-in">
-          <div className="side-scroll">
+          <div className="side-scroll" onScroll={(e) => e.currentTarget.classList.toggle("scrolled", e.currentTarget.scrollTop > 2)}>
             <button className={"folder" + (root ? "" : " none")} onClick={(e) => { if (!root) { chooseFolder(); return; } const r = e.currentTarget.getBoundingClientRect(); setFolderMenu({ x: r.left + 8, y: r.bottom }); }} title={root ? root : "选择一个放稿件的文件夹"} aria-haspopup="menu">
-              <span className="fname">{root ? baseName(root) : "打开文件夹"}</span>
+              <span className="fname">{root ? baseName(root) : "打开文件夹"}{root && <Icon name="chev" size={12} />}</span>
               <span className="fpath">{root ? shortPath(root) : "选择一个放稿件的文件夹"}</span>
             </button>
-            <FileTree nodes={tree} current={path} onOpen={openFile} showAll={s.showAllFiles} renaming={renaming} onRename={renameDone}
+            <FileTree nodes={tree} root={root} current={path} onOpen={openFile} showAll={s.showAllFiles} renaming={renaming} onRename={renameDone}
+              onOpenOther={(p) => be?.openPath(p).catch(() => say(be?.isDemo ? "浏览器预览里打不开本机文件" : "没能打开这个文件", be?.isDemo ? "info" : "error"))}
+              onStartRename={setRenaming} onDelete={(n) => trash(n)} onMove={(n, d) => moveTo(n, d)}
               onMenu={(e, node) => { if (root) setTreeMenu({ x: e.clientX, y: e.clientY, node }); }} />
           </div>
           {/* Mac 上设置在菜单栏「HolyMark → 设置…」里，左下角不再放 */}

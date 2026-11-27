@@ -28,6 +28,9 @@ export interface Settings {
   ribbonCollapsed: boolean;
   /** 文件树里是否显示 Markdown 以外的文件 */
   showAllFiles: boolean;
+  /** 左栏、右栏的宽度（可拖动调整，双击拖拽线恢复默认） */
+  sideWidth: number;
+  panelWidth: number;
   /** 批注署名：加批注时写在作者处，导出到 Word 后对方看到的名字。空着时第一次启动用系统用户名填上 */
   noteAuthor: string;
   /** 设置格式版本，用来迁移旧的默认值 */
@@ -59,6 +62,8 @@ export const DEFAULTS: Settings = {
   ribbonCollapsed: false,
   showAllFiles: false,
   noteAuthor: "",
+  sideWidth: 248,
+  panelWidth: 300,
   v: 2,
 };
 

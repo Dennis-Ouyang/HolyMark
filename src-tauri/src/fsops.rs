@@ -30,9 +30,10 @@ pub fn slash(p: &Path) -> String {
 pub fn tree(root: &Path) -> std::io::Result<Vec<Node>> {
     let mut out = Vec::new();
     let mut entries: Vec<_> = fs::read_dir(root)?.filter_map(|e| e.ok()).collect();
-    entries.sort_by_key(|e| {
-        let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        (!is_dir, e.file_name().to_string_lossy().to_lowercase())
+    entries.sort_by(|a, b| {
+        let da = a.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let db = b.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        db.cmp(&da).then_with(|| natural_cmp(&a.file_name().to_string_lossy(), &b.file_name().to_string_lossy()))
     });
     for e in entries {
         let name = e.file_name().to_string_lossy().to_string();
@@ -45,6 +46,47 @@ pub fn tree(root: &Path) -> std::io::Result<Vec<Node>> {
         out.push(Node { name, path: slash(&path), dir, children });
     }
     Ok(out)
+}
+
+/// 文件树的排序：去掉扩展名后按「数字感知」的自然顺序比较（「第2章」在「第10章」前面，
+/// 「未命名」在「未命名 2」前面），不分大小写；主名相同再比扩展名。前端 lib/sortTree.ts 用同样的规则。
+pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    let split = |s: &str| -> (String, String) {
+        match s.rfind('.') {
+            Some(i) if i > 0 => (s[..i].to_lowercase(), s[i + 1..].to_lowercase()),
+            _ => (s.to_lowercase(), String::new()),
+        }
+    };
+    let (sa, ea) = split(a);
+    let (sb, eb) = split(b);
+    chunks_cmp(&sa, &sb).then_with(|| chunks_cmp(&ea, &eb))
+}
+
+/// 按「数字段 / 非数字段」逐段比较：数字段按数值，非数字段按字符
+fn chunks_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let (mut x, mut y) = (a.chars().peekable(), b.chars().peekable());
+    loop {
+        match (x.peek().copied(), y.peek().copied()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(c), Some(d)) if c.is_ascii_digit() && d.is_ascii_digit() => {
+                let mut na = String::new();
+                while let Some(&c) = x.peek() { if c.is_ascii_digit() { na.push(c); x.next(); } else { break; } }
+                let mut nb = String::new();
+                while let Some(&d) = y.peek() { if d.is_ascii_digit() { nb.push(d); y.next(); } else { break; } }
+                let (ta, tb) = (na.trim_start_matches('0'), nb.trim_start_matches('0'));
+                let o = ta.len().cmp(&tb.len()).then_with(|| ta.cmp(tb)).then_with(|| na.len().cmp(&nb.len()));
+                if o != Ordering::Equal { return o; }
+            }
+            (Some(c), Some(d)) => {
+                // 空格、标点排在文字前面（「未命名」<「未命名 2」由长度保证）
+                if c != d { return c.cmp(&d); }
+                x.next(); y.next();
+            }
+        }
+    }
 }
 
 /// 目录里不重名的路径：重名时在名字后面加「 2」「 3」……（扩展名保留）
@@ -192,6 +234,13 @@ mod tests {
             assert_eq!(slash(Path::new("a\\b.md")), "a\\b.md");
             assert_eq!(slash(&p), "a/b.md");
         }
+    }
+
+    #[test]
+    fn natural_order() {
+        let mut v = vec!["未命名 10.md", "未命名.md", "未命名 2.md", "第10章.md", "第2章.md", "第1章.md", "a.md", "B.md"];
+        v.sort_by(|a, b| natural_cmp(a, b));
+        assert_eq!(v, vec!["a.md", "B.md", "未命名.md", "未命名 2.md", "未命名 10.md", "第1章.md", "第2章.md", "第10章.md"]);
     }
 
     #[test]
