@@ -40,9 +40,9 @@ class ToggleWidget extends WidgetType {
     wrap.className = "hm-fold-anchor";
     wrap.setAttribute("aria-hidden", "true");
     const b = document.createElement("span");
-    b.className = "hm-fold" + (this.folded ? " folded" : "");
+    b.className = "hm-sfold" + (this.folded ? " folded" : "");
     b.title = this.folded ? "展开这一节" : "折叠这一节";
-    b.innerHTML = iconSvg("chev", 14);
+    b.innerHTML = iconSvg("chev", 12);
     b.addEventListener("mousedown", (e) => {
       e.preventDefault(); e.stopPropagation();
       const r = sectionRange(view.state, view.posAtDOM(wrap));

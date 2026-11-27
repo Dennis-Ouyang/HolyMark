@@ -39,8 +39,10 @@ export interface HandleTarget {
   drag?: HandleDrag;
   /** 菜单的名字（无障碍） */
   label: string;
-  /** 把手离 anchor 多远（像素，默认 6）；列表留出折叠小三角的位置 */
+  /** 把手离 anchor（或 outer 时离正文栏左边）多远（像素，默认 6）；留出折叠小三角的位置 */
   gap?: number;
+  /** 对齐到正文栏最左侧的统一列（顶层块用，避免和标题折叠号、引用左边框打架） */
+  outer?: boolean;
 }
 
 export interface HandleProvider {
@@ -103,8 +105,9 @@ class HandleView {
       const c = this.view.coordsAtPos(t.anchor, 1);
       if (!c) { this.hide(); return; }
       const lh = c.bottom - c.top;
-      this.el.style.left = Math.round(c.left - HANDLE_W - (t.gap ?? 6)) + "px";
-      this.el.style.top = Math.round(c.top + (lh - 22) / 2) + "px";
+      const baseLeft = t.outer ? r.left : c.left;
+      this.el.style.left = Math.round(baseLeft - HANDLE_W - (t.gap ?? 6)) + "px";
+      this.el.style.top = Math.round(lh > 48 ? c.top + 8 : c.top + (lh - 22) / 2) + "px";
       this.el.setAttribute("aria-label", t.label);
       this.el.classList.add("on");
     });

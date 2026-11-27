@@ -173,7 +173,8 @@ const provider: HandleProvider = {
     const t: HandleTarget = {
       key: b.from,
       anchor: b.from,
-      gap: 8,
+      gap: 22,
+      outer: true,
       label: TYPE_NAME[b.type],
       menu: () => { const k = blockIndexAt(view.state, b.from, true); return k >= 0 ? menuFor(view, k) : []; },
       drag: {

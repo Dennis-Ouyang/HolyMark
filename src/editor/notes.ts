@@ -57,7 +57,7 @@ export function fmtNoteDate(d: string) {
   return +m[1] === new Date().getFullYear() ? `${+m[2]}月${+m[3]}日` : `${m[1]}年${+m[2]}月${+m[3]}日`;
 }
 
-interface Bubble { tip: Tooltip & { pos: number }; from: number; focus: boolean }
+interface Bubble { tip: Tooltip & { pos: number }; from: number; focus: boolean; freshEmpty?: boolean }
 
 /** 去掉批注标记、原文保留：解决和删除都是这样，提示条带「撤销」 */
 export function removeNote(view: EditorView, c: NoteHit, msg: string) {
@@ -66,11 +66,23 @@ export function removeNote(view: EditorView, c: NoteHit, msg: string) {
   notify(msg, "success", { label: "撤销", run: () => { undo(view); view.focus(); } });
 }
 
+/** 静默撤掉刚新建但没写任何内容的批注，恢复原文 */
+function discardEmpty(view: EditorView, pos: number) {
+  const c = noteAt(view.state, pos);
+  if (c && !c.text.trim()) {
+    view.dispatch({ changes: { from: c.from, to: c.to, insert: c.quote }, selection: EditorSelection.cursor(c.from + c.quote.length), effects: closeNote.of(null), userEvent: "delete.note" });
+    return true;
+  }
+  return false;
+}
+
 function bubble(n: NoteHit, focus: boolean): Bubble {
   const mine = !n.who || n.who === noteAuthor();
+  const freshEmpty = focus && !n.text.trim();
   const b: Bubble = {
     from: n.from,
     focus,
+    freshEmpty,
     tip: {
       pos: n.quoteFrom,
       above: false,
@@ -90,6 +102,7 @@ function bubble(n: NoteHit, focus: boolean): Bubble {
         /** 当前这条批注在文档里的位置（文档改过以后重新找） */
         const current = () => noteAt(view.state, b.tip.pos);
         let body: HTMLElement;
+        let saved = !freshEmpty;
         if (mine) {
           // 自己的批注：看起来就是一段文字，点一下就能改，只在聚焦时出现细的聚焦框
           const ta = document.createElement("textarea");
@@ -101,6 +114,7 @@ function bubble(n: NoteHit, focus: boolean): Bubble {
           const fit = () => { ta.style.height = "auto"; ta.style.height = Math.min(200, ta.scrollHeight) + "px"; };
           ta.addEventListener("input", () => {
             fit();
+            if (ta.value.trim()) saved = true;
             const c = current(); if (!c) return;
             const raw = view.state.sliceDoc(c.bodyFrom, c.bodyTo);
             const pre = raw.slice(0, parseBody(raw).prefix);
@@ -108,11 +122,17 @@ function bubble(n: NoteHit, focus: boolean): Bubble {
           });
           ta.addEventListener("keydown", (e) => {
             if (e.isComposing) return;
-            if ((e.key === "Enter" && !e.shiftKey) || e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(); }
+            if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelOrDone(); }
+            else if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); done(); }
           });
           ta.addEventListener("blur", () => setTimeout(() => {
             const a = document.activeElement;
-            if (!a?.closest(".hm-notebub, .hm-hmenu") && !view.hasFocus) view.dispatch({ effects: closeNote.of(null) });
+            if (a?.closest(".hm-notebub, .hm-hmenu")) return;
+            // 新建批注没写任何内容就点别处：不创建空批注，恢复原文
+            if (!saved || (freshEmpty && !ta.value.trim())) {
+              if (discardEmpty(view, b.tip.pos)) return;
+            }
+            if (!view.hasFocus) view.dispatch({ effects: closeNote.of(null) });
           }, 0));
           body = ta;
           requestAnimationFrame(fit);
@@ -147,7 +167,20 @@ function bubble(n: NoteHit, focus: boolean): Bubble {
         if (mine) foot.append(more);
         foot.append(resolve);
         dom.append(head, body, foot);
+        const cancelOrDone = () => {
+          if (freshEmpty && body instanceof HTMLTextAreaElement && !body.value.trim()) {
+            discardEmpty(view, b.tip.pos);
+            view.focus();
+            return;
+          }
+          done();
+        };
         const done = () => {
+          if (freshEmpty && body instanceof HTMLTextAreaElement && !body.value.trim()) {
+            discardEmpty(view, b.tip.pos);
+            view.focus();
+            return;
+          }
           const c = current();
           view.focus();
           // 光标放到批注后面：浮层收起来，接着写正文

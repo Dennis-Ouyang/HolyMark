@@ -122,7 +122,7 @@ step("N12 公式补全、Tab 跳参数、符号面板", async (page) => {
 });
 step("N6 按章节折叠：小三角、占位、命令、跳进去自动展开、目录收起", async (page) => {
   await page.hover(".hm-h2 >> nth=0");
-  await page.dispatchEvent(".hm-h2 >> nth=0 >> .hm-fold", "mousedown");
+  await page.dispatchEvent(".hm-h2 >> nth=0 >> .hm-sfold", "mousedown");
   await page.waitForSelector(".hm-folded");
   const t = await page.textContent(".hm-folded");
   if (!/^已折叠 [\d,]+ 字$/.test(t)) throw new Error("占位文字不对：" + t);
@@ -276,7 +276,7 @@ step("N1 单独打开一个文件、只看不改不存版本、改了才存、�
   // 单独打开：左栏只有这一个文件，默认阅读模式
   await page.evaluate((p) => window.__hm.openExternal(p), OUT);
   await page.waitForTimeout(500);
-  if ((await page.textContent(".side .folder .fname")) !== "单个文件") throw new Error("左栏不是单个文件");
+  if ((await page.textContent(".side .folder .fname")) !== "会议纪要") throw new Error("左栏没有显示单个文件的文件名");
   if ((await page.$$(".tree .tn")).length !== 1) throw new Error("左栏应该只有这一个文件");
   if (!(await page.$(".cm-editor.hm-reading"))) throw new Error("从外部打开没有默认用阅读模式");
   if (await page.evaluate((k) => localStorage.getItem(k), vkey)) throw new Error("只看不改就存了版本");

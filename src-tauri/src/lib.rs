@@ -740,7 +740,7 @@ mod doi_net {
     }
 }
 
-/// 用 DOI 取 BibTeX：向 https://doi.org/<DOI> 请求，Accept: application/x-bibtex，跟着重定向走（到 Crossref 等）。
+/// 用 DOI 取 BibTeX：先向 https://doi.org/<DOI> 请求，失败或未返回 BibTeX 时自动回退到 Crossref。
 /// 在 Rust 端发请求，避开浏览器的跨域限制，也不用放宽前端的 CSP。只在用户主动操作时调用
 #[tauri::command]
 async fn fetch_doi(doi: String) -> Result<String, String> {
@@ -753,21 +753,34 @@ async fn fetch_doi(doi: String) -> Result<String, String> {
         b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' | b'(' | b')' | b';' | b':' => (b as char).to_string(),
         _ => format!("%{:02X}", b),
     }).collect();
-    let url = format!("https://doi.org/{path}");
+    let urls = [
+        format!("https://doi.org/{path}"),
+        format!("https://api.crossref.org/works/{path}/transform/application/x-bibtex"),
+    ];
     tauri::async_runtime::spawn_blocking(move || {
-        match doi_agent().get(&url).set("Accept", "application/x-bibtex; charset=utf-8").set("User-Agent", "HolyMark (Markdown editor)").call() {
-            Ok(r) => {
-                let body = r.into_string().map_err(|e| format!("读取返回内容失败：{e}"))?;
-                if body.trim_start().starts_with('@') {
-                    Ok(body)
-                } else {
-                    Err("没有拿到 BibTeX，这个 DOI 的注册机构可能不提供".into())
+        let agent = doi_agent();
+        let mut last_err = String::from("没有拿到 BibTeX，这个 DOI 的注册机构可能不提供");
+        for url in urls {
+            match agent
+                .get(&url)
+                .set("Accept", "application/x-bibtex")
+                .set("User-Agent", "HolyMark (https://github.com/Dennis-Ouyang/HolyMark)")
+                .call()
+            {
+                Ok(r) => {
+                    if let Ok(body) = r.into_string() {
+                        if body.trim_start().starts_with('@') {
+                            return Ok(body);
+                        }
+                    }
+                    last_err = "没有拿到 BibTeX，这个 DOI 的注册机构可能不提供".into();
                 }
+                Err(ureq::Error::Status(404, _)) => last_err = "找不到这个 DOI".into(),
+                Err(ureq::Error::Status(code, _)) => last_err = format!("文献服务返回了错误（{code}）"),
+                Err(ureq::Error::Transport(_)) => last_err = "连不上 doi.org，检查一下网络或代理设置后再试".into(),
             }
-            Err(ureq::Error::Status(404, _)) => Err("找不到这个 DOI".into()),
-            Err(ureq::Error::Status(code, _)) => Err(format!("doi.org 返回了错误（{code}）")),
-            Err(ureq::Error::Transport(_)) => Err("连不上 doi.org，检查一下网络后再试".into()),
         }
+        Err(last_err)
     })
     .await
     .map_err(err)?

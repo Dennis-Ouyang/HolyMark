@@ -18,6 +18,8 @@ export interface FileHooks {
   /** 绝对路径 → 能直接 fetch 的地址（读 PDF 用） */
   url: (abs: string) => string;
   preview: (abs: string) => Promise<FilePreview>;
+  /** 在正文区打开只读预览（或打开 Markdown 文稿），不提供时退回 open */
+  view?: (abs: string) => void;
   open: (abs: string) => void;
   reveal: (abs: string) => void;
   /** 找不到文件时「重新选择…」：让用户选一个文件，返回要写进链接的地址（相对路径），取消时 null */
@@ -134,11 +136,12 @@ export class FileCardWidget extends WidgetType {
       else if (preview) drawSheet(sheet, preview, this.label || name.replace(/\.[^.]+$/, ""));
       else sheet.append(el("div", "fc-skel"), el("div", "fc-skel short"));
     };
+    const openFullPreview = () => { hidePeek(); (this.hooks.view ?? this.hooks.open)(abs); };
     const reveal = btn("folder", isWindows ? "在资源管理器中显示" : "在访达中显示", () => this.hooks.reveal(abs));
     const more = btn("dots", "更多", (b) => {
       b.classList.add("open");
       openDomMenu(b, [
-        ...(preview ? [{ label: "预览", icon: "eye", run: () => showPeek(badge, fillPeek, kind) }] : []),
+        ...(!bar.classList.contains("missing") ? [{ label: "预览", icon: "eye", run: openFullPreview }] : []),
         { label: "显示源代码", icon: "source", run: toSource },
       ], { label: "文件", onClose: () => b.classList.remove("open") });
     });
@@ -149,8 +152,12 @@ export class FileCardWidget extends WidgetType {
     let t = 0;
     badge.addEventListener("mouseenter", () => { if (preview) t = window.setTimeout(() => showPeek(badge, fillPeek, kind), 400); });
     badge.addEventListener("mouseleave", () => { clearTimeout(t); hidePeek(); });
-    bar.addEventListener("mousedown", (e) => { if (!(e.target as HTMLElement).closest(".fb-btn")) e.preventDefault(); });
-    bar.addEventListener("dblclick", (e) => { if ((e.target as HTMLElement).closest(".fb-btn")) return; hidePeek(); this.hooks.open(abs); });
+    bar.addEventListener("mousedown", (e) => { if (!(e.target as HTMLElement).closest(".fb-btn, .fb-txtbtn")) e.preventDefault(); });
+    bar.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest(".fb-btn, .fb-txtbtn") || bar.classList.contains("missing")) return;
+      openFullPreview();
+    });
+    bar.addEventListener("dblclick", (e) => { if ((e.target as HTMLElement).closest(".fb-btn, .fb-txtbtn") || bar.classList.contains("missing")) return; hidePeek(); this.hooks.open(abs); });
 
     // 异步填内容：只放一条最有用的信息，类型由图标表达
     cachedPreview(abs, this.hooks.preview).then(async (p) => {

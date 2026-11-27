@@ -67,7 +67,7 @@ function clickHandlers(hooks: () => ReadingHooks | undefined) {
     down = (e: MouseEvent) => {
       if (!isReading(this.view.state) || e.button !== 0) return;
       const t = e.target as HTMLElement;
-      if (t.closest(".hm-check, .hm-fold, .hm-folded")) return; // 待办勾选框、折叠照常
+      if (t.closest(".hm-check, .hm-sfold, .hm-lfold, .hm-folded")) return; // 待办勾选框、折叠照常
       const img = t.closest<HTMLImageElement>(".hm-figure img, .hm-img-inline img");
       if (img) {
         e.preventDefault(); e.stopPropagation();
@@ -101,7 +101,7 @@ function clickHandlers(hooks: () => ReadingHooks | undefined) {
     };
     dbl = (e: MouseEvent) => {
       if (!isReading(this.view.state)) return;
-      if ((e.target as HTMLElement).closest(".hm-check, .hm-fold, .hm-folded")) return;
+      if ((e.target as HTMLElement).closest(".hm-check, .hm-sfold, .hm-lfold, .hm-folded")) return;
       const pos = this.view.posAtCoords({ x: e.clientX, y: e.clientY });
       e.preventDefault(); e.stopPropagation();
       hooks()?.exitAt(pos ?? this.view.state.selection.main.head);

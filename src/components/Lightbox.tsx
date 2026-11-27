@@ -30,24 +30,27 @@ export function Lightbox({ images, index, origin, onClose }: { images: LightImag
     return () => removeEventListener("keydown", f, true);
   });
 
-  /** 第一张：从正文里原来的位置长出来 */
+  /** 第一张：直接从正文里的原位置完整缩放出来（不叠加从透明淡入，免得前半程看不见） */
   const grow = () => {
     const el = img.current;
     if (!el || grown.current) return;
-    grown.current = true;
-    if (!origin || reduced()) return;
+    if (!origin || reduced()) { grown.current = true; return; }
     const f = el.getBoundingClientRect();
     if (!f.width || !f.height) return;
-    const sx = origin.width / f.width, sy = origin.height / f.height;
+    grown.current = true;
+    const dx = Math.round(origin.left + origin.width / 2 - (f.left + f.width / 2));
+    const dy = Math.round(origin.top + origin.height / 2 - (f.top + f.height / 2));
+    const s = Math.min(origin.width / f.width, origin.height / f.height);
     el.style.transition = "none";
-    el.style.transformOrigin = "0 0";
-    el.style.transform = `translate(${Math.round(origin.left - f.left)}px, ${Math.round(origin.top - f.top)}px) scale(${sx}, ${sy})`;
+    el.style.transformOrigin = "center center";
+    el.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${s})`;
     void el.offsetWidth;
-    el.style.transition = "transform 260ms var(--ease)";
-    el.style.transform = "";
-    window.setTimeout(() => { if (el) { el.style.transition = ""; el.style.transformOrigin = ""; } }, 280);
+    el.style.transition = "transform 240ms var(--ease)";
+    el.style.transform = "translate3d(0, 0, 0) scale(1)";
+    window.setTimeout(() => { if (el) { el.style.transition = ""; el.style.transform = ""; el.style.transformOrigin = ""; } }, 260);
   };
-  useLayoutEffect(() => { if (img.current?.complete) grow(); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => { if (img.current?.complete) grow(); }, []);
 
   const onWheel = (e: React.WheelEvent) => {
     const el = img.current; if (!el) return;
@@ -72,7 +75,8 @@ export function Lightbox({ images, index, origin, onClose }: { images: LightImag
       onMouseUp={() => { drag.current = null; }}>
       <figure>
         <div className="lb-stage">
-          <img ref={img} key={cur.url} src={cur.url} alt={cur.alt} draggable={false} onLoad={grow} className={z.s > 1 ? "zoomed" : ""}
+          <img ref={img} key={cur.url} src={cur.url} alt={cur.alt} draggable={false} onLoad={grow}
+            className={(z.s > 1 ? "zoomed" : "") + (origin && !grown.current ? " from-origin" : "")}
             style={z.s !== 1 ? { translate: `${z.x}px ${z.y}px`, scale: String(z.s) } : undefined} />
         </div>
         <figcaption>

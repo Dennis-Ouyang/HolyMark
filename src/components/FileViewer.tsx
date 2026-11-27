@@ -18,9 +18,10 @@ import { MidName } from "./MidName";
 import { Segmented } from "./Segmented";
 
 /** onOpenDefault：用默认程序打开（App 统一处理，后端拦下时提示条显示后端给的原因） */
-export function FileViewer({ be, path, onInfo, say, onOpenDefault }: { be: Backend; path: string; onInfo: (i: FilePreview | null) => void; say: (m: string) => void; onOpenDefault: (path: string) => void }) {
+export function FileViewer({ be, path, onInfo, say, onOpenDefault, onClose }: { be: Backend; path: string; onInfo: (i: FilePreview | null) => void; say: (m: string) => void; onOpenDefault: (path: string) => void; onClose?: () => void }) {
   const kind = previewKind(path);
   const name = baseName(path);
+  const legacyOffice = /\.(doc|xls|ppt)$/i.test(path);
   const [pdfBar, setPdfBar] = useState<React.ReactNode>(null);
   const openDefault = () => onOpenDefault(path);
   const reveal = () => { if (be.isDemo) say("浏览器预览里不能打开文件所在的位置，桌面版会在" + (isWindows ? "资源管理器" : "访达") + "里显示"); else be.reveal(path).catch(() => {}); };
@@ -35,6 +36,7 @@ export function FileViewer({ be, path, onInfo, say, onOpenDefault }: { be: Backe
   return (
     <div className="fviewer" role="region" aria-label={`预览 ${name}`}>
       <div className="fv-head">
+        {onClose && <button className="btn sm" onClick={onClose} title="返回当前文稿"><Icon name="back" size={13} />返回编辑</button>}
         <FileBadge name={name} />
         <b className="fv-name"><MidName name={name} tail={8} /></b>
         <span className="tag">只读预览</span>
@@ -47,7 +49,7 @@ export function FileViewer({ be, path, onInfo, say, onOpenDefault }: { be: Backe
         {kind === "pdf" && <PdfView url={be.fileUrl(path)} setBar={setPdfBar} onPages={onPages} />}
         {kind === "image" && <ImageView url={be.fileUrl(path)} name={name} />}
         {kind === "office" && <OfficeView be={be} path={path} />}
-        {kind === "other" && <div className="fv-empty"><Icon name="file" size={22} /><p>这种文件不能在 HolyMark 里预览</p><button className="btn" onClick={openDefault}>用默认程序打开</button></div>}
+        {kind === "other" && <div className="fv-empty"><Icon name="file" size={22} /><p>{legacyOffice ? "旧版 Office 格式（.doc / .xls / .ppt）暂不支持内置预览，请用默认程序打开" : "这种文件不能在 HolyMark 里预览"}</p><button className="btn" onClick={openDefault}>用默认程序打开</button></div>}
       </div>
     </div>
   );

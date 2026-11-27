@@ -336,26 +336,27 @@ body.tree-dragging, body.tree-dragging * { cursor: grabbing !important; user-sel
 /* 编号右对齐在槽里；位数多了往左伸，不换行，文字起点不动 */
 .hm-lm.num { display: inline-flex; justify-content: flex-end; white-space: nowrap; padding-right: .4em; box-sizing: border-box; color: var(--fg-2); font-variant-numeric: tabular-nums; vertical-align: top; }
 .hm-lm.task .hm-check { margin: 0; }
-/* 父项的折叠小三角：悬停这一行才出现，折叠后一直显示 */
-.hm-fold { position: absolute; left: -15px; top: 50%; display: grid; place-items: center; width: 14px; height: 14px; margin-top: -7px; border-radius: 4px; color: var(--fg-3); opacity: 0; cursor: pointer; transition: opacity 120ms, background-color 120ms; }
-.hm-fold svg { transition: rotate 160ms var(--ease); }
-.hm-fold.open svg { rotate: 90deg; }
-.hm-li:hover .hm-fold, .hm-fold.closed { opacity: 1; }
-.hm-fold:hover { background: var(--hover); color: var(--fg); }
+/* 父项的折叠小三角：悬停这一行才出现，折叠后一直显示；放在槽外侧 -18px，不和列表符号或块把手重叠 */
+.hm-lfold { position: absolute; left: -18px; top: 50%; display: grid; place-items: center; width: 16px; height: 16px; margin-top: -8px; border-radius: 4px; color: var(--fg-3); opacity: 0; cursor: pointer; transition: opacity 120ms, background-color 120ms, color 120ms; }
+.hm-lfold svg { transition: rotate 160ms var(--ease); }
+.hm-lfold.open svg { rotate: 90deg; }
+.hm-li:hover .hm-lfold, .hm-lfold.closed { opacity: 1; }
+.hm-lfold:hover { background: var(--hover); color: var(--fg); }
 /* 显示源代码时：原样显示符号和缩进 */
 .hm-list-src { text-align: left !important; }
-/* 待办：圆形勾选框；勾上后填满主题色、对勾弹一下，文字变浅加删除线（只划文字本身） */
-.hm-check { position: relative; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; margin-right: .5em; vertical-align: -2.5px; cursor: pointer; text-indent: 0;
-  box-shadow: inset 0 0 0 1.5px var(--fg-3); background: var(--bg); color: var(--accent); transition: background 160ms, box-shadow 160ms; }
+/* 待办：16×16 圆形勾选框；未完成父项里是居中浅色扇形，全部完成时填满主题色并平滑浮现居中对勾 */
+.hm-check { position: relative; display: inline-grid; place-items: center; width: 16px; height: 16px; padding: 0; border-radius: 50%; margin-right: .5em; vertical-align: -3px; cursor: pointer; text-indent: 0;
+  box-shadow: inset 0 0 0 1.5px var(--fg-3); background: var(--bg); color: var(--accent); transition: background-color 180ms var(--ease), box-shadow 180ms var(--ease), color 180ms var(--ease); }
 .hm-check:hover { box-shadow: inset 0 0 0 1.5px var(--accent); background: var(--accent-soft); }
+.hm-check.partial { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, var(--fg-3)); }
 .hm-check.done, .hm-check.on { background: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); color: #fff; }
 /* 半选：父项勾了、叶子没全勾（外部程序改的） */
 .hm-check.mixed { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); color: var(--accent-fg); }
-/* 父项没全部完成：框里画进度环 */
-.hm-check.partial svg { display: block; }
-.hm-check svg { display: block; }
-.hm-check.done svg, .hm-check.on svg { animation: checkIn 260ms var(--ease); }
-@keyframes checkIn { 0% { transform: scale(.5); opacity: 0; } 70% { transform: scale(1.04); opacity: 1; } 100% { transform: none; } }
+.hm-check svg { display: block; pointer-events: none; }
+.hm-check .hm-pie { position: absolute; inset: 0; width: 16px; height: 16px; color: color-mix(in srgb, var(--accent) 34%, transparent); }
+.hm-check .hm-pie circle { transition: stroke-dasharray 240ms var(--ease); }
+.hm-check.done svg, .hm-check.on svg { animation: checkIn 180ms var(--ease); }
+@keyframes checkIn { from { transform: scale(.72); opacity: 0; } to { transform: none; opacity: 1; } }
 .hm-done { color: var(--fg-3); text-decoration: line-through; text-decoration-color: var(--line-2); }
 /* 父项后面的计数：安静的小字，全部完成时用主题色 */
 .hm-task-count { display: inline-block; margin-left: .5em; font: 12px/1 var(--f-ui); color: var(--fg-3); font-variant-numeric: tabular-nums; text-indent: 0; }
@@ -387,28 +388,26 @@ body.hm-dragging, body.hm-dragging * { cursor: grabbing !important; user-select:
 /* 页边圆点：零宽的占位，圆点绝对定位到这一行右侧的页边，纵向停在原文那一行 */
 .hm-noteline { position: relative; }
 .hm-notemark { display: inline; }
-.hm-notemark i { position: absolute; right: -22px; width: 6px; height: 6px; margin-top: calc(var(--ed-lh) * .5em - 3px); border-radius: 50%; background: var(--note-fg); opacity: .75; cursor: pointer; transition: opacity 120ms, scale 120ms; }
+.hm-notemark i { position: absolute; right: -22px; width: 6px; height: 6px; padding: 0; margin-top: calc(var(--ed-lh) * .5em - 3px); border-radius: 50%; background: var(--note-fg); opacity: .75; cursor: pointer; transition: opacity 120ms, scale 120ms; }
 .hm-notemark i:hover { opacity: 1; scale: 1.3; }
-.hm-notemark i.empty { background: transparent; box-shadow: inset 0 0 0 1.5px var(--note-fg); }
+.hm-notemark i.blank { background: transparent; box-shadow: inset 0 0 0 1.5px var(--note-fg); }
 .hm-notemark i.dup { display: none; }
 /* 同一行有几条批注：一个小圆角块里写数字 */
 .hm-notemark i[data-n] { right: -26px; width: auto; min-width: 14px; height: 14px; padding: 0 3px; margin-top: calc(var(--ed-lh) * .5em - 7px); border-radius: 7px; background: var(--accent-soft); color: var(--accent-fg); opacity: 1; font: 600 10px/14px var(--f-ui); font-style: normal; text-align: center; }
 .hm-notemark i[data-n]::after { content: attr(data-n); }
 .hm-notemark i[data-n]:hover { scale: 1.1; }
 .hm-math-inline { cursor: pointer; }
-/* 块的间距（F3）：正文块之间一档 --gap-text（就是段距，空行收窄后的高度）；
-   图表、公式、图片、表格这类媒体块在段距之外上下再各留 --gap-media。
-   块的左右边缘（F2）：可见边缘对齐正文栏，不向外伸出；悬停时的描边也画在正文栏上。 */
+/* 块的间距（F3）：CodeMirror 量块级 widget 高度时不计垂直 margin，所以块级 widget 必须用 padding 留空、禁止垂直 margin，保证点击定位零漂移 */
 .hm-editor { --gap-text: calc(var(--ed-lh) * .45em); --gap-media: 8px; }
-.hm-math-block, .hm-mermaid, .hm-table, .hm-figure { margin: var(--gap-media) 0; }
+.hm-math-block, .hm-mermaid, .hm-table, .hm-figure { margin: 0; }
 .hm-math-block, .hm-mermaid { cursor: pointer; border-radius: 8px; box-shadow: inset 0 0 0 1px transparent; transition: box-shadow 120ms; }
 .hm-math-block:hover, .hm-mermaid:hover { box-shadow: inset 0 0 0 1px var(--line-2); }
-.hm-math-block { padding: 10px 0; overflow-x: auto; text-align: center; }
-.hm-mermaid { padding: 12px 0; display: flex; justify-content: center; color: var(--fg-3); font: 12px var(--f-ui); }
+.hm-math-block { padding: 16px 0; overflow-x: auto; text-align: center; }
+.hm-mermaid { padding: 18px 0; display: flex; justify-content: center; color: var(--fg-3); font: 12px var(--f-ui); }
 .hm-mermaid svg { max-width: 100%; height: auto; }
 /* 表格：默认三线表（顶线、表头下线、底线，没有竖线），和导出的 Typst 模板一致；
-   工具条在表格内部的右上角，悬停或编辑时出现，不盖住上一行正文（B13） */
-.hm-table { position: relative; cursor: default; }
+   工具条通过 sticky 固定在当前可视区右上角，跨页长表编辑底部单元格时也能随时看到 */
+.hm-table { position: relative; padding: var(--gap-media) 0; cursor: default; }
 .hm-tscroll { overflow-x: auto; }
 .hm-table table.fixed { table-layout: fixed; }
 .hm-table th { position: relative; }
@@ -416,9 +415,12 @@ body.hm-dragging, body.hm-dragging * { cursor: grabbing !important; user-select:
 .hm-colgrip::after { content: ""; position: absolute; top: 4px; bottom: 4px; left: 3px; width: 1px; background: var(--accent); opacity: 0; transition: opacity 120ms; }
 .hm-table th:hover .hm-colgrip::after, .hm-table.resizing .hm-colgrip::after { opacity: .7; }
 .hm-table.resizing, .hm-table.resizing * { cursor: col-resize !important; -webkit-user-select: none; user-select: none; }
-.hm-ttools, .hm-itools { position: absolute; top: 6px; right: 6px; display: flex; align-items: center; gap: 1px; padding: 2px; border-radius: 8px; background: var(--raised); box-shadow: var(--float); white-space: nowrap;
+.hm-ttools-stick { position: sticky; top: 8px; z-index: 4; display: flex; justify-content: flex-end; height: 0; overflow: visible; padding-right: 6px; pointer-events: none; }
+.hm-ttools { position: relative; top: 6px; height: fit-content; display: flex; align-items: center; gap: 1px; padding: 2px; border-radius: 8px; background: var(--raised); box-shadow: var(--float); white-space: nowrap;
+  opacity: 0; translate: 0 -2px; pointer-events: none; transition: opacity 120ms, translate 120ms var(--ease); z-index: 4; font-family: var(--f-ui); }
+.hm-itools { position: absolute; top: 6px; right: 6px; display: flex; align-items: center; gap: 1px; padding: 2px; border-radius: 8px; background: var(--raised); box-shadow: var(--float); white-space: nowrap;
   opacity: 0; translate: 0 -2px; pointer-events: none; transition: opacity 120ms, translate 120ms var(--ease); z-index: 3; font-family: var(--f-ui); }
-.hm-table:hover .hm-ttools, .hm-table.editing .hm-ttools { opacity: 1; translate: 0 0; pointer-events: auto; }
+.hm-table:hover .hm-ttools, .hm-table.editing .hm-ttools, .hm-ttools:focus-within, .hm-ttools:has(.open) { opacity: 1; translate: 0 0; pointer-events: auto; }
 .hm-ttools button, .hm-itools button { height: 26px; min-width: 26px; padding: 0 6px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: var(--fg-2); font-size: 12px; }
 .hm-ttools button:hover, .hm-ttools button.open, .hm-itools button:hover { background: var(--hover); color: var(--fg); }
 .hm-ttools button.on, .hm-itools button.on { background: var(--accent-soft); color: var(--accent-fg); }
@@ -430,8 +432,8 @@ body.hm-dragging, body.hm-dragging * { cursor: grabbing !important; user-select:
 .hm-table th { font-weight: 600; border-bottom: 1px solid var(--fg-3); }
 .hm-table td.num { font-variant-numeric: tabular-nums; }
 .hm-table td:hover, .hm-table th:hover { background: var(--hover); }
-/* 属性区（F7）：默认收成一行安静的「属性」，点开才显示全部；键名显示中文；分隔用间距，不用虚线 */
-.hm-props { margin: 0 0 var(--gap-text); font: 12px/1.6 var(--f-ui); color: var(--fg-3); }
+/* 属性区（F7）：默认收成一行安静的「属性」，点开才显示全部；用 padding 留白避免 CodeMirror heightMap 漂移 */
+.hm-props { margin: 0; padding: 0 0 var(--gap-text); font: 12px/1.6 var(--f-ui); color: var(--fg-3); }
 .hp-h { display: flex; align-items: center; gap: 6px; max-width: 100%; height: 24px; margin-left: -6px; padding: 0 6px; border-radius: 6px; color: var(--fg-3); font-size: 12px; transition: background-color 120ms, color 120ms; }
 .hp-h:hover { background: var(--hover); color: var(--fg-2); }
 .hp-h .tri { display: grid; place-items: center; transition: rotate 160ms var(--ease); }
@@ -444,9 +446,8 @@ body.hm-dragging, body.hm-dragging * { cursor: grabbing !important; user-select:
 .hm-props dt { color: var(--fg-3); }
 .hm-props dt.sub { padding-left: 1em; }
 .hm-props dd { margin: 0; color: var(--fg); overflow-wrap: anywhere; cursor: text; }
-/* 图片：选中框、缩放手柄、工具条都贴着图片本身（.hm-imgbox），不是整栏宽（B12）；
-   默认宽度就是正文栏宽，左右不再缩进 */
-.hm-figure { position: relative; text-align: center; cursor: pointer; }
+/* 图片：选中框、缩放手柄、工具条都贴着图片本身（.hm-imgbox），不是整栏宽（B12）；用 padding 留白避免高度漂移 */
+.hm-figure { position: relative; padding: var(--gap-media) 0; text-align: center; cursor: pointer; }
 .hm-imgbox { position: relative; display: inline-block; max-width: 100%; vertical-align: top; border-radius: 6px; }
 .hm-imgbox img { display: block; width: 100%; max-width: 100%; border-radius: 6px; box-shadow: 0 0 0 1px var(--line); }
 .hm-figure:hover .hm-imgbox { box-shadow: 0 0 0 1px var(--line-2); }
@@ -466,14 +467,16 @@ body.hm-dragging, body.hm-dragging * { cursor: grabbing !important; user-select:
 .hm-code { font-family: var(--mono); font-size: .82rem; line-height: 1.7; background: var(--code-bg); padding: 0 14px !important; text-align: left !important; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
 .hm-code-first { border-top: 1px solid var(--line); border-radius: 8px 8px 0 0; padding-top: 6px !important; }
 .hm-code-last { border-bottom: 1px solid var(--line); border-radius: 0 0 8px 8px; padding-bottom: 6px !important; }
-/* 代码块：开头、结尾的 ``` 行收窄成同样高度，上下对称；语言写在右上角，悬停代码块时出现「复制」（F6） */
+/* 代码块：开头、结尾的 ``` 行收窄成同样高度，上下对称；语言贴右边，悬停代码块时平滑让位给复制图标按钮（F6） */
 .hm-code.hm-code-fence { height: 8px; padding-top: 0 !important; padding-bottom: 0 !important; line-height: 8px; font-size: 0; }
-.hm-code-head { position: absolute; top: 6px; right: 8px; display: flex; align-items: center; gap: 6px; z-index: 1; }
+.hm-code-head { position: absolute; top: 6px; right: 10px; display: flex; align-items: center; height: 24px; z-index: 1; }
 .hm-code-first { position: relative; }
-.hm-code-lang { font: 11px/20px var(--f-ui); color: var(--fg-3); }
-.hm-code-copy { height: 22px; padding: 0 8px; border-radius: 5px; font: 12px var(--f-ui); color: var(--fg-2); background: var(--raised); box-shadow: inset 0 0 0 .5px var(--line-2); opacity: 0; transition: opacity 120ms, background-color 120ms; }
+.hm-code-lang { font: 11px/24px var(--f-ui); color: var(--fg-3); transition: transform 140ms var(--ease); }
+.hm-code-copy { position: absolute; right: 0; top: 0; width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border-radius: 6px; color: var(--fg-2); background: var(--raised); box-shadow: inset 0 0 0 .5px var(--line-2); opacity: 0; pointer-events: none; transition: opacity 120ms, background-color 120ms, color 120ms; }
 .hm-code-copy:hover { color: var(--fg); background: var(--hover); }
-.hm-code-first:is(:hover, :has(~ .hm-code:hover):not(:has(~ .hm-code-last ~ .hm-code:hover))) .hm-code-copy { opacity: 1; }
+.hm-code-copy.copied { opacity: 1; pointer-events: auto; color: var(--ins); }
+.hm-code-first:is(:hover, :has(~ .hm-code:hover):not(:has(~ .hm-code-last ~ .hm-code:hover))) .hm-code-copy { opacity: 1; pointer-events: auto; }
+.hm-code-first:is(:hover, :has(~ .hm-code:hover):not(:has(~ .hm-code-last ~ .hm-code:hover))) .hm-code-lang, .hm-code-head:has(.copied) .hm-code-lang { transform: translateX(-30px); }
 
 /* ---------- 浮动工具栏 ---------- */
 .ftb { position: absolute; z-index: 25; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 9px; background: var(--raised); box-shadow: var(--pop); animation: ftbIn 150ms var(--ease); transform-origin: 50% 100%; }
@@ -1019,7 +1022,7 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .xopts .pair.spread { justify-content: space-between; cursor: pointer; }
 
 /* ---------- 插入文件链接（⌘⇧C）：光标处的小浮层 ---------- */
-.ins { position: fixed; z-index: 60; width: 420px; max-width: calc(100vw - 16px); border-radius: 10px; background: var(--raised); box-shadow: var(--pop); overflow: hidden; font-size: 13px;
+.ins { position: fixed; z-index: 70; width: 420px; max-width: calc(100vw - 16px); border-radius: 10px; background: var(--raised); box-shadow: var(--pop); overflow: hidden; font-size: 13px;
   animation: insIn 140ms var(--ease); }
 .ins.up { animation-name: insInUp; }
 @keyframes insIn { from { opacity: 0; transform: translateY(-4px) scale(.97); } to { opacity: 1; transform: none; } }
@@ -1057,6 +1060,10 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 /* 从访达拖文件进正文时，标出松手后插入的位置 */
 .dropcaret { position: fixed; z-index: 80; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--accent); pointer-events: none; box-shadow: 0 0 0 3px var(--accent-soft); }
 
+/* 统一浮层层级：CodeMirror 内置 tooltip 默认 z-index: 300，会盖住公式符号面板（65）、插入浮层（70）和弹出菜单（96） */
+.hm-editor .cm-tooltip { z-index: 45 !important; }
+.hm-editor .cm-tooltip.hm-slash, .hm-editor .cm-tooltip.cm-tooltip-autocomplete { z-index: 55 !important; }
+
 /* ---------- 公式：编辑时下方浮出的预览 / 报错 ---------- */
 .cm-tooltip.cm-tooltip-arrow:has(> .hm-mathtip) { border: 0; background: transparent; }
 .hm-mathtip { padding: 8px 14px; border-radius: 9px; background: var(--raised); box-shadow: var(--pop); color: var(--fg); font-size: 15px; max-width: min(560px, 80vw); overflow-x: auto; animation: tipIn 120ms var(--ease); transform-origin: 50% 0; }
@@ -1086,12 +1093,12 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .mid { display: inline-flex; min-width: 0; max-width: 100%; white-space: nowrap; vertical-align: bottom; }
 .mid .a { overflow: hidden; text-overflow: ellipsis; min-width: 1.5em; }
 .mid .b { flex: none; }
-/* 文件横条：图标左边缘对齐正文栏，悬停时底色向外伸出 8px（不改变对齐） */
-.hm-fbar { position: relative; display: flex; align-items: center; gap: 10px; min-height: 54px; margin: 0 -8px; padding: 0 8px; border-radius: 10px; font-family: var(--f-ui); text-align: left; cursor: default; transition: background-color 120ms; }
+/* 文件横条：图标左边缘对齐正文栏，悬停时底色向外伸出 8px（不改变对齐）；单击直接在正文区打开预览 */
+.hm-fbar { position: relative; display: flex; align-items: center; gap: 10px; min-height: 54px; margin: 0 -8px; padding: 0 8px; border-radius: 10px; font-family: var(--f-ui); text-align: left; cursor: pointer; transition: background-color 120ms; }
+.hm-fbar.missing { cursor: default; }
 .hm-fbar:hover { background: var(--hover); }
-.hm-fbar + .hm-gap + .hm-fbar { margin-top: -4px; }
 /* 列表里的文件横条：和这一项的文字左对齐 */
-.hm-fbar.inl { display: inline-flex; width: calc(100% + 16px); margin: 2px -8px; vertical-align: top; text-indent: 0; }
+.hm-fbar.inl { display: inline-flex; width: calc(100% + 16px); margin: 0 -8px; padding: 2px 8px; vertical-align: top; text-indent: 0; }
 .fb-ic { display: grid; flex: none; }
 .fb-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .fb-t { display: flex; min-width: 0; font-size: 14px; font-weight: 500; line-height: 20px; color: var(--fg); }
@@ -1107,7 +1114,7 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .hm-fbar.missing .fb-t { color: var(--fg-2); }
 .hm-fbar.missing .fb-s { color: var(--del); }
 /* 纸张预览浮层：悬停图标时出现 */
-.hm-fpeek { --fc: var(--fg-3); position: fixed; z-index: 60; width: 300px; border-radius: 12px; overflow: hidden; background: var(--raised); box-shadow: var(--float); pointer-events: none; animation: selIn 140ms var(--ease); }
+.hm-fpeek { --fc: var(--fg-3); position: fixed; z-index: 65; width: 300px; border-radius: 12px; overflow: hidden; background: var(--raised); box-shadow: var(--float); pointer-events: none; animation: selIn 140ms var(--ease); }
 .hm-fpeek.k-word { --fc: #2F6FEB; } .hm-fpeek.k-excel { --fc: var(--ins); } .hm-fpeek.k-ppt { --fc: #E8590C; } .hm-fpeek.k-pdf { --fc: var(--del); } .hm-fpeek.k-md { --fc: var(--accent); }
 .hm-fpeek.leaving { animation: fadeOut 100ms var(--ease-out) forwards; }
 .fc-stage { position: relative; height: 190px; overflow: hidden; background: color-mix(in srgb, var(--fc) 9%, var(--surface)); }
@@ -1154,8 +1161,14 @@ textarea.nb-tx::placeholder { color: var(--fg-3); }
 
 .fbwrap { display: inline-grid; flex: none; }
 .dhint { margin-right: auto; font-size: 12px; color: var(--fg-3); }
-.vrevert { display: flex; align-items: center; gap: 6px; width: 100%; margin: 0 0 8px; padding: 7px 8px; border-radius: 7px; font-size: 13px; color: var(--fg-2); text-align: left; transition: background-color 120ms, color 120ms; }
-.vrevert:hover { background: var(--hover); color: var(--fg); }
+/* 右栏版本页顶部操作区 */
+.vacts { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; }
+.vacts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.vacts-row .btn { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 28px; padding: 0 8px; font-size: 12px; white-space: nowrap; }
+.btn.primary-soft { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-fg); }
+.btn.primary-soft:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.vrevert { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--raised); font-size: 12px; color: var(--fg-2); transition: background-color 120ms, color 120ms, border-color 120ms; }
+.vrevert:hover { background: var(--hover); border-color: var(--line-2); color: var(--fg); }
 /* 数字框就地说明（H27）：超出范围、不是数字时在框下面一行小字 */
 .numfield { position: relative; overflow: visible; }
 .numfield.invalid { border-color: var(--del); }

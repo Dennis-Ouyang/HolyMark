@@ -91,6 +91,7 @@ class MermaidWidget extends WidgetType {
       } catch {
         el.textContent = "Mermaid 语法有误，点击来修改";
       }
+      view.requestMeasure();
     });
     el.addEventListener("mousedown", (e) => focusAt(view, el, e, 11));
     return el;
@@ -165,7 +166,7 @@ class FrontMatterWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
-/** 代码块第一行（``` 那一行）：右上角写语言，悬停整个代码块时出现「复制」 */
+/** 代码块第一行（``` 那一行）：右上角贴边写语言，悬停整个代码块时出现复制图标按钮 */
 class CodeHeadWidget extends WidgetType {
   constructor(readonly lang: string, readonly code: string) { super(); }
   eq(o: CodeHeadWidget) { return o.lang === this.lang && o.code === this.code; }
@@ -178,11 +179,18 @@ class CodeHeadWidget extends WidgetType {
     const copy = document.createElement("button");
     copy.type = "button";
     copy.className = "hm-code-copy";
-    copy.textContent = "复制";
+    copy.title = "复制代码";
+    copy.setAttribute("aria-label", "复制代码");
+    copy.innerHTML = iconSvg("copy", 14);
     copy.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); });
     copy.addEventListener("click", (e) => {
       e.stopPropagation();
-      navigator.clipboard?.writeText(this.code).then(() => { copy.textContent = "已复制"; setTimeout(() => { copy.textContent = "复制"; }, 1200); }).catch(() => {});
+      navigator.clipboard?.writeText(this.code).then(() => {
+        copy.classList.add("copied");
+        copy.title = "已复制";
+        copy.innerHTML = iconSvg("check", 14);
+        setTimeout(() => { copy.classList.remove("copied"); copy.title = "复制代码"; copy.innerHTML = iconSvg("copy", 14); }, 1200);
+      }).catch(() => {});
     });
     el.append(lang, copy);
     return el;
@@ -213,7 +221,8 @@ class ImageWidget extends WidgetType {
     img.src = this.opts.resolveImage(this.src);
     img.alt = this.alt;
     img.draggable = false;
-    img.onerror = () => { el.classList.add("missing"); el.setAttribute("data-missing", `找不到图片 ${this.src}`); };
+    img.onload = () => view.requestMeasure();
+    img.onerror = () => { el.classList.add("missing"); el.setAttribute("data-missing", `找不到图片 ${this.src}`); view.requestMeasure(); };
     // 块级图片包在一个贴着图片本身的盒子里：选中框、缩放手柄、工具条都贴着图片，不是整栏宽（B12）
     const box = document.createElement("span");
     box.className = this.block ? "hm-imgbox" : "";
@@ -307,7 +316,7 @@ class NoteMarkWidget extends WidgetType {
     const el = document.createElement("span");
     el.className = "hm-notemark";
     const dot = document.createElement("i");
-    dot.className = this.empty ? "empty" : "";
+    dot.className = this.empty ? "blank" : "";
     dot.title = "查看批注";
     dot.addEventListener("mousedown", (e) => {
       e.preventDefault();

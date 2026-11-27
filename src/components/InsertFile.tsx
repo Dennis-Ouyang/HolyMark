@@ -56,7 +56,7 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
   const qt = (bibMode ? q.slice(1) : q).trim().toLowerCase();
 
   // 粘贴或输入 DOI（@ 后面，或者直接粘一个 doi.org 链接）：先确认加到哪个 .bib，再联网
-  const doiHit = doi ? parseDoi(bibMode ? q.slice(1) : q) : null;
+  const doiHit = parseDoi(bibMode ? q.slice(1) : q);
   const view = useMemo(() => {
     if (doiHit && doi) {
       return { groups: [{ title: "用 DOI 生成文献条目", rows: doi.targets.map((target) => ({ kind: "doi", doi: doiHit, target }) as Row) }], more: 0, total: 0 };
@@ -131,7 +131,7 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
       <div className="ins-q">
         <Icon name={qt || bibMode ? "search" : "link"} size={15} />
         <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} aria-label="输入名字筛选文件"
-          placeholder={bib.length ? "插入文件链接，输入名字筛选；@ 插入文献" : "插入文件链接，输入名字筛选"} />
+          placeholder="输入名字筛选；@ 搜文献或粘贴 DOI" />
         {(qt || bibMode) && <span className="ins-n">{bibMode ? `${view.total} 条` : `${view.total} 个`}</span>}
       </div>
       <div className="ins-list" role="listbox">
@@ -159,11 +159,12 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
                 </button>
               );
             })}
-            {!g.rows.length && <div className="ins-empty">{bibMode ? (bib.length ? "没有匹配的文献" : "文件夹里没有 .bib 文献库") : qt ? "文件夹里没有叫这个名字的文件" : "这个文件夹里没有别的文件"}</div>}
+            {!g.rows.length && !(doiHit && !doi) && <div className="ins-empty">{bibMode ? (bib.length ? "没有匹配的文献；也可以直接粘贴 DOI 生成条目" : doi ? "文件夹里还没有 .bib 文献库。直接粘贴 DOI（如 10.1038/nature12373）按回车即可自动创建并添加" : "单独打开文件时无法读写文献库，请先点击左栏「打开所在文件夹」") : qt ? "文件夹里没有叫这个名字的文件" : "这个文件夹里没有别的文件"}</div>}
           </div>
         ))}
+        {doiHit && !doi && <div className="ins-empty">已识别 DOI（{doiHit}）。请先点击左栏「打开所在文件夹」，再自动创建 references.bib 并添加文献。</div>}
         {doiErr && <div className="ins-err" role="alert">{doiErr}</div>}
-        {doiHit && !doiErr && <div className="ins-more">回车后联网取这篇文献的 BibTeX，加进 .bib，在光标处插入引用</div>}
+        {doiHit && doi && !doiErr && <div className="ins-more">回车后联网取这篇文献的 BibTeX，加进 .bib，在光标处插入引用</div>}
         {view.more > 0 && <div className="ins-more">还有 {view.more} 个，继续输入缩小范围</div>}
       </div>
       <div className="ins-foot">

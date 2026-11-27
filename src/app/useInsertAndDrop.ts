@@ -39,20 +39,26 @@ export function useInsertAndDrop({ be, root, path, s, view, scroller, insertAtCu
 
   function openInsert(q?: string, atPos?: number) {
     const v = view(); if (!v || !path) return;
+    const init = typeof q === "string" ? q : undefined;
+    const pos = typeof atPos === "number" ? atPos : undefined;
     const c = v.coordsAtPos(v.state.selection.main.head);
     const r = c ?? (() => { const b = v.contentDOM.getBoundingClientRect(); return { left: b.left, top: b.top + 40, bottom: b.top + 60 }; })();
-    setInsertAt({ left: Math.round(r.left), top: Math.round(r.top), bottom: Math.round(r.bottom), q, atPos });
+    setInsertAt({ left: Math.round(r.left), top: Math.round(r.top), bottom: Math.round(r.bottom), q: init, atPos: pos });
   }
 
   function pickInsert(p: InsertPick) {
     const at = insertAt?.atPos;
     setInsertAt(null);
     if (p.kind === "bib") {
-      // 正文里打 @ 弹出的：把那个 @ 换成 [@key]
+      // 正文里打 @（或 [@）弹出的：把那个 @ 换成 [@key]，避免出现 [[@key]
       const v = view();
       if (v && at !== undefined && v.state.sliceDoc(at, at + 1) === "@") {
+        const hasOpen = at > 0 && v.state.sliceDoc(at - 1, at) === "[";
+        const from = hasOpen ? at - 1 : at;
+        let to = v.state.selection.main.head > at ? v.state.selection.main.head : at + 1;
+        if (hasOpen && v.state.sliceDoc(to, to + 1) === "]") to += 1;
         const t = `[@${p.key}]`;
-        v.dispatch({ changes: { from: at, to: v.state.selection.main.head > at ? v.state.selection.main.head : at + 1, insert: t }, selection: { anchor: at + t.length } });
+        v.dispatch({ changes: { from, to, insert: t }, selection: { anchor: from + t.length } });
         v.focus();
         return;
       }

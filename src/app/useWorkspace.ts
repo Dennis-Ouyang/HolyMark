@@ -441,9 +441,17 @@ export function useWorkspace(a: UseWorkspaceArgs) {
   /* ---------- 菜单项与选择面板列表 ---------- */
   function treeMenuItems(node: TreeNode | null): MenuEntry[] {
     const reveal = isWindows ? "在资源管理器中显示" : "在访达中显示";
+    const toggleAll: MenuEntry = {
+      label: "显示所有文件",
+      icon: s.showAllFiles ? "check" : "",
+      hint: s.showAllFiles ? "" : "当前仅 Markdown",
+      run: () => update({ showAllFiles: !s.showAllFiles }),
+    };
     if (!node) return [
       { label: "新建文稿", icon: "filePlus", hint: "⌘N", run: () => newFile(root) },
       { label: "新建文件夹", icon: "folderPlus", run: () => newFolder(root) },
+      { sep: true },
+      toggleAll,
       { sep: true },
       { label: reveal, icon: "open", run: () => be?.reveal(root) },
       { label: "刷新", icon: "reset", run: refreshTree },
@@ -471,6 +479,8 @@ export function useWorkspace(a: UseWorkspaceArgs) {
       { label: reveal, icon: "open", run: () => be?.reveal(node.path) },
       { label: "复制路径", icon: "link", run: () => { navigator.clipboard?.writeText(node.path).then(() => say("已复制路径", "success")).catch(() => {}); } },
       { sep: true },
+      toggleAll,
+      { sep: true },
       { label: `移到${trashName}`, icon: "trash", danger: true, run: () => trash(node) },
     ];
   }
@@ -481,6 +491,10 @@ export function useWorkspace(a: UseWorkspaceArgs) {
     { label: "打开其他文件夹…", icon: "folder", hint: "⌘O", run: chooseFolder },
     ...(root ? [
       { label: isWindows ? "在资源管理器中显示" : "在访达中显示", icon: "open", run: () => be?.reveal(root) },
+      { sep: true } as MenuEntry,
+      { head: "显示范围" } as MenuEntry,
+      { label: "仅 Markdown 文稿", icon: s.showAllFiles ? "" : "check", run: () => update({ showAllFiles: false }) },
+      { label: "所有文件", icon: s.showAllFiles ? "check" : "", run: () => update({ showAllFiles: true }) },
       { sep: true } as MenuEntry,
       // 排序方式（N18）：按名称 / 手动拖动
       { head: "排序方式" } as MenuEntry,

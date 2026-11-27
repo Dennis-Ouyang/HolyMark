@@ -104,15 +104,18 @@ export class TableWidget extends WidgetType {
 
     const wrap = document.createElement("div");
     wrap.className = "hm-table";
+    const stick = document.createElement("div");
+    stick.className = "hm-ttools-stick";
     const tools = document.createElement("div");
     tools.className = "hm-ttools";
     tools.setAttribute("role", "toolbar");
     tools.setAttribute("aria-label", "表格");
+    stick.appendChild(tools);
     const table = document.createElement("table");
     const scroll = document.createElement("div");
     scroll.className = "hm-tscroll";
     scroll.appendChild(table);
-    wrap.append(tools, scroll);
+    wrap.append(stick, scroll);
 
     // 工具条放在表格内部的右上角（悬停或编辑时出现），不再浮在上方盖住上一行正文
     const aligns: ["left" | "center" | "right", string, string][] = [["left", "alignLeft", "左对齐"], ["center", "alignCenter", "居中"], ["right", "alignRight", "右对齐"]];

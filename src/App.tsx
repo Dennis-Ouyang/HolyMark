@@ -32,7 +32,7 @@ import { useReading } from "./features/useReading";
 import { useRememberSpot, useSpotAutosave } from "./features/useRememberSpot";
 import { useNav } from "./features/useNav";
 import { FileInfo, FileViewer } from "./components/FileViewer";
-import type { FilePreview } from "./lib/filePreview";
+import { previewKind, type FilePreview } from "./lib/filePreview";
 import { addDoiEntry, doiTargets } from "./features/useDoi";
 import { FolderReplace } from "./components/FolderReplace";
 import { findAnchor } from "./lib/anchors";
@@ -212,7 +212,7 @@ export default function App() {
     be.openPath(abs).catch((e) => say(reason(e, "没能打开这个文件"), "error"));
   }
 
-  const fileHooksRef = useRef<{ open: (abs: string) => void; reveal: (abs: string) => void }>({ open: () => {}, reveal: () => {} });
+  const fileHooksRef = useRef<{ view: (abs: string) => void; open: (abs: string) => void; reveal: (abs: string) => void }>({ view: () => {}, open: () => {}, reveal: () => {} });
   const linkRef = useRef<LinkHooks>({ docPath: () => "", openUrl: () => {}, openFile: () => {}, jump: () => false });
 
   /** 编辑器的预览选项；docPath 是解析图片、文件链接用的文稿路径（正文用当前文稿，并排参考用参考的文件，N20） */
@@ -237,6 +237,7 @@ export default function App() {
       },
       url: (abs: string) => (be ? be.fileUrl(abs) : abs),
       preview: (abs: string) => (be ? be.filePreview(abs) : Promise.reject(new Error("no backend"))),
+      view: (abs: string) => fileHooksRef.current.view(abs),
       open: (abs: string) => fileHooksRef.current.open(abs),
       reveal: (abs: string) => fileHooksRef.current.reveal(abs),
       repick: async () => {
@@ -245,7 +246,7 @@ export default function App() {
         return p ? relative(dirOf(docPath()), p) : null;
       },
     },
-    onAtCite: (pos: number) => { if (!bibMap.size) return false; requestAnimationFrame(() => bridge.current.openInsert("@", pos)); return true; },
+    onAtCite: (pos: number) => { requestAnimationFrame(() => bridge.current.openInsert("@", pos)); return true; },
     // 打开链接只有一个入口（editor/links.ts 的 openLink）：编辑时 ⌘ 点击、阅读模式单击都走这里
     links: {
       docPath: () => live.current.path,
@@ -387,6 +388,11 @@ export default function App() {
   }
 
   fileHooksRef.current = {
+    view: (abs) => {
+      if (isMarkdown(abs)) openLinkedMarkdown(abs).catch(() => say("没能打开这个文件", "error"));
+      else if (previewKind(abs) !== "other") setViewing(abs);
+      else openOther(abs);
+    },
     open: (abs) => { if (isMarkdown(abs)) openLinkedMarkdown(abs).catch(() => say("没能打开这个文件", "error")); else openOther(abs); },
     reveal: (abs) => { be?.reveal(abs).catch(() => {}); },
   };
@@ -477,7 +483,7 @@ export default function App() {
         <div className="side-in">
           <div className="side-scroll" onScroll={(e) => e.currentTarget.classList.toggle("scrolled", e.currentTarget.scrollTop > 2)}>
             <button className={"folder" + (root || single ? "" : " none")} onClick={(e) => { if (!root && !single) { ws.chooseFolder(); return; } const r = e.currentTarget.getBoundingClientRect(); ws.setFolderMenu({ x: r.left + 8, y: r.bottom }); }} title={root ? root : single ? single : "选择的文件夹中的文件会显示在下方"} aria-haspopup="menu">
-              <span className="fname">{root ? baseName(root) : single ? "单个文件" : "打开文件夹"}{(root || single) && <Icon name="chev" size={12} />}</span>
+              <span className="fname">{root ? baseName(root) : single ? <MidName name={stripMd(baseName(single))} tail={6} /> : "打开文件夹"}{(root || single) && <Icon name="chev" size={12} />}</span>
               <span className="fpath">{root ? shortPath(root) : single ? shortPath(dirOf(single)) : "选择的文件夹中的文件会显示在下方"}</span>
             </button>
             {single && !root && <button className="tn single-open" onClick={ws.adoptSingleFolder} title={`打开整个「${baseName(dirOf(single))}」`}>
@@ -496,7 +502,7 @@ export default function App() {
         {refPane.path && narrow && <div className="ref-switch"><Segmented label="正文或参考" value={refPane.focus} options={[["doc", "正文"], ["ref", "参考"]]} onChange={refPane.setFocus} /></div>}
         {path && !reading.on && !viewing && <Ribbon view={ed.current?.view() ?? null} author={noteAuthor()} settings={s} fonts={fonts} layout={layout} onLayout={doc.applyLayout}
           collapsed={s.ribbonCollapsed} setCollapsed={(c) => update({ ribbonCollapsed: c })}
-          onPickImage={doc.pickImage} onCite={insDrop.openInsert} active={fmt.active} block={fmt.block} onTidy={tidy.open} />}
+          onPickImage={doc.pickImage} onCite={() => insDrop.openInsert()} active={fmt.active} block={fmt.block} onTidy={tidy.open} />}
         <div className="scroller" ref={scroller} onScroll={() => window.requestAnimationFrame(syncScrollHeading)} onMouseDown={doc.clickBelow}>
           <div className="doc">
             {!path && <Welcome hasRoot={!!root} recent={s.recentFolders} onOpen={ws.chooseFolder} onNew={() => ws.newFile()} onRecent={(f) => ws.openFolder(f).catch((e) => { if (String(e).includes("重新选择")) { say(String(e), "warn"); return; } say("这个文件夹已经不在了", "warn"); update({ recentFolders: s.recentFolders.filter((x) => x !== f) }); })} />}
@@ -504,7 +510,7 @@ export default function App() {
           </div>
         </div>
         {!reading.on && !viewing && <FloatingToolbar view={ed.current?.view() ?? null} tick={tick} author={noteAuthor()} active={fmt.active} />}
-        {viewing && be && <FileViewer be={be} path={viewing} onInfo={setViewInfo} say={say} onOpenDefault={openOther} />}
+        {viewing && be && <FileViewer be={be} path={viewing} onInfo={setViewInfo} say={say} onOpenDefault={openOther} onClose={path ? () => setViewing("") : undefined} />}
         {refPane.path && be && <RefPane key={refPane.path} be={be} path={refPane.path} width={refPane.width} onWidth={refPane.setWidth} onClose={refPane.close} onPath={refPane.open}
           preview={refPreview} openOther={openOther} openUrl={(u) => { be.openUrl(u).catch((e) => say(reason(e, "没能打开这个链接"), "error")); }} say={(m) => say(m)} />}
         {ws.fileCmp && <Compare fileLabel={ws.fileCmp.name} oldText={ws.fileCmp.text} newText={live.current.text} against="current" hasPrev={false} prevLabel=""

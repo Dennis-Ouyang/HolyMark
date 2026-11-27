@@ -1,7 +1,7 @@
 /* 新功能的样式。沿用 app.css 的 token；新增的视觉规矩写在 docs/design-vocabulary.md。 */
 
 /* 浮层外观 --float、提醒色 --warn / --warn-bg 用 app.css 的 token。新做的浮层用 .hm-float：圆角 12px，控件 8px */
-.hm-float { position: fixed; z-index: 60; background: var(--raised); border-radius: 12px; box-shadow: var(--float); animation: floatIn 150ms var(--ease); }
+.hm-float { position: fixed; z-index: 65; background: var(--raised); border-radius: 12px; box-shadow: var(--float); animation: floatIn 150ms var(--ease); }
 .hm-float .btn { border-radius: 8px; }
 @keyframes floatIn { from { opacity: 0; transform: translateY(-4px) scale(.97); } to { opacity: 1; transform: none; } }
 @keyframes floatOut { to { opacity: 0; transform: translateY(-3px) scale(.98); } }
@@ -77,13 +77,13 @@
 .cm-editor:has(.hm-ac) .hm-mathtip.err { display: none; }
 
 /* ---------- 按章节折叠 ---------- */
-/* 标题行开头一个零宽的锚点，小三角挂在版心外面；悬停这一行才出现，折起来的一直显示 */
+/* 标题行开头一个零宽的锚点，小三角固定在 [-20px, -4px]，和外侧块把手 [-40px, -22px] 彻底分列，互不重叠 */
 .hm-fold-anchor { display: inline-block; position: relative; width: 0; height: 0; vertical-align: baseline; }
-.hm-fold { position: absolute; left: -28px; top: calc(-.36em - 10px); width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; color: var(--fg-3); cursor: pointer; opacity: 0;
-  transition: opacity 120ms, background 120ms, color 120ms, rotate 180ms var(--ease); }
-.cm-line:hover .hm-fold, .hm-fold.folded { opacity: 1; }
-.hm-fold:hover { background: var(--hover); color: var(--fg); }
-.hm-fold.folded { rotate: -90deg; }
+.hm-sfold { position: absolute; left: -20px; top: calc(-.35em - 8px); width: 16px; height: 16px; display: grid; place-items: center; border-radius: 4px; color: var(--fg-3); cursor: pointer; opacity: 0;
+  transition: opacity 120ms, background-color 120ms, color 120ms, rotate 160ms var(--ease); }
+.cm-line:hover .hm-sfold, .hm-sfold.folded { opacity: 1; }
+.hm-sfold:hover { background: var(--hover); color: var(--fg); }
+.hm-sfold.folded { rotate: -90deg; }
 .hm-folded { margin-left: 12px; padding: 1px 6px; border-radius: 6px; font: 400 12px/1.6 var(--f-ui); color: var(--fg-3); font-variant-numeric: tabular-nums; cursor: pointer; vertical-align: middle; white-space: nowrap; transition: background 120ms, color 120ms; }
 .hm-folded:hover { background: var(--hover); color: var(--fg-2); }
 /* 目录里收起子级的小三角：悬停这一行出现，收起的一直显示 */
@@ -101,10 +101,11 @@
 .hm-reading .hm-table td, .hm-reading .hm-table th { cursor: text; }
 /* 悬停卡片：文献、脚注 */
 /* 图片放大 */
-.lightbox { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: var(--scrim); animation: fade 160ms var(--ease); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+.lightbox { position: fixed; inset: 0; z-index: 95; display: grid; place-items: center; background: var(--scrim); animation: fade 160ms var(--ease); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
 .lightbox figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 92vw; }
 .lb-stage { display: grid; place-items: center; }
-.lightbox img { max-width: 88vw; max-height: 80vh; border-radius: 8px; box-shadow: var(--float); background: var(--bg); animation: lbImg 160ms var(--ease); transition: scale 120ms var(--ease), translate 120ms var(--ease); }
+.lightbox img { max-width: 88vw; max-height: 80vh; border-radius: 8px; box-shadow: var(--float); background: var(--bg); animation: lbImg 140ms var(--ease); transition: scale 120ms var(--ease), translate 120ms var(--ease); }
+.lightbox img.from-origin { animation: none; }
 .lightbox img.zoomed { cursor: grab; transition: none; }
 @keyframes lbImg { from { opacity: 0; } }
 .lightbox figcaption { display: flex; align-items: baseline; gap: 12px; padding: 6px 12px; border-radius: 8px; background: var(--raised); box-shadow: var(--float); font-size: 13px; color: var(--fg); max-width: 80vw; }
@@ -175,12 +176,39 @@
 .fi-wait { color: var(--fg-3); font-size: 13px; }
 
 /* ---------- 阅读和书写环境 ---------- */
-/* 纸张底色：只作用于正文区，界面外框不变；深色主题下对应暖黑、深灰 */
-:root { --paper-cream: #FBF8F1; --paper-gray: #EDF0EC; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --paper-cream: #17140F; --paper-gray: #1B1D1F; } }
+/* 纸张底色（米白 / 护眼灰）：全窗口协调着色，标题栏、左右侧栏、功能区与正文统一护眼；深色主题对应暖黑、深灰 */
+:root { --paper-cream: #FAF6EC; --paper-gray: #EDF0EC; }
+.app { background: var(--bg); }
+.app[data-paper="cream"] {
+  --bg: #FAF6EC; --surface: #F3EFE3; --raised: #FCF9F2; --hover: #EAE4D6;
+  --line: #E3DCCB; --line-2: #D4CCB8; --code-bg: #F2EDE0; --seg-track: #E9E3D5; --seg-thumb: #FCF9F2;
+}
+.app[data-paper="gray"] {
+  --bg: #EDF0EC; --surface: #E4E8E3; --raised: #F2F5F1; --hover: #DAE0D9;
+  --line: #D4DBD2; --line-2: #C3CCC1; --code-bg: #E3E7E2; --seg-track: #DCE1DB; --seg-thumb: #F2F5F1;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --paper-cream: #17140F; --paper-gray: #1B1D1F; }
+  :root:not([data-theme="light"]) .app[data-paper="cream"] {
+    --bg: #17140F; --surface: #1C1812; --raised: #221E17; --hover: #29241C;
+    --line: #2C261E; --line-2: #3A3329; --code-bg: #1B1711; --seg-track: #1F1B15; --seg-thumb: #312B22;
+  }
+  :root:not([data-theme="light"]) .app[data-paper="gray"] {
+    --bg: #1B1D1F; --surface: #202326; --raised: #26292D; --hover: #2D3136;
+    --line: #30343A; --line-2: #3D424A; --code-bg: #1E2023; --seg-track: #222528; --seg-thumb: #34383E;
+  }
+}
 :root[data-theme="dark"] { --paper-cream: #17140F; --paper-gray: #1B1D1F; }
-.app[data-paper="cream"] .main .scroller, .edprev[data-paper="cream"] { background: var(--paper-cream); }
-.app[data-paper="gray"] .main .scroller, .edprev[data-paper="gray"] { background: var(--paper-gray); }
+:root[data-theme="dark"] .app[data-paper="cream"] {
+  --bg: #17140F; --surface: #1C1812; --raised: #221E17; --hover: #29241C;
+  --line: #2C261E; --line-2: #3A3329; --code-bg: #1B1711; --seg-track: #1F1B15; --seg-thumb: #312B22;
+}
+:root[data-theme="dark"] .app[data-paper="gray"] {
+  --bg: #1B1D1F; --surface: #202326; --raised: #26292D; --hover: #2D3136;
+  --line: #30343A; --line-2: #3D424A; --code-bg: #1E2023; --seg-track: #222528; --seg-thumb: #34383E;
+}
+.edprev[data-paper="cream"] { background: var(--paper-cream); }
+.edprev[data-paper="gray"] { background: var(--paper-gray); }
 /* 打字机滚动：底下留出空白，最后几行也能停在屏幕中间偏上 */
 .app.typewriter .doc { padding-bottom: 60vh; }
 /* 段落聚焦：编辑器有焦点时，光标所在段落以外的都变淡 */
@@ -227,11 +255,19 @@
 /* ---------- N7 斜杠菜单：外观同插入文件浮层（.ins） ---------- */
 .cm-tooltip.hm-slash { border: 0; background: var(--raised); }
 .hm-slash { width: 260px; transform-origin: 12px 0; animation: floatIn 150ms var(--ease); }
+.hm-slash.grid { width: auto; padding: 6px 8px 8px; }
 .cm-tooltip-above .hm-slash { transform-origin: 12px 100%; }
 .hm-slash .ins-row { padding-right: 8px; }
 .hm-slash .sl-ico { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--hover); box-shadow: inset 0 0 0 .5px var(--line-2); color: var(--fg-2); font: 600 10px/1 var(--f-ui); }
 .hm-slash .ins-row.sel .sl-ico { background: var(--raised); color: var(--accent-fg); }
 .hm-slash .sl-key { margin-left: auto; font: 11px var(--f-ui); color: var(--fg-3); background: none; border: 0; font-variant-numeric: tabular-nums; }
+.hm-slash .sl-th { display: flex; align-items: center; gap: 4px; padding: 2px 2px 6px; font-size: 12px; color: var(--fg-2); }
+.hm-slash .sl-back { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 5px; color: var(--fg-3); }
+.hm-slash .sl-back:hover { background: var(--hover); color: var(--fg); }
+.hm-slash .sl-tt { font-weight: 500; color: var(--fg); }
+.hm-slash .sl-dim { margin-left: auto; font-size: 12px; color: var(--accent-fg); }
+.hm-slash .gridpick { padding: 2px; }
+.hm-slash .sl-tf { padding: 6px 2px 0; font-size: 11px; color: var(--fg-3); text-align: center; }
 @media (prefers-reduced-motion: reduce) { .hm-slash { animation: none; } }
 
 /* ---------- N8 目录里拖动标题：落点一条细线（同正文里的 .hm-dropline） ---------- */

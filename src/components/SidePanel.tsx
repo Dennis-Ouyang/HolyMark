@@ -163,12 +163,14 @@ export function SidePanel(p: Props) {
 
       {p.tab === "versions" && (
         <div className="pane">
-          {/* 头部只留两个操作（文件名和标题栏重复，去掉）；来源的图例给一次 */}
-          <div className="ph">
-            <button className="lnk" onClick={p.onSaveVersion} title={kbd("⌘S 直接存档，不用起名字")}>保存版本…</button>
-            <button className="lnk" onClick={p.onCompareFile} title="选一篇文稿和当前文稿左右对比">与其他文稿对比</button>
+          {/* 版本页顶部操作区：两个等宽小按钮 + 有改动时下方一条「还原到刚打开时」 */}
+          <div className="vacts">
+            <div className="vacts-row">
+              <button className="btn sm primary-soft" onClick={p.onSaveVersion} title={kbd("⌘S 直接存档，不用起名字")}><Icon name="history" size={13} />保存版本…</button>
+              <button className="btn sm" onClick={p.onCompareFile} title="选一篇文稿和当前文稿左右对比"><Icon name="compare" size={13} />对比文稿</button>
+            </div>
+            {p.canRevert && <button className="vrevert" onClick={p.onRevert}><Icon name="reset" size={13} />还原到刚打开时</button>}
           </div>
-          {p.canRevert && <button className="vrevert" onClick={p.onRevert}><Icon name="reset" size={14} />还原到刚打开时</button>}
           {p.versions.length ? <VersionList {...p} /> : <Empty icon="history" text="使用 HolyMark 打开的文件，编辑时会定期为你自动保存版本。你也可以随时手动保存。" action={{ label: "保存当前版本", run: p.onSaveVersion }} />}
         </div>
       )}

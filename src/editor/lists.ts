@@ -90,19 +90,20 @@ class ListMarkWidget extends WidgetType {
       box.className = "hm-check " + (s.state ?? "todo");
       box.setAttribute("role", "checkbox");
       box.setAttribute("aria-checked", s.state === "done" ? "true" : s.state === "mixed" || s.state === "partial" ? "mixed" : "false");
-      if (s.state === "done") box.innerHTML = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m3.5 8.5 3 3 6-7"/></svg>';
+      if (s.state === "done") box.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3.5 8.5 3 3 6-7"/></svg>';
       else if (s.state === "mixed") box.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 8h8"/></svg>';
       else if (s.total) {
-        // 父项：进度环，按叶子完成的比例
-        const c = 2 * Math.PI * 6;
-        box.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-dasharray="${((s.done! / s.total) * c).toFixed(2)} ${c.toFixed(2)}" transform="rotate(-90 8 8)"/></svg>`;
+        // 父项：居中浅色扇形，按叶子完成的比例从 12 点顺时针填充圆
+        const r = 2.75, c = 2 * Math.PI * r;
+        const fill = ((s.done! / s.total) * c).toFixed(2);
+        box.innerHTML = `<svg class="hm-pie" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="${r}" fill="none" stroke="currentColor" stroke-width="${r * 2}" stroke-dasharray="${fill} ${c.toFixed(2)}" transform="rotate(-90 8 8)"/></svg>`;
       }
       box.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); clickTask(view, el); });
       el.append(box);
     }
     if (s.fold) {
       const f = document.createElement("span");
-      f.className = "hm-fold " + s.fold;
+      f.className = "hm-lfold " + s.fold;
       f.title = s.fold === "closed" ? "展开" : "折叠子项";
       f.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.5 11 8l-6 4.5z"/></svg>';
       f.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); view.dispatch({ effects: toggleFold.of(view.state.doc.lineAt(view.posAtDOM(el)).from) }); });
@@ -299,9 +300,9 @@ function listProvider(always: () => boolean): HandleProvider {
       const curKind: ListKind = c.it.task ? "task" : c.it.ordered ? "ordered" : "bullet";
       const t: HandleTarget = {
         key: lineFrom,
-        // 把手放在符号的左边，再留出折叠小三角的位置
+        // 把手放在符号的左边，再留出折叠小三角（.hm-lfold）的位置
         anchor: lineFrom,
-        gap: 18,
+        gap: 22,
         label: "列表项",
         menu: () => [
           { label: "无序列表", icon: "ul", disabled: curKind === "bullet", run: kind("bullet") },
