@@ -28,6 +28,7 @@ import { useWritingStats } from "./features/useWritingStats";
 import { useSymbols } from "./features/useSymbols";
 import { foldHeadings, foldToLevel, unfoldAll } from "./editor/sectionFold";
 import { useReading } from "./features/useReading";
+import { useRememberSpot, useSpotAutosave } from "./features/useRememberSpot";
 
 const AUTHOR = "我";
 /** macOS 有原生菜单负责快捷键；Windows 和浏览器预览里由前端处理 */
@@ -178,6 +179,7 @@ export default function App() {
   /** 关闭文件夹，回到开始页；下次启动也从开始页开始，直到再打开一个文件夹 */
   async function closeFolder() {
     if (!be || !root) return;
+    spots.capture(live.current.path);
     await flush().catch(() => {});
     await Promise.all([...staged.current.keys()].map((p) => { window.clearTimeout(staged.current.get(p)); return be.commitStaged(p).catch(() => {}); }));
     staged.current.clear();
@@ -204,17 +206,21 @@ export default function App() {
     }
   }
 
-  async function openFile(p: string, opts?: { reading?: boolean }) {
+  /** target：从搜索结果、文内链接这类有明确目标的方式打开，不恢复上次的位置 */
+  async function openFile(p: string, opts?: { reading?: boolean; target?: boolean }) {
     if (!be) return;
+    if (live.current.path) spots.capture(live.current.path);
     await flush();
     const content = await be.readText(p);
     live.current = { path: p, text: content, base: content, lastWritten: content, lastVersionAt: Date.now() };
     setPath(p); setText(content); setCmp(null); setFileCmp(null); setFresh(null);
     ed.current?.load(content);
-    reading.afterLoad(p, opts?.reading);
+    const spot = opts?.target ? null : spots.recall(p);
+    reading.afterLoad(p, opts?.reading ?? spot?.reading);
     wstats.noteOpen(p, content);
     if (scroller.current) scroller.current.scrollTop = 0;
     setScrollHeading(0);
+    if (spot) spots.restore(spot);
     // 打开时留一个基线版本，之后的任何修改都能回到这里
     await be.saveVersion(p, content, "auto").catch(() => null);
     setVersions(await be.listVersions(p).catch(() => []));
@@ -283,6 +289,7 @@ export default function App() {
   }
   /** 关窗口（标题栏按钮、Alt+F4、⌘W、⌘Q）：先把没写盘的内容存下来，再看要不要问 */
   async function requestClose() {
+    spots.capture(live.current.path);
     await Promise.race([flush().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
     const l = live.current;
     if (s.askOnClose && l.path && l.text !== l.base) { setDlg("unsaved"); return; }
@@ -430,10 +437,12 @@ export default function App() {
   const wstats = useWritingStats({ be, tree, livePath: () => live.current.path, liveText: () => live.current.text, withPunct: s.countPunct });
   const symbols = useSymbols(view);
   featureHooks.current.withPunct = () => s.countPunct;
+  const spots = useRememberSpot(view, () => scroller.current);
+  useSpotAutosave(spots.capture, useCallback(() => live.current.path, []));
   const reading = useReading({
     view, be, livePath: () => live.current.path, resolveImage: (src) => preview.resolveImage(src), bib: bibMap, say,
     openMarkdown: (abs, o) => { (async () => {
-      if (abs !== live.current.path) { if (root && isInside(root, abs)) await openFile(abs, { reading: o.reading }); else { await openExternalFile(abs); reading.set(o.reading); } }
+      if (abs !== live.current.path) { if (root && isInside(root, abs)) await openFile(abs, { reading: o.reading, target: !!o.anchor }); else { await openExternalFile(abs); reading.set(o.reading); } }
       if (o.anchor) jumpAnchor(o.anchor);
     })().catch(() => say("打不开这篇文稿")); },
     jumpAnchor: (a) => jumpAnchor(a),
@@ -649,9 +658,10 @@ export default function App() {
   /** 改名、移动之后：正在编辑的文件（或它所在的文件夹）跟着换路径 */
   async function followMove(from: string, to: string) {
     const cur = live.current.path;
+    wstats.noteMove(from, to);
+    spots.move(from, to);
     if (cur === from || cur.startsWith(from + "/")) {
       const np = to + cur.slice(from.length);
-      wstats.noteMove(from, to);
       live.current.path = np;
       setPath(np);
       if (be) setVersions(await be.listVersions(np).catch(() => []));
@@ -792,7 +802,7 @@ export default function App() {
     v.focus();
   }
   async function openAt(p: string, pos: number, len: number) {
-    if (p !== live.current.path) await openFile(p);
+    if (p !== live.current.path) await openFile(p, { target: true });
     requestAnimationFrame(() => jumpTo(pos, len));
   }
 

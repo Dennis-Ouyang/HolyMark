@@ -166,6 +166,34 @@ step("N2 阅读模式：只读、图片放大、勾选框、悬停文献、双�
   const at = await page.evaluate(() => { const v = window.__hm.view(); return v.state.doc.lineAt(v.state.selection.main.head).text; });
   if (!at.startsWith("## 3.2")) throw new Error("双击后光标不在双击的位置：" + at);
 });
+step("N3 记住位置：切换文件、重新加载后恢复光标、顶部段落、折叠、阅读模式", async (page) => {
+  const target = await page.evaluate(() => {
+    const v = window.__hm.view(); const p = v.state.doc.toString().indexOf("两名研究者"); v.focus();
+    v.dispatch({ selection: { anchor: p + 3 }, scrollIntoView: true }); return p + 3;
+  });
+  await menu(page, "fold_h2");
+  await page.evaluate(() => { const v = window.__hm.view(); const p = v.state.doc.toString().indexOf("两名研究者"); v.dispatch({ selection: { anchor: p + 3 } }); });
+  await page.waitForTimeout(200);
+  await page.click("button[aria-label='阅读模式']");
+  const check = async (label) => {
+    await page.waitForTimeout(500);
+    const st = await page.evaluate(() => { const v = window.__hm.view(); return { head: v.state.selection.main.head, folded: document.querySelectorAll(".hm-folded").length, reading: !!document.querySelector(".cm-editor.hm-reading"), top: document.querySelector(".scroller").scrollTop }; });
+    if (st.head !== target) throw new Error(`${label}：光标没恢复 ${st.head} ≠ ${target}`);
+    if (st.folded < 3) throw new Error(`${label}：折叠没恢复`);
+    if (!st.reading) throw new Error(`${label}：阅读模式没恢复`);
+  };
+  await page.click(".tree .tn[data-path*='02 文献综述']");
+  await page.waitForTimeout(300);
+  if (await page.$(".cm-editor.hm-reading")) throw new Error("另一篇不该是阅读模式");
+  await page.click(".tree .tn[data-path*='03 研究设计']");
+  await check("切换回来");
+  await page.reload();
+  await page.waitForFunction(() => window.__hm?.view?.()?.state.doc.length > 100);
+  await check("重新加载");
+  await page.click("button[aria-label='阅读模式']");
+  await menu(page, "unfold_all");
+  await page.evaluate(() => localStorage.removeItem("holymark-positions"));
+});
 
 async function run(theme) {
   const browser = await chromium.launch();
