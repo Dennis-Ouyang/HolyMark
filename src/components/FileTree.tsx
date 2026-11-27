@@ -64,7 +64,7 @@ function Item({ node, depth, current, onOpen, renaming, onRename, onMenu }: Item
   const ext = node.name.includes(".") ? node.name.split(".").pop()!.toUpperCase() : "";
   return (
     <button className={"tn" + (node.path === current ? " active" : "") + (md ? "" : " other")} style={style}
-      onClick={() => md && onOpen(node.path)} onContextMenu={menu} data-path={node.path} title={md ? undefined : "暂时只能打开 Markdown 文件"} role="treeitem">
+      onClick={() => onOpen(node.path)} onContextMenu={menu} data-path={node.path} role="treeitem">
       <span className="ico"><Icon name={md ? "doc" : "file"} size={14} /></span>
       <span className="nm">{md ? node.name.replace(/\.(md|markdown)$/i, "") : node.name.replace(/\.[^.]+$/, "")}</span>
       {!md && <span className="ext">{ext}</span>}

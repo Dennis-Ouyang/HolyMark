@@ -11,6 +11,18 @@ export interface FilePreview {
   pages?: number | null;
 }
 
+/** 整篇的阅读版（正文区的只读预览）：PPT 每张一节，Excel 每张工作表一节，Word 一节是全部段落 */
+export interface FileDocument extends FilePreview { sections: { title: string; lines: string[] }[] }
+
+/** 正文区能预览的类型 */
+export const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
+export function previewKind(path: string): "pdf" | "image" | "office" | "other" {
+  if (/\.pdf$/i.test(path)) return "pdf";
+  if (IMAGE_EXT.test(path)) return "image";
+  if (/\.(docx|dotx|pptx|xlsx)$/i.test(path)) return "office";
+  return "other";
+}
+
 /** 正文里单独成段时显示成卡片的文件类型 */
 export const CARD_EXT = /\.(pdf|docx?|dotx|pptx?|key|xlsx?|csv|numbers|md|markdown)$/i;
 

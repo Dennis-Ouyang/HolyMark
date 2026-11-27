@@ -158,3 +158,48 @@
 /* ---------- 单独打开的文件：左栏下面「打开所在文件夹」 ---------- */
 .tn.single-open { margin-bottom: 4px; color: var(--fg-3); }
 .tn.single-open:hover { color: var(--fg); }
+
+/* ---------- 预览非 Markdown 文件（正文区） ---------- */
+.fviewer { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; background: var(--bg); animation: fade 140ms var(--ease); }
+.fv-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; border-bottom: 1px solid var(--line); color: var(--fg-2); flex: none; }
+.fv-name { font-weight: 500; color: var(--fg); white-space: nowrap; }
+.fv-head .sp { flex: 1; }
+.fv-head .btn { display: inline-flex; align-items: center; gap: 6px; }
+.fv-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fv-wait, .fv-empty { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--fg-3); font-size: 13px; }
+.fv-empty p { margin: 0; color: var(--fg-2); }
+.t3 { color: var(--fg-3); }
+.fv-pdfbar { display: inline-flex; align-items: center; gap: 2px; margin-right: 8px; font-size: 12px; }
+.fv-pdfbar .t3 { margin-right: 6px; }
+.fv-pdfbar .ib.sm { height: 24px; min-width: 24px; padding: 0 4px; font-size: 12px; }
+.fv-zoom { min-width: 48px !important; color: var(--fg-2); }
+.fv-pdf { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 16px 24px 40px; background: var(--surface); }
+.fv-page { flex: none; background: #fff; box-shadow: var(--float); border-radius: 2px; }
+.fv-image { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fv-tools { display: flex; justify-content: center; padding: 10px; flex: none; }
+.fv-img-wrap { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 8px 24px 32px; background: var(--surface); }
+.fv-img-wrap.fit img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.fv-img-wrap img { border-radius: 4px; box-shadow: var(--float); background: var(--bg); }
+.fv-office { flex: 1; overflow: auto; padding: 32px 24px 64px; }
+.fv-col { max-width: 760px; margin: 0 auto; font-size: 15px; line-height: 1.75; color: var(--fg); }
+.fv-col h1 { font-size: 22px; margin: 0 0 20px; }
+.fv-col p { margin: 0 0 10px; }
+.fv-slide { margin: 0 0 16px; padding: 16px 20px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
+.fv-slide .fv-st { font-size: 12px; color: var(--fg-3); margin-bottom: 4px; }
+.fv-slide h3 { margin: 0 0 6px; font-size: 17px; }
+.fv-sheet { margin-bottom: 28px; }
+.fv-sheet h3 { font-size: 14px; margin: 0 0 8px; color: var(--fg-2); font-weight: 500; }
+.fv-tscroll { overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.fv-sheet table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.fv-sheet th, .fv-sheet td { padding: 6px 12px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.fv-sheet th { background: var(--surface); font-weight: 500; color: var(--fg-2); }
+.fv-sheet tr:last-child td { border-bottom: 0; }
+.fv-sheet .r { text-align: right; }
+/* 右栏：文件信息，三档灰 */
+.finfo { padding: 18px 16px; }
+.fi-name { font-size: 14px; font-weight: 500; color: var(--fg); margin-bottom: 14px; word-break: break-all; }
+.finfo dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin: 0; font-size: 13px; }
+.finfo dt { color: var(--fg-2); }
+.finfo dd { margin: 0; color: var(--fg); text-align: right; }
+.finfo dd.t3 { color: var(--fg-3); }
+.fi-wait { color: var(--fg-3); font-size: 13px; }

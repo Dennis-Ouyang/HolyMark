@@ -272,6 +272,32 @@ step("N1 单独打开一个文件、只看不改不存版本、改了才存、�
   await page.goto(page.url());
   await page.waitForFunction(() => window.__hm?.view?.()?.state.doc.length > 100);
 });
+step("N5 预览 PDF、图片、Excel，切回 Markdown 编辑状态保留", async (page) => {
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("holymark-settings") || "{}"); s.showAllFiles = true; localStorage.setItem("holymark-settings", JSON.stringify(s)); });
+  await page.reload();
+  await page.waitForFunction(() => window.__hm?.view?.()?.state.doc.length > 100);
+  await page.evaluate(() => { const v = window.__hm.view(); v.focus(); v.dispatch({ selection: { anchor: 40 } }); });
+  await page.click(".tree .tn[data-path*='访谈提纲.pdf']");
+  await page.waitForSelector(".fv-page");
+  await page.waitForFunction(() => document.querySelectorAll(".fv-page").length === 2);
+  if (!(await page.textContent(".fv-pdfbar")).includes("1 / 2")) throw new Error("没有页码");
+  await page.click(".fv-pdfbar button[aria-label='放大']");
+  if (!(await page.$(".finfo dd"))) throw new Error("右栏没有文件信息");
+  await page.click(".tree .tn[data-path*='图3-1.svg']");
+  await page.waitForSelector(".fv-img-wrap img");
+  await page.click(".fv-tools button:has-text('实际大小')");
+  await page.click(".tree .tn[data-path*='受访者编码表.xlsx']");
+  await page.waitForSelector(".fv-sheet table");
+  if ((await page.$$(".fv-sheet")).length !== 2) throw new Error("Excel 应该有两张表");
+  await page.click(".fv-head button:has-text('用默认程序打开')");
+  await page.waitForSelector(".toast:has-text('浏览器预览里打不开本机文件')");
+  // 回到正在编辑的那篇：光标还在原处
+  await page.click(".tree .tn[data-path*='03 研究设计']");
+  await page.waitForSelector(".fviewer", { state: "detached" });
+  const head = await page.evaluate(() => window.__hm.view().state.selection.main.head);
+  if (head !== 40) throw new Error("切回来以后光标变了：" + head);
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("holymark-settings") || "{}"); s.showAllFiles = false; localStorage.setItem("holymark-settings", JSON.stringify(s)); });
+});
 
 async function run(theme) {
   const browser = await chromium.launch();

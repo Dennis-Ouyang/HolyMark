@@ -2,12 +2,12 @@
  * 后端接口。在 Tauri 里调用 Rust 命令；在普通浏览器里（开发预览、测试）使用内置的演示文件夹，
  * 版本存在 localStorage 里，行为与 Rust 版本库一致。
  */
-import { DEMO_FILES, DEMO_IMAGES, DEMO_ROOT, DEMO_START } from "./demo";
+import { DEMO_DOCS, DEMO_FILES, DEMO_IMAGES, DEMO_ROOT, DEMO_START } from "./demo";
 import { longManuscript } from "./stress";
 import { toPosix } from "./paths";
 import { isWindows } from "./platform";
 import { splitBlocks } from "./markdown";
-import type { FilePreview } from "./filePreview";
+import type { FileDocument, FilePreview } from "./filePreview";
 
 export interface TreeNode { name: string; path: string; dir: boolean; children: TreeNode[] }
 export type VersionSource = "saved" | "external" | "auto";
@@ -87,6 +87,10 @@ export interface Backend {
   trashPath(path: string): Promise<void>;
   /** 文件预览卡片的内容 */
   filePreview(path: string): Promise<FilePreview>;
+  /** 非 Markdown 文件整篇的阅读版（Word、PPT、Excel） */
+  fileDocument(path: string): Promise<FileDocument>;
+  /** 文件的显示地址（图片、PDF 用）：桌面版是 asset 协议，浏览器预览里是内置的演示数据 */
+  fileUrl(path: string): string;
   /** 把文件复制进某个文件夹（重名时加编号），返回新路径 */
   copyIntoFolder(src: string, dir: string): Promise<string>;
   /** 从访达 / 资源管理器拖文件进窗口：over（拖着移动）、drop（松手，带路径）、leave（拖出去或取消）。坐标是窗口里的 CSS 像素 */
@@ -156,6 +160,8 @@ async function tauriBackend(): Promise<Backend> {
     trashPath: (path) => invoke("trash_path", { path }),
     copyIntoFolder: (src, dir) => invoke("copy_into_folder", { src, dir }),
     filePreview: (path) => invoke("file_preview", { path }),
+    fileDocument: (path) => invoke("file_document", { path }),
+    fileUrl: (path) => (window as unknown as { __TAURI_INTERNALS__: { convertFileSrc: (p: string) => string } }).__TAURI_INTERNALS__.convertFileSrc(path),
     onFileDrop(cb) {
       let un: (() => void) | null = null, alive = true;
       import("@tauri-apps/api/webview").then(async ({ getCurrentWebview }) => {
@@ -204,6 +210,7 @@ export const demoStartFile = stressChars ? STRESS_PATH : DEMO_START;
 function demoBackend(): Backend {
   const files = new Map<string, string>(Object.entries(DEMO_FILES));
   for (const [p, url] of Object.entries(DEMO_IMAGES)) { files.set(p, ""); demoImages.set(p, url); }
+  for (const p of Object.keys(DEMO_DOCS)) files.set(p, "");
   const dirs = new Set<string>(); // 空文件夹
   if (stressChars) files.set(STRESS_PATH, longManuscript(stressChars));
   const listeners = new Set<(p: string) => void>();
@@ -312,9 +319,17 @@ function demoBackend(): Backend {
       for (const k of [...files.keys()]) if (k === path || k.startsWith(path + "/")) files.delete(k);
       for (const d of [...dirs]) if (d === path || d.startsWith(path + "/")) dirs.delete(d);
     },
+    async fileDocument(path) {
+      const d = DEMO_DOCS[path];
+      if (!d) throw new Error("浏览器预览里只有演示文件能预览");
+      return d;
+    },
+    fileUrl: (path) => demoImages.get(path) ?? path,
     async filePreview(path) {
       const t = files.get(path);
       if (t === undefined) throw new Error("找不到文件");
+      if (DEMO_DOCS[path]) { const { sections: _s, ...info } = DEMO_DOCS[path]; return info; }
+      if (/\.pdf$/i.test(path)) return { kind: "pdf", title: path.split("/").pop()!.replace(/\.pdf$/i, ""), lines: [], size: demoImages.get(path)?.length ?? 0, modified: Date.now() - 86_400_000 };
       return { kind: "md", title: "", lines: t.split(/\n\s*\n/).map((x) => x.trim()).filter(Boolean).slice(0, 10), size: t.length, modified: Date.now() };
     },
     async copyIntoFolder(src, dir) { const p = `${dir}/${src.slice(src.lastIndexOf("/") + 1)}`; files.set(p, files.get(src) ?? ""); return p; },

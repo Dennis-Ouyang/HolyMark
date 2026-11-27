@@ -30,6 +30,8 @@ import { foldHeadings, foldToLevel, unfoldAll } from "./editor/sectionFold";
 import { useReading } from "./features/useReading";
 import { useRememberSpot, useSpotAutosave } from "./features/useRememberSpot";
 import { useNav, BACK_KEY, FWD_KEY } from "./features/useNav";
+import { FileInfo, FileViewer } from "./components/FileViewer";
+import type { FilePreview } from "./lib/filePreview";
 import { findAnchor } from "./lib/anchors";
 
 const AUTHOR = "我";
@@ -104,6 +106,15 @@ export default function App() {
   const live = useRef<{ path: string; text: string; base: string; lastWritten: string; lastVersionAt: number; needBase?: boolean }>({ path: "", text: "", base: "", lastWritten: "", lastVersionAt: 0 });
   /** 单独打开的文件（不在工作区里）：只有这一个文件，不扫描它所在的文件夹 */
   const [single, setSingle] = useState("");
+  /** 正文区正在预览的非 Markdown 文件（N5）；编辑器一直挂着，切回去照旧 */
+  const [viewing, setViewing] = useState("");
+  const [viewInfo, setViewInfo] = useState<FilePreview | null>(null);
+  /** 文件树单击：Markdown 打开编辑，其他文件在正文区预览 */
+  const openFromTree = (p: string) => {
+    if (!/\.(md|markdown)$/i.test(p)) { setViewing(p); return; }
+    if (p === live.current.path) { setViewing(""); return; }
+    void openFile(p);
+  };
   const saveTimer = useRef<number>();
 
   const view = (): EditorView | null => ed.current?.view() ?? null;
@@ -241,6 +252,7 @@ export default function App() {
   /** target：从搜索结果、文内链接这类有明确目标的方式打开，不恢复上次的位置 */
   async function openFile(p: string, opts?: { reading?: boolean; target?: boolean; readingDefault?: boolean }) {
     if (!be) return;
+    setViewing("");
     if (live.current.path) spots.capture(live.current.path);
     await flush();
     const content = await be.readText(p);
@@ -415,7 +427,7 @@ export default function App() {
         try { raw = decodeURI(raw); } catch { /* 原样使用 */ }
         return /^(\/|[A-Za-z]:[\\/])/.test(raw) ? toPosix(raw) : normalize(join(dirOf(live.current.path), raw));
       },
-      url: (abs: string) => (isTauri ? (window as unknown as { __TAURI_INTERNALS__: { convertFileSrc: (p: string) => string } }).__TAURI_INTERNALS__.convertFileSrc(abs) : abs),
+      url: (abs: string) => (be ? be.fileUrl(abs) : abs),
       preview: (abs: string) => (be ? be.filePreview(abs) : Promise.reject(new Error("no backend"))),
       open: (abs: string) => fileHooksRef.current.open(abs),
       reveal: (abs: string) => fileHooksRef.current.reveal(abs),
@@ -858,6 +870,7 @@ export default function App() {
     { group: "命令", icon: "cmd", title: "Markdown 语法速查", run: () => setTimeout(() => setDlg("help_syntax"), 0) },
     { group: "命令", icon: "cmd", title: "导出 Word / PDF / Markdown…", keys: ["⌘", "⇧", "E"].map((k) => keyName(k)), run: () => setTimeout(openExport, 0) },
     { group: "命令", icon: "cmd", title: "设置", keys: ["⌘", ","].map((k) => keyName(k)), run: () => setDlg("settings") },
+    ...(viewing ? [{ group: "命令", icon: "doc", title: "关闭预览，回到正文", keys: ["Esc"], run: () => setViewing("") }] : []),
     ...(nav.canBack ? [{ group: "命令", icon: "left", title: "返回", keys: [kbd(BACK_KEY)], run: () => nav.back() }] : []),
     ...(nav.canForward ? [{ group: "命令", icon: "right", title: "前进", keys: [kbd(FWD_KEY)], run: () => nav.forward() }] : []),
     ...(path ? [{ group: "命令", icon: "book", title: reading.on ? "退出阅读模式" : "阅读模式", keys: ["⌘", "⇧", "R"].map((k) => keyName(k)), run: () => reading.toggle() }] : []),
@@ -976,6 +989,7 @@ export default function App() {
   const MAC_FALLBACK = useMemo(() => new Set(["reading", "search", "save_version", "settings", "focus", "toggle_side", "toggle_panel", "new_file", "open_folder"]), []);
   useEffect(() => {
     const f = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !dlg && viewing) { setViewing(""); return; }
       if (e.key === "Escape" && !dlg) { if (cmp || fileCmp) { setCmp(null); setFileCmp(null); } else if (focus) setFocus(false); return; }
       if (e.defaultPrevented || e.isComposing) return; // 编辑器自己处理过的（如 ⌘B），或正在用输入法
       const id = menuIdFor(e);
@@ -1004,7 +1018,8 @@ export default function App() {
 
   const appCls = [s.eqNumbers ? "eqnum" : "", "app", showSide ? "" : "no-side", showPanel ? "" : "no-panel", focus ? "focus" : "", isTauri && isMac ? "mac" : "", customFrame ? "framed" : ""].join(" ");
   const fileName = baseName(path);
-  const crumbs = path && root ? relative(root, path).split("/") : path && single ? [baseName(path)] : [];
+  const shown = viewing || path;
+  const crumbs = shown && root && isInside(root, shown) ? relative(root, shown).split("/") : path && single ? [baseName(path)] : [];
 
   return (
     <div className={appCls} style={editorStyle}>
@@ -1035,7 +1050,7 @@ export default function App() {
             </button>
             {single && !root && <button className="tn single-open" onClick={adoptSingleFolder} title={`把「${baseName(dirOf(single))}」当作工作区打开，这篇的版本一起带过去`}>
               <span className="ico"><Icon name="folderOpen" size={14} /></span><span className="nm">打开所在文件夹</span></button>}
-            <FileTree nodes={tree} current={path} onOpen={openFile} showAll={s.showAllFiles} renaming={renaming} onRename={renameDone}
+            <FileTree nodes={tree} current={viewing || path} onOpen={openFromTree} showAll={s.showAllFiles} renaming={renaming} onRename={renameDone}
               onMenu={(e, node) => { if (root) setTreeMenu({ x: e.clientX, y: e.clientY, node }); }} />
           </div>
           {/* Mac 上设置在菜单栏「HolyMark → 设置…」里，左下角不再放 */}
@@ -1044,7 +1059,7 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {path && !reading.on && <Ribbon view={ed.current?.view() ?? null} author={AUTHOR} settings={s} fonts={fonts} layout={layout} onLayout={applyLayout}
+        {path && !reading.on && !viewing && <Ribbon view={ed.current?.view() ?? null} author={AUTHOR} settings={s} fonts={fonts} layout={layout} onLayout={applyLayout}
           collapsed={s.ribbonCollapsed} setCollapsed={(c) => update({ ribbonCollapsed: c })}
           onPickImage={pickImage} onCite={openInsert} active={fmt.active} block={fmt.block} onTidy={tidy.open} />}
         <div className="scroller" ref={scroller} onScroll={() => window.requestAnimationFrame(syncScrollHeading)} onMouseDown={clickBelow}>
@@ -1053,7 +1068,8 @@ export default function App() {
             <div hidden={!path}><Editor ref={ed} initial="" preview={preview} previewKey={previewKey} onChange={onChange} onSelection={onSelection} onImages={insertImages} extra={extra} /></div>
           </div>
         </div>
-        {!reading.on && <FloatingToolbar view={ed.current?.view() ?? null} tick={tick} author={AUTHOR} active={fmt.active} />}
+        {!reading.on && !viewing && <FloatingToolbar view={ed.current?.view() ?? null} tick={tick} author={AUTHOR} active={fmt.active} />}
+        {viewing && be && <FileViewer be={be} path={viewing} onInfo={setViewInfo} say={say} />}
         {fileCmp && <Compare fileLabel={fileCmp.name} oldText={fileCmp.text} newText={live.current.text} against="current" hasPrev={false} prevLabel=""
           onAgainst={() => {}} onClose={() => setFileCmp(null)} onRestore={() => {}} onPick={() => setDlg("cmpfile")} />}
         {cmp && (
@@ -1065,9 +1081,10 @@ export default function App() {
       </main>
 
       <aside className="panel" aria-label="当前文件">
+        {viewing ? <FileInfo info={viewInfo} path={viewing} /> : <>
         <SidePanel tab={tab} setTab={setTab} headings={hs} currentHeading={currentHeading} notes={notes} versions={versions} freshVersion={fresh}
           selectedVersion={cmp?.v.id ?? null} fileName={fileName} onJump={jump} onResolve={resolveNote}
-          onOpenVersion={(id) => openVersion(id)} onSaveVersion={() => setDlg("save")} onCompareFile={() => setDlg("cmpfile")} />
+          onOpenVersion={(id) => openVersion(id)} onSaveVersion={() => setDlg("save")} onCompareFile={() => setDlg("cmpfile")} /></>}
       </aside>
 
       <footer className="statusbar">

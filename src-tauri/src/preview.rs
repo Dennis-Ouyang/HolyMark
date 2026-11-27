@@ -19,6 +19,19 @@ pub struct FilePreview {
     pub pages: Option<u32>,
 }
 
+/// 整篇的阅读版（N5 正文区的只读预览）：PPT 每张一节，Excel 每张工作表一节
+#[derive(Serialize, Default, Debug)]
+pub struct Section {
+    pub title: String,
+    pub lines: Vec<String>,
+}
+#[derive(Serialize, Default, Debug)]
+pub struct FileDocument {
+    #[serde(flatten)]
+    pub info: FilePreview,
+    pub sections: Vec<Section>,
+}
+
 /// 取出所有 <tag …>文字</tag> 里的文字；遇到 end 标签时换一段
 fn texts(xml: &str, tag: &str, para_end: &str, max: usize) -> Vec<String> {
     let open = format!("<{tag}");
@@ -88,14 +101,29 @@ fn core_title(z: &mut zip::ZipArchive<std::fs::File>) -> Option<String> {
     texts(&core, "dc:title", "", 1).into_iter().next().filter(|t| !t.trim().is_empty())
 }
 
+fn shared_strings(z: &mut zip::ZipArchive<std::fs::File>, max: usize) -> Vec<String> {
+    // 每个 <si> 一条（空的也要占位，否则编号会错开）；里面可能是 <t>，也可能是几段 <r><t>，去掉标签拼起来
+    let Some(x) = zip_text_full(z, "xl/sharedStrings.xml") else { return vec![] };
+    x.split("<si").skip(1).take(max).map(|part| {
+        let body = part.split("</si>").next().unwrap_or("");
+        let body = body.find('>').map(|i| &body[i + 1..]).unwrap_or("");
+        // 注音（<rPh>）不要
+        let body: String = body.split("<rPh").enumerate().map(|(i, seg)| if i == 0 { seg } else { seg.split("</rPh>").nth(1).unwrap_or("") }).collect();
+        crate::xml::unescape(&strip_tags(&body))
+    }).collect()
+}
+
 /// Excel：第一张表的前几行，共享字符串换成文字
 fn sheet_rows(z: &mut zip::ZipArchive<std::fs::File>) -> Vec<String> {
-    let shared: Vec<String> = zip_text(z, "xl/sharedStrings.xml").map(|s| texts(&s, "si", "", 4000)).unwrap_or_default();
-    // <si> 里可能还有 <r><t>，上面按 si 取整段已经拼好了；去掉残留的标签
-    let shared: Vec<String> = shared.into_iter().map(|s| strip_tags(&s)).collect();
-    let Some(sheet) = zip_text(z, "xl/worksheets/sheet1.xml") else { return vec![] };
+    let shared = shared_strings(z, 4000);
+    sheet_rows_of(z, "xl/worksheets/sheet1.xml", &shared, 8, 6)
+}
+
+/// 某一张工作表的前 max_rows 行、每行前 max_cols 格，单元格用制表符隔开
+fn sheet_rows_of(z: &mut zip::ZipArchive<std::fs::File>, name: &str, shared: &[String], max_rows: usize, max_cols: usize) -> Vec<String> {
+    let Some(sheet) = zip_text(z, name) else { return vec![] };
     let mut rows = vec![];
-    for row in sheet.split("</row>").take(8) {
+    for row in sheet.split("</row>").take(max_rows) {
         let mut cells = vec![];
         for c in row.split("<c ").skip(1) {
             let head = &c[..c.find('>').unwrap_or(0)];
@@ -103,7 +131,7 @@ fn sheet_rows(z: &mut zip::ZipArchive<std::fs::File>) -> Vec<String> {
             let inline = c.find("<t>").and_then(|i| c[i + 3..].find("</t>").map(|j| c[i + 3..i + 3 + j].to_string()));
             let val = if head.contains("t=\"s\"") { v.and_then(|i| i.parse::<usize>().ok()).and_then(|i| shared.get(i).cloned()) } else { inline.or(v) };
             cells.push(crate::xml::unescape(&val.unwrap_or_default()));
-            if cells.len() >= 6 {
+            if cells.len() >= max_cols {
                 break;
             }
         }
@@ -126,6 +154,53 @@ fn strip_tags(s: &str) -> String {
         }
     }
     out
+}
+
+/// 整篇的阅读版：Word 全部段落；PPT 每张一节；Excel 每张工作表一节（每张最多 500 行、30 列）
+pub fn document(path: &Path) -> Result<FileDocument, String> {
+    let info = preview(path)?;
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let open = || -> Result<zip::ZipArchive<std::fs::File>, String> {
+        zip::ZipArchive::new(std::fs::File::open(path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+    };
+    let mut sections = vec![];
+    match ext.as_str() {
+        "docx" | "dotx" => {
+            let mut z = open()?;
+            if let Some(d) = zip_text_full(&mut z, "word/document.xml") {
+                sections.push(Section { title: String::new(), lines: texts(&d, "w:t", "</w:p>", 20_000) });
+            }
+        }
+        "pptx" => {
+            let mut z = open()?;
+            for n in 1..=info.pages.unwrap_or(0) {
+                if let Some(s) = zip_text(&mut z, &format!("ppt/slides/slide{n}.xml")) {
+                    sections.push(Section { title: format!("第 {n} 张"), lines: texts(&s, "a:t", "</a:p>", 200) });
+                }
+            }
+        }
+        "xlsx" => {
+            let mut z = open()?;
+            let shared = shared_strings(&mut z, 200_000);
+            let names: Vec<String> = zip_text(&mut z, "xl/workbook.xml")
+                .map(|w| w.split("<sheet ").skip(1).map(|s| s.split("name=\"").nth(1).and_then(|x| x.split('"').next()).map(crate::xml::unescape).unwrap_or_default()).collect())
+                .unwrap_or_default();
+            for (i, name) in names.iter().enumerate() {
+                let rows = sheet_rows_of(&mut z, &format!("xl/worksheets/sheet{}.xml", i + 1), &shared, 500, 30);
+                sections.push(Section { title: if name.is_empty() { format!("工作表 {}", i + 1) } else { name.clone() }, lines: rows });
+            }
+        }
+        _ => {}
+    }
+    Ok(FileDocument { info, sections })
+}
+
+/// 整个文件（Word 正文可能很长，最多读 32MB）
+fn zip_text_full(z: &mut zip::ZipArchive<std::fs::File>, name: &str) -> Option<String> {
+    let mut f = z.by_name(name).ok()?;
+    let mut s = String::new();
+    (&mut f).take(32 << 20).read_to_string(&mut s).ok()?;
+    Some(s)
 }
 
 pub fn preview(path: &Path) -> Result<FilePreview, String> {
@@ -213,6 +288,29 @@ mod tests {
         assert_eq!(p.kind, "word");
         assert_eq!(p.title, "走访汇报");
         assert_eq!(p.lines, vec!["第一段", "第二段"]);
+        let doc = document(&path).unwrap();
+        assert_eq!(doc.sections[0].lines, vec!["第一段", "第二段"]);
+        // 最小的 xlsx：两张表
+        let xl = d.path().join("表.xlsx");
+        {
+            let f = std::fs::File::create(&xl).unwrap();
+            let mut z = zip::ZipWriter::new(f);
+            let o = zip::write::SimpleFileOptions::default();
+            use std::io::Write;
+            z.start_file("xl/workbook.xml", o).unwrap();
+            z.write_all(r#"<workbook><sheets><sheet name="编码" sheetId="1"/><sheet name="汇总" sheetId="2"/></sheets></workbook>"#.as_bytes()).unwrap();
+            z.start_file("xl/sharedStrings.xml", o).unwrap();
+            z.write_all("<sst><si><t>编号</t></si><si><t>类别</t></si></sst>".as_bytes()).unwrap();
+            z.start_file("xl/worksheets/sheet1.xml", o).unwrap();
+            z.write_all(r#"<sheetData><row><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row><row><c r="A2"><v>1</v></c><c r="B2" t="inlineStr"><is><t>A</t></is></c></row></sheetData>"#.as_bytes()).unwrap();
+            z.start_file("xl/worksheets/sheet2.xml", o).unwrap();
+            z.write_all(r#"<sheetData><row><c r="A1"><v>42</v></c></row></sheetData>"#.as_bytes()).unwrap();
+            z.finish().unwrap();
+        }
+        let x = document(&xl).unwrap();
+        assert_eq!(x.sections.iter().map(|s| s.title.as_str()).collect::<Vec<_>>(), vec!["编码", "汇总"]);
+        assert_eq!(x.sections[0].lines, vec!["编号\t类别", "1\tA"]);
+        assert_eq!(x.sections[1].lines, vec!["42"]);
         let md = d.path().join("笔记.md");
         std::fs::write(&md, "# 标题\n\n第一段\n\n第二段").unwrap();
         assert_eq!(preview(&md).unwrap().lines, vec!["# 标题", "第一段", "第二段"]);

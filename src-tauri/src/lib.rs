@@ -528,6 +528,12 @@ async fn file_preview(path: String) -> Result<preview::FilePreview, String> {
     tauri::async_runtime::spawn_blocking(move || preview::preview(Path::new(&path))).await.map_err(err)?
 }
 
+/// 非 Markdown 文件的阅读版（正文区的只读预览）
+#[tauri::command]
+async fn file_document(path: String) -> Result<preview::FileDocument, String> {
+    tauri::async_runtime::spawn_blocking(move || preview::document(Path::new(&path))).await.map_err(err)?
+}
+
 /// 用默认程序打开（导出完成后的「打开」）
 #[tauri::command]
 fn open_path(path: String) -> Result<(), String> {
@@ -619,6 +625,7 @@ pub fn run() {
             open_folder,
             close_folder,
             file_preview,
+            file_document,
             list_tree,
             read_text,
             write_text,
