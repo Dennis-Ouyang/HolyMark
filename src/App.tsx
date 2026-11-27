@@ -182,6 +182,7 @@ export default function App() {
   /** 新功能的编辑器扩展（features.ts）：只建一次，回调经由 featureHooks 换成最新的 */
   const featureHooks = useRef<FeatureHooks>({});
   featureHooks.current.env = { typewriter: () => sRef.current.typewriter, paraFocus: () => sRef.current.paraFocus };
+  featureHooks.current.slash = { run: (id) => menuRef.current(id) };
   const extra = useMemo(() => features(featureHooks), []);
   // 方便自动化测试读取编辑器状态
   (window as unknown as { __hm: unknown }).__hm = { view, menu: (id: string) => menuRef.current(id), openExternal: (p: string) => openExternalFile(p) };

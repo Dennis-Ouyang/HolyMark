@@ -428,6 +428,37 @@ step("N9 在文件夹里替换：预览、取消勾选、执行、存版本、�
   if ((await docText(page)) !== before) throw new Error("撤销没有还原当前文件");
 });
 
+step("N7 斜杠菜单：行首 / 弹出、拼音首字母筛选、回车插入、Esc 保留、无关内容自动关", async (page) => {
+  const before = await docText(page);
+  await page.evaluate(() => { const v = window.__hm.view(); const n = v.state.doc.length; v.focus(); v.dispatch({ changes: { from: n, insert: "\n\n" }, selection: { anchor: n + 2 } }); });
+  await page.waitForTimeout(100);
+  await page.keyboard.type("/");
+  await page.waitForSelector(".hm-slash");
+  const groups = await page.$$eval(".hm-slash .ins-gh", (els) => els.map((e) => e.textContent));
+  if (groups.join("|") !== "段落与列表|插入|审阅") throw new Error("分组不对：" + groups);
+  await page.keyboard.type("bg");
+  const first = await page.textContent(".hm-slash .ins-row.sel .nm");
+  if (first !== "表格") throw new Error("拼音首字母没匹配到表格：" + first);
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".hm-slash", { state: "detached" });
+  let t = await docText(page);
+  if (t.includes("/bg") || !/\|[^\n]*\|\n\|\s*-+/.test(t.slice(before.length))) throw new Error("没有插入表格");
+  // Esc 关闭，保留 /
+  await page.evaluate((n) => { const v = window.__hm.view(); v.dispatch({ changes: { from: n, to: v.state.doc.length, insert: "\n\n" }, selection: { anchor: n + 2 } }); v.focus(); }, before.length);
+  await page.waitForTimeout(100);
+  await page.keyboard.type("/");
+  await page.waitForSelector(".hm-slash");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".hm-slash", { state: "detached" });
+  if (!(await docText(page)).endsWith("\n/")) throw new Error("Esc 后 / 没留下");
+  // 「/home 」自动关
+  await page.keyboard.press("Backspace");
+  await page.keyboard.type("/ho");
+  await page.waitForSelector(".hm-slash", { state: "detached" });
+  await page.evaluate((n) => { const v = window.__hm.view(); v.dispatch({ changes: { from: n, to: v.state.doc.length } }); }, before.length);
+  if ((await docText(page)) !== before) throw new Error("没还原");
+});
+
 /* ---------- 全块测试稿、导出、搜索（放在最后：会把正文换成测试稿） ---------- */
 
 step("全块测试稿：渲染、光标走遍所有行", async (page) => {
@@ -486,7 +517,7 @@ async function run(theme) {
       console.log(`  ✓ ${s.name}`);
     } catch (e) {
       failed++;
-      console.log(`  ✗ ${s.name}：${String(e.message || e).split("\n").slice(0, process.env.HM_VERBOSE ? 6 : 1).join("\n      ")}`);
+      console.log(`  ✗ ${s.name}：${String(e.message || e).split("\n").slice(0, process.env.HM_VERBOSE ? 6 : 1).concat(process.env.HM_VERBOSE ? String(e.stack).split("\n").filter((l) => l.includes("smoke.mjs")).slice(0, 2) : []).join("\n      ")}`);
       if (shotDir) await page.screenshot({ path: `${shotDir}/${theme}-FAIL-${s.name.replace(/[\\/:*?"<>| ]/g, "_")}.png` }).catch(() => {});
     }
   }

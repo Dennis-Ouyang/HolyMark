@@ -223,3 +223,13 @@
 
 /* 单独打开的文件：标题栏只有一个文件名，不受「最后一段最多 60%」的限制（否则会缩成「会…」） */
 .crumb.last.solo { max-width: none; flex-shrink: 1; }
+
+/* ---------- N7 斜杠菜单：外观同插入文件浮层（.ins） ---------- */
+.cm-tooltip.hm-slash { border: 0; background: var(--raised); }
+.hm-slash { width: 260px; transform-origin: 12px 0; animation: floatIn 150ms var(--ease); }
+.cm-tooltip-above .hm-slash { transform-origin: 12px 100%; }
+.hm-slash .ins-row { padding-right: 8px; }
+.hm-slash .sl-ico { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--hover); box-shadow: inset 0 0 0 .5px var(--line-2); color: var(--fg-2); font: 600 10px/1 var(--f-ui); }
+.hm-slash .ins-row.sel .sl-ico { background: var(--raised); color: var(--accent-fg); }
+.hm-slash .sl-key { margin-left: auto; font: 11px var(--f-ui); color: var(--fg-3); background: none; border: 0; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .hm-slash { animation: none; } }

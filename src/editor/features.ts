@@ -10,6 +10,7 @@ import { sectionFolding } from "./sectionFold";
 import { readingMode, ReadingHooks } from "./readingMode";
 import { anchorCompletions } from "./anchorComplete";
 import { writingEnv, EnvHooks } from "./writingEnv";
+import { slashMenu, SlashHooks } from "./slashMenu";
 
 export interface FeatureHooks {
   /** 字数口径：含不含标点（跟设置走） */
@@ -18,11 +19,15 @@ export interface FeatureHooks {
   reading?: ReadingHooks;
   /** 打字机滚动、段落聚焦开没开 */
   env?: EnvHooks;
+  /** 斜杠菜单选中一项后执行命令 */
+  slash?: SlashHooks;
 }
 
 export function features(hooks: { current: FeatureHooks }): Extension {
   return [
     tidyMarks,
+    // 斜杠菜单放在补全前面：两边的方向键、回车、Esc 都是最高优先级，先注册的先拿到（补全刚触发、还在等结果时也会吞掉 Esc）
+    slashMenu(() => hooks.current.slash),
     // 补全只在特定位置出现（公式里的 \），各个来源自己判断，正文里打字不会弹出
     autocompletion({ override: [mathCompletions, anchorCompletions], icons: false, addToOptions: [texPreviewOption], tooltipClass: () => "hm-ac", maxRenderedOptions: 40 }),
     sectionFolding(() => hooks.current.withPunct?.() ?? false),
