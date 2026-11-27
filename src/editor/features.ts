@@ -9,12 +9,15 @@ import { mathCompletions, texPreviewOption } from "./mathComplete";
 import { sectionFolding } from "./sectionFold";
 import { readingMode, ReadingHooks } from "./readingMode";
 import { anchorCompletions } from "./anchorComplete";
+import { writingEnv, EnvHooks } from "./writingEnv";
 
 export interface FeatureHooks {
   /** 字数口径：含不含标点（跟设置走） */
   withPunct?: () => boolean;
   /** 阅读模式里点链接、点图片、双击、悬停文献 */
   reading?: ReadingHooks;
+  /** 打字机滚动、段落聚焦开没开 */
+  env?: EnvHooks;
 }
 
 export function features(hooks: { current: FeatureHooks }): Extension {
@@ -24,5 +27,6 @@ export function features(hooks: { current: FeatureHooks }): Extension {
     autocompletion({ override: [mathCompletions, anchorCompletions], icons: false, addToOptions: [texPreviewOption], tooltipClass: () => "hm-ac", maxRenderedOptions: 40 }),
     sectionFolding(() => hooks.current.withPunct?.() ?? false),
     readingMode(() => hooks.current.reading),
+    writingEnv(() => hooks.current.env),
   ];
 }

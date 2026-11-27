@@ -6,7 +6,7 @@ import { NumberField } from "./NumberField";
 import { Icon } from "./Icons";
 import { kbd } from "../lib/platform";
 import { Segmented } from "./Segmented";
-import { TidySettings } from "./FeatureSettings";
+import { EnvSettings, TidySettings } from "./FeatureSettings";
 
 function Scrim({ onClose, center, children }: { onClose: () => void; center?: boolean; children: React.ReactNode }) {
   useEffect(() => {
@@ -89,6 +89,7 @@ export function SettingsDialog({ s, fonts, onChange, onClose, initialPane }: { s
             <Row label="字号">{num("fontSize", { min: 12, max: 28 }, "px")}</Row>
             <Row label="行距">{num("lineHeight", { min: 1.2, max: 2.6, step: 0.05 }, "倍")}</Row>
             <Row label="版心宽度" hint="每行大约多少个字">{num("measure", { min: 24, max: 60 }, "字")}</Row>
+            <EnvSettings s={s} onChange={onChange} />
             <Row label="公式编号" hint="行间公式 $$…$$ 右侧显示 (1) (2)…"><label className="inline">{sw("eqNumbers", "行间公式编号")}<span>显示编号</span></label></Row>
             <Row label="Markdown 符号"><Segmented label="Markdown 符号" value={s.syntax} options={[["active", "光标所在处显示"], ["always", "始终显示"]]} onChange={(v) => onChange({ syntax: v })} /></Row>
           </>}
@@ -112,11 +113,12 @@ export function SettingsDialog({ s, fonts, onChange, onClose, initialPane }: { s
 function EditorPreview({ s }: { s: Settings }) {
   const width = s.measure * s.fontSize;
   return (
-    <div className="edprev" aria-label="预览">
+    <div className={"edprev" + (s.paraFocus ? " pf" : "")} data-paper={s.paper} aria-label="预览">
       <div className="epv-scroll">
         <div className="epv-col" style={{ width, fontSize: s.fontSize, lineHeight: s.lineHeight }}>
           <div className="epv-h" style={{ fontFamily: fontStack(s.headingFont) }}>这是标题的预览。</div>
           <p className="epv-b" style={{ fontFamily: fontStack(s.bodyFont) }}>这是正文部分的预览。你在此设置的是 HolyMark 打开所有文件时的默认值，如果你只想设置单个文件的显示方式，请在功能区“版式”中单独设置。</p>
+          {s.paraFocus && <p className="epv-b epv-dim" style={{ fontFamily: fontStack(s.bodyFont) }}>开了段落聚焦时，光标不在的段落会像这样变淡。</p>}
         </div>
       </div>
     </div>

@@ -77,6 +77,9 @@ import i_zoomout from "@tabler/icons/outline/zoom-out.svg?raw";
 import i_symbols from "@tabler/icons/outline/math-symbols.svg?raw";
 import i_folderOpen from "@tabler/icons/outline/folder-open.svg?raw";
 import i_chart from "@tabler/icons/outline/chart-bar.svg?raw";
+import i_parafocus from "@tabler/icons/outline/focus-2.svg?raw";
+import i_typewriter from "@tabler/icons/outline/keyboard.svg?raw";
+import i_paper from "@tabler/icons/outline/paint.svg?raw";
 
 const RAW: Record<string, string> = {
   side: i_side,
@@ -153,6 +156,9 @@ const RAW: Record<string, string> = {
   symbols: i_symbols,
   folderOpen: i_folderOpen,
   chart: i_chart,
+  parafocus: i_parafocus,
+  typewriter: i_typewriter,
+  paper: i_paper,
 };
 
 /** 去掉外层 svg 和 Tabler 用来占位的透明方块，只留下线条 */

@@ -29,6 +29,12 @@ export interface Settings {
   ribbonCollapsed: boolean;
   /** 文件树里是否显示 Markdown 以外的文件 */
   showAllFiles: boolean;
+  /** 正文区的纸张底色（只作用于正文区，界面外框不变） */
+  paper: "default" | "cream" | "gray";
+  /** 打字机滚动：打字时把光标所在行保持在屏幕高度的 45% 左右 */
+  typewriter: boolean;
+  /** 段落聚焦：光标所在的段落正常显示，其余段落变淡 */
+  paraFocus: boolean;
   /** 从访达 / 资源管理器单独打开的文件默认用阅读模式 */
   externalReading: boolean;
   /** 中文排版整理的规则 */
@@ -63,6 +69,9 @@ export const DEFAULTS: Settings = {
   showAllFiles: false,
   tidy: TIDY_DEFAULTS,
   externalReading: true,
+  paper: "default",
+  typewriter: false,
+  paraFocus: false,
   v: 2,
 };
 
@@ -116,6 +125,16 @@ export function loadSettings(): Settings {
 export function saveSettings(s: Settings) {
   try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* 隐私模式下忽略 */ }
 }
+
+/**
+ * 字体组合预设：选了只是一次性填好标题字体和正文字体，之后还能单独改。
+ * 名字用本平台的字体，另一个平台上打开同一份设置时，fontStack 按 EQUIV 换成对应的字体。
+ */
+export const FONT_PRESETS: { id: string; name: string; heading: string; body: string }[] = [
+  { id: "song", name: "宋体阅读", heading: UI_FONT, body: isWindows ? "SimSun" : "Songti SC" },
+  { id: "hei", name: "黑体写作", heading: UI_FONT, body: UI_FONT },
+  { id: "kai", name: "楷体", heading: isWindows ? "KaiTi" : "Kaiti SC", body: isWindows ? "KaiTi" : "Kaiti SC" },
+];
 
 /** 第一版设置里用过的中文名 → 系统字体家族名 */
 const ALIAS: Record<string, string> = {

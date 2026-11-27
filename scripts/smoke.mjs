@@ -298,6 +298,33 @@ step("N5 预览 PDF、图片、Excel，切回 Markdown 编辑状态保留", asyn
   if (head !== 40) throw new Error("切回来以后光标变了：" + head);
   await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("holymark-settings") || "{}"); s.showAllFiles = false; localStorage.setItem("holymark-settings", JSON.stringify(s)); });
 });
+step("N13 纸张底色、字体预设、打字机滚动、段落聚焦", async (page) => {
+  await menu(page, "settings");
+  await page.click(".prefs nav button:has-text('编辑器')");
+  await page.click(".prefs .segm button:has-text('米白')");
+  await page.click(".prefs .presets button:has-text('楷体')");
+  const [main, side] = await page.evaluate(() => [getComputedStyle(document.querySelector(".main .scroller")).backgroundColor, getComputedStyle(document.querySelector(".side")).backgroundColor]);
+  if (main === side) throw new Error("纸张底色没有只作用于正文区");
+  if (!(await page.evaluate(() => getComputedStyle(document.querySelector(".hm-editor")).getPropertyValue("--ed-b") || document.querySelector(".app").style.getPropertyValue("--ed-b"))).includes("Kai")) throw new Error("字体预设没有生效");
+  await page.click(".prefs .prow:has-text('打字机滚动') .switch");
+  await page.click(".prefs .prow:has-text('段落聚焦') .switch");
+  await page.keyboard.press("Escape");
+  // 打字机：在中间某段末尾打字，光标停在屏幕 45% 左右
+  await page.evaluate(() => { const v = window.__hm.view(); v.focus(); const p = v.state.doc.toString().indexOf("确认动作。") + 5; v.dispatch({ selection: { anchor: p }, scrollIntoView: true }); });
+  await page.waitForTimeout(200);
+  await page.keyboard.type("打字");
+  await page.waitForTimeout(600);
+  if (!(await docText(page)).includes("确认动作。打字")) throw new Error("打的字没进正文：" + (await page.evaluate(() => document.activeElement.className)));
+  const ratio = await page.evaluate(() => { const v = window.__hm.view(); const c = v.coordsAtPos(v.state.selection.main.head); const r = document.querySelector(".scroller").getBoundingClientRect(); return (c.top - r.top) / r.height; });
+  if (Math.abs(ratio - 0.45) > 0.08) throw new Error("打字机滚动位置不对：" + ratio.toFixed(2) + " " + (await page.evaluate(() => localStorage.getItem("holymark-settings").match(/"typewriter":\w+/)?.[0] + document.querySelector(".app").className)));
+  const dim = await page.evaluate(() => [...document.querySelectorAll(".cm-content > *")].filter((e) => getComputedStyle(e).opacity !== "1").length);
+  if (!dim) throw new Error("段落聚焦没有让其他段落变淡");
+  if (!(await page.$(".cm-content > .hm-pf-cur"))) throw new Error("段落聚焦没有标出当前段落");
+  await page.keyboard.press("Backspace"); await page.keyboard.press("Backspace");
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("holymark-settings")); Object.assign(s, { paper: "default", typewriter: false, paraFocus: false }); delete s.headingFont; delete s.bodyFont; localStorage.setItem("holymark-settings", JSON.stringify(s)); });
+  await page.reload();
+  await page.waitForFunction(() => window.__hm?.view?.()?.state.doc.length > 100);
+});
 
 async function run(theme) {
   const browser = await chromium.launch();

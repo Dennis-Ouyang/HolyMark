@@ -203,3 +203,19 @@
 .finfo dd { margin: 0; color: var(--fg); text-align: right; }
 .finfo dd.t3 { color: var(--fg-3); }
 .fi-wait { color: var(--fg-3); font-size: 13px; }
+
+/* ---------- 阅读和书写环境 ---------- */
+/* 纸张底色：只作用于正文区，界面外框不变；深色主题下对应暖黑、深灰 */
+:root { --paper-cream: #FBF8F1; --paper-gray: #EDF0EC; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --paper-cream: #17140F; --paper-gray: #1B1D1F; } }
+:root[data-theme="dark"] { --paper-cream: #17140F; --paper-gray: #1B1D1F; }
+.app[data-paper="cream"] .main .scroller, .edprev[data-paper="cream"] { background: var(--paper-cream); }
+.app[data-paper="gray"] .main .scroller, .edprev[data-paper="gray"] { background: var(--paper-gray); }
+/* 打字机滚动：底下留出空白，最后几行也能停在屏幕中间偏上 */
+.app.typewriter .doc { padding-bottom: 60vh; }
+/* 段落聚焦：编辑器有焦点时，光标所在段落以外的都变淡 */
+.app.parafocus .cm-editor.cm-focused .cm-content > * { opacity: .35; transition: opacity 160ms var(--ease); }
+.app.parafocus .cm-editor.cm-focused .cm-content > .hm-pf-cur { opacity: 1; }
+.edprev.pf .epv-dim { opacity: .35; margin-top: .6em; }
+.presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.presets .btn.on { color: var(--accent-fg); background: var(--accent-soft); border-color: var(--accent-line); }

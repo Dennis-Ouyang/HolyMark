@@ -120,6 +120,7 @@ export default function App() {
   const view = (): EditorView | null => ed.current?.view() ?? null;
   /** 新功能的编辑器扩展（features.ts）：只建一次，回调经由 featureHooks 换成最新的 */
   const featureHooks = useRef<FeatureHooks>({});
+  featureHooks.current.env = { typewriter: () => sRef.current.typewriter, paraFocus: () => sRef.current.paraFocus };
   const extra = useMemo(() => features(featureHooks), []);
   // 方便自动化测试读取编辑器状态
   (window as unknown as { __hm: unknown }).__hm = { view, menu: (id: string) => menuRef.current(id), openExternal: (p: string) => openExternalFile(p) };
@@ -130,6 +131,10 @@ export default function App() {
   }, []);
 
   /* ---------- settings & theme ---------- */
+  const sRef = useRef(s);
+  sRef.current = s;
+  // 打字机滚动、段落聚焦开关变了：让编辑器马上重算一次
+  useEffect(() => { view()?.dispatch({}); }, [s.paraFocus, s.typewriter]); // eslint-disable-line react-hooks/exhaustive-deps
   const update = (p: Partial<Settings>) => setS((old) => { const n = { ...old, ...p }; saveSettings(n); return n; });
   useEffect(() => {
     const r = document.documentElement;
@@ -870,6 +875,9 @@ export default function App() {
     { group: "命令", icon: "cmd", title: "Markdown 语法速查", run: () => setTimeout(() => setDlg("help_syntax"), 0) },
     { group: "命令", icon: "cmd", title: "导出 Word / PDF / Markdown…", keys: ["⌘", "⇧", "E"].map((k) => keyName(k)), run: () => setTimeout(openExport, 0) },
     { group: "命令", icon: "cmd", title: "设置", keys: ["⌘", ","].map((k) => keyName(k)), run: () => setDlg("settings") },
+    { group: "命令", icon: "typewriter", title: s.typewriter ? "关闭打字机滚动" : "打字机滚动", run: () => update({ typewriter: !s.typewriter }) },
+    { group: "命令", icon: "parafocus", title: s.paraFocus ? "关闭段落聚焦" : "段落聚焦", run: () => update({ paraFocus: !s.paraFocus }) },
+    ...([["default", "默认"], ["cream", "米白"], ["gray", "护眼灰"]] as const).filter(([k]) => k !== s.paper).map(([k, l]) => ({ group: "命令", icon: "paper", title: `纸张底色：${l}`, run: () => update({ paper: k }) })),
     ...(viewing ? [{ group: "命令", icon: "doc", title: "关闭预览，回到正文", keys: ["Esc"], run: () => setViewing("") }] : []),
     ...(nav.canBack ? [{ group: "命令", icon: "left", title: "返回", keys: [kbd(BACK_KEY)], run: () => nav.back() }] : []),
     ...(nav.canForward ? [{ group: "命令", icon: "right", title: "前进", keys: [kbd(FWD_KEY)], run: () => nav.forward() }] : []),
@@ -1016,13 +1024,13 @@ export default function App() {
   }
   const dirty = !!path && text !== live.current.base;
 
-  const appCls = [s.eqNumbers ? "eqnum" : "", "app", showSide ? "" : "no-side", showPanel ? "" : "no-panel", focus ? "focus" : "", isTauri && isMac ? "mac" : "", customFrame ? "framed" : ""].join(" ");
+  const appCls = [s.eqNumbers ? "eqnum" : "", s.typewriter ? "typewriter" : "", s.paraFocus ? "parafocus" : "", "app", showSide ? "" : "no-side", showPanel ? "" : "no-panel", focus ? "focus" : "", isTauri && isMac ? "mac" : "", customFrame ? "framed" : ""].join(" ");
   const fileName = baseName(path);
   const shown = viewing || path;
   const crumbs = shown && root && isInside(root, shown) ? relative(root, shown).split("/") : path && single ? [baseName(path)] : [];
 
   return (
-    <div className={appCls} style={editorStyle}>
+    <div className={appCls} style={editorStyle} data-paper={s.paper}>
       <header className="titlebar" data-tauri-drag-region>
         <button className="ib" title={kbd("切换侧栏 ⌘\\")} aria-label="切换侧栏" onClick={() => setShowSide(!showSide)}><Icon name="side" /></button>
         {nav.arrows}
@@ -1035,6 +1043,7 @@ export default function App() {
         {path && saveState === "error" && <div className="savestate" role="alert" title="自动保存没有成功，继续编辑会再次尝试"><i />保存失败</div>}
         <button className="searchbtn" onClick={() => setDlg("palette")} aria-label="搜索或执行命令"><Icon name="search" size={14} /><span className="lbl">搜索</span><kbd>{kbd("⌘K")}</kbd></button>
         {path && <button className={"ib" + (reading.on ? " on" : "")} title={kbd(reading.on ? "退出阅读模式 ⌘⇧R" : "阅读模式 ⌘⇧R")} aria-label="阅读模式" aria-pressed={reading.on} onClick={reading.toggle}><Icon name="book" /></button>}
+        {focus && path && <button className={"ib" + (s.paraFocus ? " on" : "")} title="段落聚焦：其他段落变淡" aria-label="段落聚焦" aria-pressed={s.paraFocus} onClick={() => update({ paraFocus: !s.paraFocus })}><Icon name="parafocus" /></button>}
         <button className={"ib" + (focus ? " on" : "")} title={kbd("专注 ⌘⇧F")} aria-label="专注模式" onClick={() => setFocus(!focus)}><Icon name="focus" /></button>
         <button className="ib" title={kbd("导出 ⌘⇧E")} aria-label="导出" disabled={!path} onClick={openExport}><Icon name="export" /></button>
         <button className="ib" title={kbd("切换右栏 ⌘/")} aria-label="切换右栏" onClick={() => setShowPanel(!showPanel)}><Icon name="panel" /></button>
