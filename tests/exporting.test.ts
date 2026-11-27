@@ -147,3 +147,20 @@ describe("列表紧跟段落（B6）", () => {
   });
 });
 
+
+import { applyScene, SCENES } from "../src/lib/exportPresets";
+import { DEFAULT_OPTS } from "../src/lib/exporting";
+describe("导出默认值和场景预设（G2）", () => {
+  it("默认 A4、黑色标题", () => {
+    expect(DEFAULT_OPTS.paper).toBe("A4");
+    expect(DEFAULT_OPTS.H[1].color).toBe("black");
+  });
+  it("场景预设在默认值上改，格式保持", () => {
+    expect(SCENES.map((s) => s.name)).toEqual(["学位论文", "课程论文", "投稿", "打印稿"]);
+    const t = applyScene("thesis", "pdf");
+    expect(t.fmt).toBe("pdf");
+    expect(t.toc).toBe(true);
+    expect(t.H[1].num).toBe("第{一}章");
+    expect(applyScene("print", "docx").footer).toContain("{总页数}");
+  });
+});

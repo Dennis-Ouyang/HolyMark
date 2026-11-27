@@ -114,7 +114,7 @@ export default function App() {
   const [cursor, setCursor] = useState(0);
   const [bib, setBib] = useState<BibEntry[]>([]);
   const [countPop, setCountPop] = useState<{ title: string; text: string; rect: DOMRect } | null>(null);
-  const [toast, setToast] = useState<{ msg: string; kind: NoticeKind; action?: NoticeAction } | null>(null);
+  const [toast, setToast] = useState<{ msg: string; kind: NoticeKind; actions: NoticeAction[] } | null>(null);
   const ed = useRef<EditorHandle>(null);
   // base：上一次“保存”时的内容（打开文件、保存版本、外部修改之后）。和 text 不同就是有没保存的修改，关闭应用时会问
   // opened：这次打开时的内容（「撤销这次打开以来的修改」回到这里）
@@ -125,10 +125,11 @@ export default function App() {
   // 方便自动化测试读取编辑器状态
   (window as unknown as { __hm: unknown }).__hm = { view, menu: (id: string) => menuRef.current(id) };
   /** 提示条。kind 决定前面小圆点的颜色：success 绿、warn 琥珀、error 红，info 不带点 */
-  const say = useCallback((m: string, kind: NoticeKind = "info", action?: NoticeAction) => {
-    setToast({ msg: m, kind, action });
+  const say = useCallback((m: string, kind: NoticeKind = "info", action?: NoticeAction | NoticeAction[]) => {
+    const actions = !action ? [] : Array.isArray(action) ? action : [action];
+    setToast({ msg: m, kind, actions });
     window.clearTimeout((say as unknown as { t: number }).t);
-    (say as unknown as { t: number }).t = window.setTimeout(() => setToast(null), action ? 6000 : 2600);
+    (say as unknown as { t: number }).t = window.setTimeout(() => setToast(null), actions.length ? 6000 : 2600);
   }, []);
 
   useEffect(() => { setNotifier(say); }, [say]);
@@ -1095,13 +1096,13 @@ export default function App() {
         onJump={jumpTo} onOpenAt={openAt} onClose={() => setDlg(null)} />}</Presence>
       <Presence ms={100}>{insertAt && <InsertFile at={insertAt} files={flatten(tree)} docPath={path} root={root} bib={bib} recent={recentIns}
         onPick={pickInsert} onPickOther={() => { setInsertAt(null); setTimeout(citeOtherFile, 0); }} onClose={() => { setInsertAt(null); view()?.focus(); }} />}</Presence>
-      <Presence>{dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => setDlg(null)} />}</Presence>
+      <Presence>{dlg === "export" && be && <ExportDialog be={be} path={path} root={root} text={text} tree={tree} bib={bib} fonts={fonts} resolveImage={resolveImage} onClose={() => setDlg(null)} say={say} />}</Presence>
       <Presence>{dlg === "cmpfile" && <Palette items={cmpItems} search={noSearch} pinned={cmpPick} onClose={() => setDlg(null)} placeholder="选一篇文稿，和当前文稿左右对比" />}</Presence>
       <Presence>{dlg === "move" && moving && <Palette items={moveItems} search={noSearch} onClose={() => { setDlg(null); setMoving(null); }} placeholder={`把「${moving.name}」移到哪个文件夹`} />}</Presence>
       {treeMenu && <Menu x={treeMenu.x} y={treeMenu.y} items={treeMenuItems(treeMenu.node)} onClose={() => setTreeMenu(null)} />}
       {folderMenu && <Menu x={folderMenu.x} y={folderMenu.y} items={folderMenuItems()} onClose={() => setFolderMenu(null)} minWidth={232} />}
       {dropCaret && <div className="dropcaret" style={{ left: dropCaret.left, top: dropCaret.top, height: dropCaret.height }} aria-hidden="true" />}
-      <Presence>{toast && <div className={"toast " + toast.kind} role="status">{toast.kind !== "info" && <i aria-hidden="true" />}{toast.msg}{toast.action && <button className="lnk" onClick={() => { toast.action!.run(); setToast(null); }}>{toast.action.label}</button>}</div>}</Presence>
+      <Presence>{toast && <div className={"toast " + toast.kind} role="status">{toast.kind !== "info" && <i aria-hidden="true" />}{toast.msg}{toast.actions.map((a) => <button key={a.label} className="lnk" onClick={() => { a.run(); setToast(null); }}>{a.label}</button>)}</div>}</Presence>
     </div>
   );
 }

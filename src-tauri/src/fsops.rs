@@ -189,6 +189,12 @@ pub fn read_text(path: &Path) -> std::io::Result<String> {
 
 /// 先写临时文件再改名，避免写到一半崩溃留下损坏的稿件。
 pub fn write_text(path: &Path, content: &str) -> std::io::Result<()> {
+    // 导出设置之类写进 .holymark/ 的文件，上级文件夹可能还没有
+    if let Some(dir) = path.parent() {
+        if !dir.exists() {
+            fs::create_dir_all(dir)?;
+        }
+    }
     let tmp: PathBuf = path.with_extension("holymark-tmp");
     fs::write(&tmp, content)?;
     // Windows 上稿件正被别的程序（杀毒软件、同步盘、预览）短暂占用时，改名会失败，稍等重试几次

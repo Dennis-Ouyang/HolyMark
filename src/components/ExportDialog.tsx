@@ -6,7 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { Backend, ExportTools, FontFamily, RefStyles, TreeNode } from "../lib/backend";
 import type { BibEntry } from "../lib/bib";
 import {
-  cloneOpts, CN_SIZES, defaultsName, defaultsYaml, docxStyle, DOCX_HINTS, EMPTY, ExportOptions, Fmt, Level, loadSaved, markdownOut,
+  cloneOpts, CN_SIZES, defaultsName, defaultsYaml, docxStyle, DOCX_HINTS, DEFAULT_OPTS, ExportOptions, Fmt, Level, loadSaved, markdownOut,
   normalizeOpts, PAPERS, PDF_DEFAULTS, prepareForPandoc, save, splitArgs, typstTemplate,
 } from "../lib/exporting";
 import { effective, previewHTML } from "../lib/exportPreview";
@@ -14,9 +14,11 @@ import { renderMermaid, svgToPng } from "../lib/mermaidImage";
 import { FontSelect, Option, Select } from "./Select";
 import { NumberField } from "./NumberField";
 import { Icon } from "./Icons";
-import { baseName, dirOf, join } from "../lib/paths";
+import { baseName, dirOf, join, normalize } from "../lib/paths";
 import { Segmented } from "./Segmented";
 import { isWindows } from "../lib/platform";
+import { applyScene, loadProject, saveProject, SCENES } from "../lib/exportPresets";
+import type { NoticeAction, NoticeKind } from "../editor/notice";
 
 interface Props {
   be: Backend;
@@ -28,13 +30,24 @@ interface Props {
   fonts: FontFamily[];
   resolveImage: (src: string) => string;
   onClose: () => void;
+  /** 应用的提示条（导出成功、恢复默认的撤销） */
+  say: (msg: string, kind?: NoticeKind, action?: NoticeAction | NoticeAction[]) => void;
 }
 
 const flatten = (ns: TreeNode[]): TreeNode[] => ns.flatMap((x) => (x.dir ? flatten(x.children) : [x]));
 const rel = (root: string, p: string) => (p.startsWith(root + "/") ? p.slice(root.length + 1) : p);
 
-const FMTS: [Fmt, string][] = [["docx", "Word"], ["pdf", "PDF"], ["md", "Markdown"]];
-const EXT: Record<Fmt, string> = { docx: "docx", pdf: "pdf", md: "md" };
+/**
+ * 导出格式。新格式（比如 HTML）在这里加一行：名字、扩展名、走不走 Pandoc；
+ * 选项面板和导出流程按 pandoc 字段分两路（Markdown 不经过 Pandoc）。
+ */
+export const FORMATS: { id: Fmt; label: string; ext: string; pandoc: boolean }[] = [
+  { id: "docx", label: "Word", ext: "docx", pandoc: true },
+  { id: "pdf", label: "PDF", ext: "pdf", pandoc: true },
+  { id: "md", label: "Markdown", ext: "md", pandoc: false },
+];
+const FMTS: [Fmt, string][] = FORMATS.map((f) => [f.id, f.label]);
+const EXT = Object.fromEntries(FORMATS.map((f) => [f.id, f.ext])) as Record<Fmt, string>;
 const LEVELS: [Level, string][] = [["1", "一级标题"], ["2", "二级标题"], ["3", "三级标题"]];
 const Seg = Segmented;
 
@@ -55,10 +68,19 @@ const STAGES: Record<Fmt, [Stage, string][]> = {
 };
 type Job = { state: "running"; stage: Stage } | { state: "done"; out: string; warnings: string } | { state: "error"; error: string };
 
-export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveImage, onClose }: Props) {
+export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveImage, onClose, say }: Props) {
   const saved = useMemo(loadSaved, []);
-  const [o, setO] = useState<ExportOptions>(() => saved.last || cloneOpts(EMPTY));
+  const [o, setO] = useState<ExportOptions>(() => saved.last || cloneOpts(DEFAULT_OPTS));
   const [presets, setPresets] = useState(saved.presets);
+  // 导出设置按文件夹存（.holymark/export/options.json），打开时读这个文件夹的（G2）
+  const loaded = useRef(false);
+  useEffect(() => {
+    loadProject(be, root).then((p) => { if (p.last) setO(p.last); setPresets(p.presets); loaded.current = true; });
+  }, [be, root]);
+  // 窄窗口：选项和预览用分段切换（H26）
+  const [narrow, setNarrow] = useState(() => innerWidth < 980);
+  const [side, setSide] = useState<"opts" | "pv">("opts");
+  useEffect(() => { const f = () => setNarrow(innerWidth < 980); addEventListener("resize", f); return () => removeEventListener("resize", f); }, []);
   const [fromRef, setFromRef] = useState<Set<string>>(new Set());
   const [lv, setLv] = useState<Level>("1");
   const [pv, setPv] = useState<"page" | "yaml">("page");
@@ -77,8 +99,8 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
   const isMd = o.fmt === "md";
 
   useEffect(() => { be.exportTools().then(setTools).catch(() => setTools({ pandoc: null, typst: null })); }, [be]);
-  // 记住上次的选项
-  useEffect(() => { save({ last: o, presets }); }, [o, presets]);
+  // 记住上次的选项（这个文件夹里）
+  useEffect(() => { if (loaded.current) saveProject(be, root, { last: o, presets }); else save({ last: o, presets }); }, [o, presets, be, root]);
 
   // Escape 关闭；正在导出时不关，出错时回到选项
   useEffect(() => {
@@ -152,10 +174,26 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
   }
 
   /* ---------- 导出 ---------- */
-  const bibFiles = useMemo(() => [...files.filter((f) => f.name.endsWith(".bib")).map((f) => f.path), ...prepared.bibliography], [files, prepared.bibliography]);
+  // 文件夹里扫到的和属性区写的可能是同一个文件：按规范化后的路径去重（H23）
+  const bibFiles = useMemo(() => [...new Map([...files.filter((f) => f.name.endsWith(".bib")).map((f) => f.path), ...prepared.bibliography].map((p) => [normalize(p), normalize(p)])).values()], [files, prepared.bibliography]);
   const yaml = useMemo(() => (isMd ? "" : defaultsYaml(o, { bibliography: bibFiles, docDir })), [o, bibFiles, docDir, isMd]);
   const template = useMemo(() => (o.fmt === "pdf" ? typstTemplate(o, docTitle) : ""), [o, docTitle]);
   const missing = o.fmt === "md" || !tools || be.isDemo ? [] : [!tools.pandoc && "Pandoc", o.fmt === "pdf" && !tools.typst && "Typst"].filter(Boolean) as string[];
+
+  /**
+   * 导出成功：关掉对话框，用提示条说「已导出「研究设计.docx」」，带「打开」「在访达中显示」（H25）。
+   * 有 Pandoc / Typst 提示时留在对话框里显示（文件已经生成），只有出错时停在错误页。
+   */
+  function finished(out: string, warnings: string) {
+    if (summarizeWarnings(warnings).length) { setJob({ state: "done", out, warnings }); return; }
+    setJob(null);
+    onClose();
+    const acts: NoticeAction[] = be.isDemo ? [] : [
+      { label: "打开", run: () => { be.openPath(out).catch(() => {}); } },
+      { label: isWindows ? "在资源管理器中显示" : "在访达中显示", run: () => { be.reveal(out).catch(() => {}); } },
+    ];
+    say(`已导出「${baseName(out)}」`, "success", acts);
+  }
 
   async function run() {
     setErr("");
@@ -173,7 +211,7 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
     try {
       if (isMd) {
         await be.writeText(out, markdownOut(text, o, bibMap));
-        setJob({ state: "done", out, warnings: "" });
+        finished(out, "");
         return;
       }
       const assets: { name: string; data: string }[] = [];
@@ -189,7 +227,7 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
         typstTemplate: o.fmt === "pdf" ? template : null,
         assets, extraArgs: splitArgs(o.extra),
       });
-      setJob({ state: "done", out: r.output, warnings: r.warnings });
+      finished(r.output, r.warnings);
     } catch (e) {
       setJob({ state: "error", error: String(e) });
     } finally { un(); setBusy(false); }
@@ -206,7 +244,7 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
   const hint = (k: keyof typeof DOCX_HINTS & keyof typeof PDF_DEFAULTS) => String(D[k]);
   const xf = (k: string, node: React.ReactNode) => <span className={"xf" + (fromRef.has(k) ? " from" : "")} title={fromRef.has(k) ? "来自参考文档" : undefined}>{node}</span>;
   const numf = (k: "mt" | "mb" | "ml" | "mr" | "indent" | "before" | "after" | "pw" | "ph", label: string, attrs: { min: number; max: number; step?: number }, unit?: string, ph?: string) =>
-    xf(k, <NumberField value={o[k]} placeholder={ph ?? (k in D ? String((D as Record<string, unknown>)[k]) : "")} {...attrs} unit={unit} ariaLabel={label} onCommit={(v) => set({ [k]: v })} />);
+    xf(k, <NumberField value={o[k]} placeholder={ph ?? (k in D ? String((D as Record<string, unknown>)[k]) : "")} {...attrs} unit={unit} unitLabel={/^m[tblr]$/.test(k) ? "厘米" : undefined} ariaLabel={label} onCommit={(v) => set({ [k]: v })} />);
   const sizeOpts = (dflt: string): Option<string>[] => [
     { value: "", label: `默认（${dflt} pt）` },
     ...CN_SIZES.map(([v, l]) => ({ value: v, label: l, hint: `${v} pt` })),
@@ -251,11 +289,13 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
         <div className="orow"><span /><div className="quad">
           {(["mt", "mb", "ml", "mr"] as const).map((k, i) => <label key={k}><span>{"上下左右"[i]}</span>{numf(k, `${"上下左右"[i]}边距`, { min: 0, max: 10, step: 0.1 })}</label>)}
         </div></div>
+        <More id="hf" label="页眉和页脚">
         <div className="orow"><span>页眉</span><div className="pair"><input className="tin" value={o.header} placeholder="不显示" aria-label="页眉" onChange={(e) => set({ header: e.target.value })} />
           <Seg label="页眉对齐" value={o.headerAlign} options={[["left", "左"], ["center", "中"], ["right", "右"]]} onChange={(v) => set({ headerAlign: v })} /></div></div>
         <div className="orow"><span>页脚</span><div className="pair"><input className="tin" value={o.footer} placeholder="不显示" aria-label="页脚" onChange={(e) => set({ footer: e.target.value })} />
           <Seg label="页脚对齐" value={o.footerAlign} options={[["left", "左"], ["center", "中"], ["right", "右"]]} onChange={(v) => set({ footerAlign: v })} /></div></div>
         <p className="dnote tokens">可以插入 {(["{页码}", "{总页数}", "{标题}"]).map((t) => <button key={t} type="button" className="tok" onClick={() => set({ footer: o.footer + t })} title="加到页脚">{t}</button>)}，例如 第 {"{页码}"} 页 / 共 {"{总页数}"} 页</p>
+        </More>
       </div>
       <div className="og"><h5>正文</h5>
         <div className="orow"><span>中文字体</span>{xf("cjk", <FontSelect value={o.cjk} fonts={fonts} allowDefault defaultLabel={fontDefault("cjk")} ariaLabel="中文字体" onChange={(v) => set({ cjk: v })} />)}</div>
@@ -264,21 +304,25 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
         <div className="orow"><span>行距</span><div className="pair"><Seg label="行距方式" value={o.lsMode} options={[["multi", "倍数"], ["fixed", "固定值"]]} onChange={(v) => set({ lsMode: v, ls: "" })} />
           {xf("ls", <NumberField value={o.ls} placeholder={o.lsMode === "fixed" ? "20" : hint("ls")} min={o.lsMode === "fixed" ? 6 : 0.5} max={o.lsMode === "fixed" ? 72 : 4} step={o.lsMode === "fixed" ? 1 : 0.05} unit={o.lsMode === "fixed" ? "pt" : "倍"} ariaLabel="行距" onCommit={(v) => set({ ls: v })} />)}</div></div>
         <div className="orow"><span>首行缩进</span>{numf("indent", "首行缩进", { min: 0, max: 8, step: 0.5 }, "字符")}</div>
+        <More id="body">
         <div className="orow"><span>段前 / 段后</span><div className="pair">{numf("before", "段前", { min: 0, max: 72, step: 0.5 }, "pt")}{numf("after", "段后", { min: 0, max: 72, step: 0.5 }, "pt")}</div></div>
         <div className="orow"><span>对齐</span>{xf("align", <Seg label="对齐" value={o.align} options={[["", "默认"], ["left", "左对齐"], ["justify", "两端对齐"], ["center", "居中"]]} onChange={(v) => set({ align: v })} />)}</div>
+        </More>
       </div>
       <div className="og"><h5>标题</h5>
         <div className="lvtabs"><Seg full label="标题级别" value={lv} options={LEVELS} onChange={setLv} /></div>
-        <div className="orow"><span>字体</span>{xf(hk("font"), <FontSelect value={H.font} fonts={fonts} allowDefault defaultLabel="同正文" ariaLabel="标题字体" onChange={(v) => setH({ font: v })} />)}</div>
         <div className="orow"><span>字号</span>{xf(hk("size"), <Select value={H.size} options={withCustom(sizeOpts(D.H[lv].size), H.size)} ariaLabel="标题字号" onChange={(v) => setH({ size: v })} />)}</div>
         <div className="orow"><span>加粗</span>{xf(hk("bold"), <Seg label="加粗" value={H.bold} options={[["", "默认"], ["1", "加粗"], ["0", "不加粗"]]} onChange={(v) => setH({ bold: v })} />)}</div>
+        <div className="orow"><span>编号</span><input className="tin" value={H.num} placeholder="保留原文编号" aria-label="标题编号" onChange={(e) => setH({ num: e.target.value })} /></div>
+        <p className="dnote">例如 第{"{一}"}章、{"{1}.{2}"}。{"{1}{2}{3}"} 是各级的阿拉伯数字，{"{一}{二}{三}"} 是中文数字；填了以后，原文里写的编号会被替换。</p>
+        <More id="heading">
+        <div className="orow"><span>字体</span>{xf(hk("font"), <FontSelect value={H.font} fonts={fonts} allowDefault defaultLabel="同正文" ariaLabel="标题字体" onChange={(v) => setH({ font: v })} />)}</div>
         <div className="orow"><span>对齐</span>{xf(hk("align"), <Seg label="标题对齐" value={H.align} options={[["", "默认"], ["left", "左"], ["center", "居中"]]} onChange={(v) => setH({ align: v })} />)}</div>
         {o.fmt === "docx" && <div className="orow"><span>颜色</span><Seg label="标题颜色" value={H.color} options={[["", "默认"], ["black", "黑色"]]} onChange={(v) => setH({ color: v })} /></div>}
         <div className="orow"><span>段前 / 段后</span><div className="pair">
           {xf(hk("before"), <NumberField value={H.before} placeholder="" min={0} max={72} step={0.5} unit="pt" ariaLabel="标题段前" onCommit={(v) => setH({ before: v })} />)}
           {xf(hk("after"), <NumberField value={H.after} placeholder="" min={0} max={72} step={0.5} unit="pt" ariaLabel="标题段后" onCommit={(v) => setH({ after: v })} />)}</div></div>
-        <div className="orow"><span>编号</span><input className="tin" value={H.num} placeholder="保留原文编号" aria-label="标题编号" onChange={(e) => setH({ num: e.target.value })} /></div>
-        <p className="dnote">例如 第{"{一}"}章、{"{1}.{2}"}。{"{1}{2}{3}"} 是各级的阿拉伯数字，{"{一}{二}{三}"} 是中文数字；填了以后，原文里写的编号会被替换。</p>
+        </More>
       </div>
       <div className="og"><h5>参考文献</h5>
         <div className="orow"><span>文献格式</span><Select value={o.csl} options={cslOptions} ariaLabel="参考文献格式" width={300} onChange={(v) => (v === "__pick" ? pickCsl() : set({ csl: v }))} /></div>
@@ -290,7 +334,9 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
       <div className="og"><h5>其他</h5>
         <div className="orow"><span>目录</span><label className="pair spread"><span className="dnote">在正文前生成目录</span><button type="button" className={"switch" + (o.toc ? " on" : "")} role="switch" aria-checked={o.toc} aria-label="生成目录" onClick={() => set({ toc: !o.toc })} /></label></div>
         {o.fmt === "pdf" && <div className="orow"><span>公式编号</span><label className="pair spread"><span className="dnote">行间公式右侧显示 (1) (2)…</span><button type="button" className={"switch" + (o.eqNum ? " on" : "")} role="switch" aria-checked={o.eqNum} aria-label="公式编号" onClick={() => set({ eqNum: !o.eqNum })} /></label></div>}
+        <More id="pandoc" label="高级">
         <div className="orow top"><span>Pandoc 参数</span><textarea className="xa" value={o.extra} placeholder="额外的参数，例如 --number-sections" aria-label="额外的 Pandoc 参数" onChange={(e) => set({ extra: e.target.value })} /></div>
+        </More>
       </div>
     </>
   );
@@ -313,22 +359,32 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
           <div className="xpre">
             {naming === null ? <>
               {/* 还没有预设时不显示下拉，只留「存为预设」 */}
-              {presets.length > 0 && <Select value="" placeholder="套用预设…" ariaLabel="预设" width={200}
-                options={presets.map((p, i) => ({ value: String(i), label: p.name }))}
-                onChange={(v) => { const p = presets[+v]; if (p) { setO(normalizeOpts({ ...p.opts, fmt: o.fmt })); setFromRef(new Set()); } }} />}
+              {/* 场景预设（学位论文、课程论文、投稿、打印稿）和自己存的预设放在一个下拉里 */}
+              <Select value="" placeholder="套用预设…" ariaLabel="预设" width={200}
+                options={[
+                  ...SCENES.map((sc) => ({ value: "scene:" + sc.id, label: sc.name, hint: "", group: "常用场景", title: sc.hint })),
+                  ...presets.map((p, i) => ({ value: String(i), label: p.name, group: "我的预设" })),
+                ]}
+                onChange={(v) => {
+                  const before = cloneOpts(o);
+                  if (v.startsWith("scene:")) { setO(applyScene(v.slice(6), o.fmt)); setFromRef(new Set()); }
+                  else { const p = presets[+v]; if (!p) return; setO(normalizeOpts({ ...p.opts, fmt: o.fmt })); setFromRef(new Set()); }
+                  say("已套用预设", "success", { label: "撤销", run: () => setO(before) });
+                }} />
               <button type="button" className="btn" onClick={() => setNaming("")}>存为预设</button>
             </> : <form className="pair" onSubmit={(e) => { e.preventDefault(); const nm = naming.trim(); if (!nm) return; setPresets([...presets.filter((p) => p.name !== nm), { name: nm, opts: cloneOpts(o) }]); setNaming(null); }}>
               <input className="tin" autoFocus placeholder="预设名称" aria-label="预设名称" value={naming} onChange={(e) => setNaming(e.target.value)} />
               <button type="submit" className="btn acc">保存</button><button type="button" className="btn" onClick={() => setNaming(null)}>取消</button>
             </form>}
           </div>
-          <button className="ib" onClick={onClose} aria-label="关闭"><Icon name="close" /></button>
+          <button className="ib xclose" onClick={onClose} aria-label="关闭"><Icon name="close" /></button>
         </div>
-        <div className="xb">
+        {narrow && <div className="xnarrow"><Seg full label="选项或预览" value={side} options={[["opts", "选项"], ["pv", "预览"]]} onChange={setSide} /></div>}
+        <div className={"xb" + (narrow ? " narrow " + side : "")}>
           <div className="xopts">{isMd ? mdOpts : pages}</div>
           <div className="xpv">
             <div className="pv-top">
-              <span className="dnote">{isMd ? "导出后的文件内容" : pv === "page" ? "实时预览 · 分页和字体是近似效果" : "导出时写入文件夹的 .holymark/export/，命令行里也能用"}</span>
+              <span className="dnote">{isMd ? "导出后的文件内容" : pv === "page" ? <>实时预览 <span className="xinfo" title="分页和字体是近似效果，以导出的文件为准"><Icon name="info" size={13} /></span></> : <>配置文件 <span className="xinfo" title="导出时写入文件夹的 .holymark/export/，命令行里也能用"><Icon name="info" size={13} /></span></>}</span>
               {!isMd && <Seg label="预览方式" value={pv} options={[["page", "页面"], ["yaml", "配置文件"]]} onChange={setPv} />}
             </div>
             {isMd ? <pre className="xsrc">{markdownOut(text, o, bibMap)}</pre>
@@ -343,9 +399,14 @@ export function ExportDialog({ be, path, root, text, tree, bib, fonts, resolveIm
             {err ? <span className="xerr" role="alert">{err}</span>
               : be.isDemo && !isMd ? <span>浏览器预览里只能看效果，导出 Word 和 PDF 请在 HolyMark 应用里进行。</span>
               : missing.length ? <span className="xerr">没有找到 {missing.join("、")}。可以在终端运行 <code>brew install {missing.join(" ").toLowerCase()}</code>，装好后重新打开导出窗口。</span>
-                : tools && !isMd ? <span>{[tools.pandoc && `Pandoc ${tools.pandoc.version.replace(/^pandoc\s*/i, "")}${tools.pandoc.bundled ? "（内置）" : ""}`, o.fmt === "pdf" && tools.typst && `Typst ${tools.typst.version.replace(/^typst\s*/i, "").split(" ")[0]}${tools.typst.bundled ? "（内置）" : ""}`].filter(Boolean).join(" · ")}</span> : null}
+                : tools && !isMd ? <span className="xinfo" tabIndex={0} title={[tools.pandoc && `Pandoc ${tools.pandoc.version.replace(/^pandoc\s*/i, "")}${tools.pandoc.bundled ? "（内置）" : ""}`, o.fmt === "pdf" && tools.typst && `Typst ${tools.typst.version.replace(/^typst\s*/i, "").split(" ")[0]}${tools.typst.bundled ? "（内置）" : ""}`].filter(Boolean).join("\n")}
+                  aria-label="导出工具的版本"><Icon name="info" size={15} /></span> : null}
           </span>
-          <button type="button" className="btn" onClick={() => { setO(normalizeOpts({ fmt: o.fmt })); setFromRef(new Set()); }}>全部清空</button>
+          <button type="button" className="btn" title="回到默认值（A4、黑色标题……），可以撤销" onClick={() => {
+            const before = cloneOpts(o), ref0 = fromRef;
+            setO(normalizeOpts({ ...cloneOpts(DEFAULT_OPTS), fmt: o.fmt })); setFromRef(new Set());
+            say("已恢复默认的导出设置", "success", { label: "撤销", run: () => { setO(before); setFromRef(ref0); } });
+          }}>恢复默认</button>
           <button type="button" className="btn" onClick={onClose}>取消</button>
           {/* 导出中文字不换，只淡出、换成转圈：按钮宽度不变，旁边的按钮不会被挤动 */}
           <button type="button" className={"btn acc" + (busy ? " loading" : "")} aria-busy={busy || undefined} aria-label={busy ? "正在导出" : undefined}
@@ -380,6 +441,17 @@ export function summarizeWarnings(raw: string): { text: string; n: number }[] {
   const out = new Map<string, number>();
   for (const it of items) { const k = zh(it); out.set(k, (out.get(k) ?? 0) + 1); }
   return [...out].map(([text, n]) => ({ text, n }));
+}
+
+/** 渐进展开（G2）：每组里不常用的设置收在「更多」后面，展开状态记在本机 */
+function More({ id, label = "更多设置", children }: { id: string; label?: string; children: React.ReactNode }) {
+  const key = "hm-export-more-" + id;
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(key) === "1"; } catch { return false; } });
+  const toggle = () => { setOpen(!open); try { localStorage.setItem(key, open ? "0" : "1"); } catch { /* 存不了就算了 */ } };
+  return <>
+    <button type="button" className={"xmore" + (open ? " open" : "")} aria-expanded={open} onClick={toggle}><Icon name="chevRight" size={12} />{label}</button>
+    {open && <div className="xmore-b">{children}</div>}
+  </>;
 }
 
 /* ---------------- 导出进度与完成 ---------------- */

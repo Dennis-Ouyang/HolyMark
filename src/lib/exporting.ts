@@ -58,6 +58,15 @@ export const EMPTY: ExportOptions = {
   H: { 1: { ...H0 }, 2: { ...H0 }, 3: { ...H0 } }, csl: "", notes: "comment", toc: false, eqNum: false, extra: "",
   mdNotes: "keep", mdCite: "keep", mdFm: "keep",
 };
+/**
+ * 为中文用户调过的默认值（G2）：A4 纸、黑色标题（Pandoc 默认是 Letter 纸、蓝色标题）。
+ * 「恢复默认」回到这里；EMPTY 是「什么都不改」，测试和场景预设在它上面叠加。
+ */
+export const DEFAULT_OPTS: ExportOptions = {
+  ...EMPTY, paper: "A4",
+  H: { 1: { ...H0, color: "black" }, 2: { ...H0, color: "black" }, 3: { ...H0, color: "black" } },
+};
+
 export function cloneOpts(o: ExportOptions): ExportOptions {
   return JSON.parse(JSON.stringify(o));
 }
@@ -469,7 +478,7 @@ export function defaultsYaml(o: ExportOptions, ctx: DefaultsCtx): string {
 
 const KEY = "holymark-export";
 /** Word 和 PDF 共用一套选项，切换格式不用重填 */
-interface Saved { last: ExportOptions | null; presets: { name: string; opts: ExportOptions }[] }
+export interface Saved { last: ExportOptions | null; presets: { name: string; opts: ExportOptions }[] }
 export function loadSaved(): Saved {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || "{}");
