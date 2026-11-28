@@ -196,7 +196,10 @@ export function useDocument(a: UseDocumentArgs) {
     const t = e.target as HTMLElement;
     if (t.closest(".cm-content") || t.closest("button,input,.welcome")) return;
     const contentBottom = v.contentDOM.getBoundingClientRect().bottom;
-    if (e.clientY < contentBottom) return;
+    if (e.clientY < contentBottom) {
+      if (v.hasFocus) v.contentDOM.blur();
+      return;
+    }
     e.preventDefault();
     // 新段落前面要有一个空行，否则会被 Markdown 当成上一段（比如列表）的续行
     const docText = v.state.doc.toString();

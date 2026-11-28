@@ -246,7 +246,7 @@ export default function App() {
         return p ? relative(dirOf(docPath()), p) : null;
       },
     },
-    onAtCite: (pos: number) => { requestAnimationFrame(() => bridge.current.openInsert("@", pos)); return true; },
+    onAtCite: (pos: number) => { bridge.current.openInsert("@", pos); return true; },
     // 打开链接只有一个入口（editor/links.ts 的 openLink）：编辑时 ⌘ 点击、阅读模式单击都走这里
     links: {
       docPath: () => live.current.path,
@@ -566,7 +566,7 @@ export default function App() {
           say(`已把这篇文献加进 ${t.label.replace(/（新建）$/, "")}，引用键 ${r.key}`, "success");
           return r.key;
         } } : undefined}
-        onPick={insDrop.pickInsert} onPickOther={() => { insDrop.setInsertAt(null); setTimeout(insDrop.citeOtherFile, 0); }} onClose={() => { insDrop.setInsertAt(null); view()?.focus(); }} />}</Presence>
+        onPick={insDrop.pickInsert} onPickOther={() => { insDrop.setInsertAt(null); setTimeout(insDrop.citeOtherFile, 0); }} onDeleteAt={insDrop.insertAt.atPos !== undefined ? insDrop.deleteAt : undefined} onClose={() => { insDrop.setInsertAt(null); view()?.focus(); }} />}</Presence>
       {tidy.node}
       {symbols.node}
       {reading.node}

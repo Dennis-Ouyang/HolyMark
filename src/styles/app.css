@@ -8,7 +8,7 @@
   --ins:#1B9A60; --ins-bg:rgba(27,154,96,.12); --del:#D23F4C; --del-bg:rgba(210,63,76,.10); --warn:#B7791F; --warn-bg:rgba(200,140,30,.10);
   /* 黄色只留一个色相（琥珀 45°），按用途分深浅：==高亮==、搜索命中、当前命中、滚动条上的命中刻度。批注不用黄色（--note-bg 跟主题色） */
   --mark-bg:rgba(242,190,34,.34); --hit-bg:rgba(242,190,34,.26); --hit-cur:rgba(242,190,34,.55); --hit-line:#C8901A;
-  --tk:#A0A4B0; --code-bg:#F6F7F9;
+  --tk:#A0A4B0; --code-bg:#F6F7F9; --code-bg-alpha:color-mix(in srgb, var(--fg) 3.5%, transparent); --icode-bg:color-mix(in srgb, var(--fg) 7%, transparent); --sel-bg:color-mix(in srgb, var(--accent) 20%, transparent);
   --hl-kw:#8E3BC9; --hl-str:#3F8A2E; --hl-num:#B5541A; --hl-com:#9AA0A6; --hl-fn:#2F62C9;
   --pop:0 0 0 1px var(--line-2), 0 16px 40px -10px rgba(20,22,40,.22);
   /* 叠层阴影：发丝描边 + 1/3/6/12px 四层淡影（浮层：批注、插入文件、菜单） */
@@ -38,11 +38,9 @@
     --accent:#7D84F4; --accent-fg:#B9BDFA; --accent-soft:rgba(125,132,244,.14); --accent-line:rgba(125,132,244,.45);
     --ins:#4CC38A; --ins-bg:rgba(76,195,138,.16); --del:#F0646E; --del-bg:rgba(240,100,110,.15); --warn:#E0A33A; --warn-bg:rgba(224,163,58,.13);
     --mark-bg:rgba(242,190,34,.24); --hit-bg:rgba(242,190,34,.20); --hit-cur:rgba(242,190,34,.42); --hit-line:#D9A53A;
-    --tk:#5E6272; --code-bg:#121318;
+    --tk:#5E6272; --code-bg:#121318; --code-bg-alpha:color-mix(in srgb, var(--fg) 4%, transparent); --icode-bg:color-mix(in srgb, var(--fg) 10%, transparent); --sel-bg:color-mix(in srgb, var(--accent) 28%, transparent);
     --hl-kw:#C792EA; --hl-str:#9ECE6A; --hl-num:#F5A97F; --hl-com:#5C6370; --hl-fn:#7AA2F7;
     --pop:0 0 0 1px var(--line-2), 0 16px 40px -8px rgba(0,0,0,.55);
-  --float:0 0 0 .5px rgba(255,255,255,.12), 0 1px 1px rgba(0,0,0,.2), 0 3px 3px rgba(0,0,0,.2), 0 6px 6px rgba(0,0,0,.2), 0 12px 12px rgba(0,0,0,.2);
-  --note-bg:color-mix(in srgb, var(--accent) 16%, transparent); --note-bg-hover:color-mix(in srgb, var(--accent) 26%, transparent);
     --float:0 0 0 .5px rgba(255,255,255,.12), 0 1px 1px rgba(0,0,0,.2), 0 3px 3px rgba(0,0,0,.2), 0 6px 6px rgba(0,0,0,.2), 0 12px 12px rgba(0,0,0,.2);
     --note-bg:color-mix(in srgb, var(--accent) 16%, transparent); --note-bg-hover:color-mix(in srgb, var(--accent) 26%, transparent);
     --seg-track:#16171C; --seg-thumb:#2A2D36;
@@ -57,16 +55,18 @@
   --accent:#7D84F4; --accent-fg:#B9BDFA; --accent-soft:rgba(125,132,244,.14); --accent-line:rgba(125,132,244,.45);
   --ins:#4CC38A; --ins-bg:rgba(76,195,138,.16); --del:#F0646E; --del-bg:rgba(240,100,110,.15); --warn:#E0A33A; --warn-bg:rgba(224,163,58,.13);
   --mark-bg:rgba(242,190,34,.24); --hit-bg:rgba(242,190,34,.20); --hit-cur:rgba(242,190,34,.42); --hit-line:#D9A53A;
-  --tk:#5E6272; --code-bg:#121318;
+  --tk:#5E6272; --code-bg:#121318; --code-bg-alpha:color-mix(in srgb, var(--fg) 4%, transparent); --icode-bg:color-mix(in srgb, var(--fg) 10%, transparent); --sel-bg:color-mix(in srgb, var(--accent) 28%, transparent);
   --hl-kw:#C792EA; --hl-str:#9ECE6A; --hl-num:#F5A97F; --hl-com:#5C6370; --hl-fn:#7AA2F7;
   --pop:0 0 0 1px var(--line-2), 0 16px 40px -8px rgba(0,0,0,.55);
+  --float:0 0 0 .5px rgba(255,255,255,.12), 0 1px 1px rgba(0,0,0,.2), 0 3px 3px rgba(0,0,0,.2), 0 6px 6px rgba(0,0,0,.2), 0 12px 12px rgba(0,0,0,.2);
+  --note-bg:color-mix(in srgb, var(--accent) 16%, transparent); --note-bg-hover:color-mix(in srgb, var(--accent) 26%, transparent);
   --seg-track:#16171C; --seg-thumb:#2A2D36;
   --scrim:rgba(0,0,0,.5);
 }
 
 * { box-sizing: border-box; }
-html, body, #root { height: 100%; margin: 0; }
-body { background: var(--bg); color: var(--fg); font: 13px/1.5 var(--f-ui); -webkit-font-smoothing: antialiased; overflow: hidden; cursor: default;
+html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; overflow: clip; overscroll-behavior: none; }
+body { background: var(--bg); color: var(--fg); font: 13px/1.5 var(--f-ui); -webkit-font-smoothing: antialiased; overflow: hidden; overflow: clip; cursor: default;
   -webkit-user-select: none; user-select: none; -webkit-user-drag: none; }
 /* 只有正文、输入框、对照视图的正文可以选中文字，其余界面像原生应用一样不可选 */
 .cm-content, input, textarea, [contenteditable="true"], .cell { -webkit-user-select: text; user-select: text; cursor: text; }
@@ -80,9 +80,10 @@ kbd { font: 500 11px var(--f-ui); padding: 1px 5px; border-radius: 4px; border: 
 [hidden] { display: none !important; }
 
 /* ---------- 窗口骨架 ---------- */
-.app { position: relative; --sw: var(--sw0, 248px); --pw: var(--pw0, 300px); height: 100%; display: grid; grid-template-rows: 44px minmax(0,1fr) 28px; grid-template-columns: var(--sw) minmax(0,1fr) var(--pw); transition: grid-template-columns 240ms var(--ease); }
+/* overflow: clip 裁掉窄窗口滑出屏幕外的左右抽屉，避免触控板上下滑动或 scrollIntoView 把整页横向滚偏 */
+.app { position: relative; --sw: var(--sw0, 248px); --pw: var(--pw0, 300px); width: 100%; height: 100%; overflow: hidden; overflow: clip; display: grid; grid-template-rows: 44px minmax(0,1fr) 28px; grid-template-columns: var(--sw) minmax(0,1fr) var(--pw); transition: grid-template-columns 240ms var(--ease); }
 .app.no-side { --sw: 0px; } .app.no-panel { --pw: 0px; } .app.focus { --sw: 0px; --pw: 0px; }
-.titlebar { grid-column: 1/-1; grid-row: 1; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-bottom: 1px solid var(--line); min-width: 0; -webkit-user-select: none; user-select: none; transition: opacity 300ms; }
+.titlebar { grid-column: 1/-1; grid-row: 1; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-bottom: 1px solid var(--line); min-width: 0; overflow: hidden; -webkit-user-select: none; user-select: none; transition: opacity 300ms; }
 .app.mac .titlebar { padding-left: 80px; }
 /* Windows：自己画的窗口按钮，贴着窗口右上角，和系统标题栏按钮一样宽 */
 .app.framed .titlebar { padding-right: 0; }
@@ -208,7 +209,7 @@ body.tree-dragging, body.tree-dragging * { cursor: grabbing !important; user-sel
 .rgrp + .rgrp::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 8px; width: 1px; background: var(--line); }
 .rgrp .row { display: flex; align-items: center; gap: 2px; }
 .rgrp .vsep { width: 1px; height: 16px; background: var(--line); margin: 0 2px; }
-.rgrp .rb:not(.tall) { min-width: 27px; padding: 0 6px; }
+.rgrp .rb:not(.tall) { min-width: 28px; padding: 0 6px; }
 .rgrp .gl { font-size: 11px; line-height: 16px; color: var(--fg-3); white-space: nowrap; }
 .rb { height: 28px; min-width: 28px; padding: 0 7px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 13px; color: var(--fg-2); white-space: nowrap; }
 .rb { transition: background 120ms, color 120ms, box-shadow 120ms, scale var(--press-ms, var(--spring-ms)) var(--press-ease, var(--spring)); }
@@ -255,7 +256,7 @@ body.tree-dragging, body.tree-dragging * { cursor: grabbing !important; user-sel
 .gridlbl { font-size: 12px; color: var(--fg-3); padding: 0 6px 4px; }
 
 /* ---------- 编辑区 ---------- */
-.scroller { flex: 1; overflow-y: auto; }
+.scroller { flex: 1; overflow-y: auto; overflow-x: hidden; }
 .doc { max-width: calc(var(--measure) * 1 + 112px); margin: 0 auto; padding: 36px 56px 40vh; font-size: var(--ed-size); }
 .welcome { padding: 16vh 0 0; text-align: center; color: var(--fg-2); font-size: 14px; max-width: 440px; margin: 0 auto; }
 .welcome h2 { font-size: 28px; color: var(--fg); margin: 0 0 8px; }
@@ -273,8 +274,9 @@ body.tree-dragging, body.tree-dragging * { cursor: grabbing !important; user-sel
 .hm-editor .cm-line { padding: 0; text-align: justify; hanging-punctuation: first allow-end; }
 .hm-editor .cm-cursor { border-left: 2px solid var(--accent); }
 .hm-editor .cm-activeLine { background: transparent; }
-.hm-editor .cm-selectionBackground, .hm-editor .cm-focused .cm-selectionBackground { background: var(--accent-soft) !important; }
-.hm-editor .cm-content ::selection { background: var(--accent-soft); }
+.hm-editor .cm-selectionBackground { background: var(--accent-soft) !important; }
+.hm-editor .cm-focused .cm-selectionBackground { background: var(--sel-bg) !important; }
+.hm-editor .cm-content ::selection { background: var(--sel-bg); }
 .hm-editor .cm-searchMatch { background: var(--hit-bg); }
 .hm-editor .cm-searchMatch.cm-searchMatch-selected { background: var(--hit-cur); }
 .hm-editor .cm-panels { background: var(--surface); border-color: var(--line); color: var(--fg); font-family: var(--f-ui); }
@@ -322,12 +324,16 @@ body.tree-dragging, body.tree-dragging * { cursor: grabbing !important; user-sel
 .hm-linktip { display: flex; align-items: baseline; gap: 10px; max-width: min(480px, 80vw); padding: 5px 10px; border-radius: 7px; background: var(--raised); box-shadow: var(--pop); font-size: 12px; animation: tipIn 120ms var(--ease); }
 .hm-linktip .addr { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .hm-linktip .how { color: var(--fg-3); flex: none; }
-.hm-icode { font-family: var(--mono); font-size: .85em; padding: .1em .3em; border-radius: 4px; background: var(--hover); }
-.hm-quote { border-left: 3px solid var(--line-2); padding-left: 1em !important; color: var(--fg-2); }
+/* 行内代码用半透明底色，选中时底下的 .cm-selectionBackground 蓝色选区才能清晰透出来 */
+.hm-icode { font-family: var(--mono); font-size: .85em; padding: .1em .3em; border-radius: 4px; background: var(--icode-bg); }
+/* 引用与列表都用 margin-left 而非 padding-left：CodeMirror 6 画跨行选区时会读视口第一条 .cm-line 的 paddingLeft 作为整屏左边界，
+   若第一条 .cm-line 有大 paddingLeft（比如缩进列表），下面其他块跨行选中时第二行开头几个字会漏掉选区底色 */
+.hm-quote { position: relative; margin-left: calc(1em + 3px); padding-left: 0 !important; color: var(--fg-2); }
+.hm-quote::before { content: ""; position: absolute; left: calc(-1em - 3px); top: 0; bottom: 0; width: 3px; background: var(--line-2); pointer-events: none; }
 /* 列表（lists.ts）：符号放在固定宽度的槽里，悬挂在文字左边；每深一层缩进一个槽宽，
    子项的符号正好对齐父项文字的起点。项目符号按层级循环 • ◦ ▪，编号用等宽数字右对齐。 */
 .hm-editor { --slot: 1.75em; }
-.hm-li { padding-left: calc((var(--d, 0) + 1) * var(--slot)) !important; text-align: left !important; }
+.hm-li { margin-left: calc((var(--d, 0) + 1) * var(--slot)); padding-left: 0 !important; text-align: left !important; }
 /* 紧跟段落（中间没空行）：上面留和段距一样的空；同一列表里各项之间 5px */
 .hm-li.hm-li-after { padding-top: calc(var(--ed-lh) * .45em) !important; }
 .hm-li.hm-li-next { padding-top: 5px !important; }
@@ -344,16 +350,16 @@ body.tree-dragging, body.tree-dragging * { cursor: grabbing !important; user-sel
 .hm-lfold:hover { background: var(--hover); color: var(--fg); }
 /* 显示源代码时：原样显示符号和缩进 */
 .hm-list-src { text-align: left !important; }
-/* 待办：16×16 圆形勾选框；未完成父项里是居中浅色扇形，全部完成时填满主题色并平滑浮现居中对勾 */
-.hm-check { position: relative; display: inline-grid; place-items: center; width: 16px; height: 16px; padding: 0; border-radius: 50%; margin-right: .5em; vertical-align: -3px; cursor: pointer; text-indent: 0;
+/* 待办：16×16 圆形勾选框；所有内部 SVG 统一绝对定位居中，让空框/扇形/对勾/半选都没有流内子元素，基线完全一致（消除已完成比未完成下偏 3px） */
+.hm-check { position: relative; display: inline-block; width: 16px; height: 16px; padding: 0; border-radius: 50%; margin-right: .5em; vertical-align: -3px; line-height: 0; font-size: 0; cursor: pointer; text-indent: 0;
   box-shadow: inset 0 0 0 1.5px var(--fg-3); background: var(--bg); color: var(--accent); transition: background-color 180ms var(--ease), box-shadow 180ms var(--ease), color 180ms var(--ease); }
 .hm-check:hover { box-shadow: inset 0 0 0 1.5px var(--accent); background: var(--accent-soft); }
 .hm-check.partial { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, var(--fg-3)); }
 .hm-check.done, .hm-check.on { background: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); color: #fff; }
 /* 半选：父项勾了、叶子没全勾（外部程序改的） */
 .hm-check.mixed { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); color: var(--accent-fg); }
-.hm-check svg { display: block; pointer-events: none; }
-.hm-check .hm-pie { position: absolute; inset: 0; width: 16px; height: 16px; color: color-mix(in srgb, var(--accent) 34%, transparent); }
+.hm-check svg { position: absolute; inset: 0; margin: auto; display: block; pointer-events: none; }
+.hm-check .hm-pie { width: 16px; height: 16px; color: color-mix(in srgb, var(--accent) 34%, transparent); }
 .hm-check .hm-pie circle { transition: stroke-dasharray 240ms var(--ease); }
 .hm-check.done svg, .hm-check.on svg { animation: checkIn 180ms var(--ease); }
 @keyframes checkIn { from { transform: scale(.72); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -406,8 +412,8 @@ body.hm-dragging, body.hm-dragging * { cursor: grabbing !important; user-select:
 .hm-mermaid { padding: 18px 0; display: flex; justify-content: center; color: var(--fg-3); font: 12px var(--f-ui); }
 .hm-mermaid svg { max-width: 100%; height: auto; }
 /* 表格：默认三线表（顶线、表头下线、底线，没有竖线），和导出的 Typst 模板一致；
-   工具条通过 sticky 固定在当前可视区右上角，跨页长表编辑底部单元格时也能随时看到 */
-.hm-table { position: relative; padding: var(--gap-media) 0; cursor: default; }
+   上方留出工具条的位置（不盖住表头和列宽拖动手柄，也不盖住上一段正文），长表滚动时 sticky 贴在可视区右上角 */
+.hm-table { position: relative; padding: 36px 0 var(--gap-media); cursor: default; }
 .hm-tscroll { overflow-x: auto; }
 .hm-table table.fixed { table-layout: fixed; }
 .hm-table th { position: relative; }
@@ -415,8 +421,9 @@ body.hm-dragging, body.hm-dragging * { cursor: grabbing !important; user-select:
 .hm-colgrip::after { content: ""; position: absolute; top: 4px; bottom: 4px; left: 3px; width: 1px; background: var(--accent); opacity: 0; transition: opacity 120ms; }
 .hm-table th:hover .hm-colgrip::after, .hm-table.resizing .hm-colgrip::after { opacity: .7; }
 .hm-table.resizing, .hm-table.resizing * { cursor: col-resize !important; -webkit-user-select: none; user-select: none; }
-.hm-ttools-stick { position: sticky; top: 8px; z-index: 4; display: flex; justify-content: flex-end; height: 0; overflow: visible; padding-right: 6px; pointer-events: none; }
-.hm-ttools { position: relative; top: 6px; height: fit-content; display: flex; align-items: center; gap: 1px; padding: 2px; border-radius: 8px; background: var(--raised); box-shadow: var(--float); white-space: nowrap;
+.hm-table.resizing .hm-ttools { opacity: 0 !important; pointer-events: none !important; }
+.hm-ttools-stick { position: sticky; top: 40px; z-index: 4; display: flex; justify-content: flex-end; height: 0; overflow: visible; padding-right: 0; pointer-events: none; }
+.hm-ttools { position: relative; top: -34px; height: fit-content; display: flex; align-items: center; gap: 1px; padding: 2px; border-radius: 8px; background: var(--raised); box-shadow: var(--float); white-space: nowrap;
   opacity: 0; translate: 0 -2px; pointer-events: none; transition: opacity 120ms, translate 120ms var(--ease); z-index: 4; font-family: var(--f-ui); }
 .hm-itools { position: absolute; top: 6px; right: 6px; display: flex; align-items: center; gap: 1px; padding: 2px; border-radius: 8px; background: var(--raised); box-shadow: var(--float); white-space: nowrap;
   opacity: 0; translate: 0 -2px; pointer-events: none; transition: opacity 120ms, translate 120ms var(--ease); z-index: 3; font-family: var(--f-ui); }
@@ -464,13 +471,15 @@ body.hm-dragging, body.hm-dragging * { cursor: grabbing !important; user-select:
 .hm-figure.missing::after, .hm-img-inline.missing::after { content: attr(data-missing); font: 12px var(--f-ui); color: var(--fg-3); }
 .hm-img-inline img { max-height: 6em; max-width: 100%; vertical-align: middle; border-radius: 3px; }
 .hm-src-mono { font-family: var(--mono); font-size: .82rem; line-height: 1.7; text-align: left !important; }
-.hm-code { font-family: var(--mono); font-size: .82rem; line-height: 1.7; background: var(--code-bg); padding: 0 14px !important; text-align: left !important; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
-.hm-code-first { border-top: 1px solid var(--line); border-radius: 8px 8px 0 0; padding-top: 6px !important; }
-.hm-code-last { border-bottom: 1px solid var(--line); border-radius: 0 0 8px 8px; padding-bottom: 6px !important; }
+.hm-code { position: relative; font-family: var(--mono); font-size: .82rem; line-height: 1.7; margin: 0 14px; padding: 0 !important; text-align: left !important; }
+.hm-code::before { content: ""; position: absolute; inset: 0 -14px; background: var(--code-bg-alpha); border-left: 1px solid var(--line); border-right: 1px solid var(--line); pointer-events: none; z-index: -1; }
+.hm-code-first { padding-top: 6px !important; }
+.hm-code-first::before { border-top: 1px solid var(--line); border-radius: 8px 8px 0 0; }
+.hm-code-last { padding-bottom: 6px !important; }
+.hm-code-last::before { border-bottom: 1px solid var(--line); border-radius: 0 0 8px 8px; }
 /* 代码块：开头、结尾的 ``` 行收窄成同样高度，上下对称；语言贴右边，悬停代码块时平滑让位给复制图标按钮（F6） */
 .hm-code.hm-code-fence { height: 8px; padding-top: 0 !important; padding-bottom: 0 !important; line-height: 8px; font-size: 0; }
-.hm-code-head { position: absolute; top: 6px; right: 10px; display: flex; align-items: center; height: 24px; z-index: 1; }
-.hm-code-first { position: relative; }
+.hm-code-head { position: absolute; top: 6px; right: -4px; display: flex; align-items: center; height: 24px; z-index: 1; }
 .hm-code-lang { font: 11px/24px var(--f-ui); color: var(--fg-3); transition: transform 140ms var(--ease); }
 .hm-code-copy { position: absolute; right: 0; top: 0; width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border-radius: 6px; color: var(--fg-2); background: var(--raised); box-shadow: inset 0 0 0 .5px var(--line-2); opacity: 0; pointer-events: none; transition: opacity 120ms, background-color 120ms, color 120ms; }
 .hm-code-copy:hover { color: var(--fg); background: var(--hover); }
@@ -781,7 +790,7 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .xdlg { width: min(1160px, 100%); height: min(780px, 100%); background: var(--raised); border-radius: 14px; box-shadow: var(--pop); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; animation: palIn 180ms var(--ease); }
 .xh { display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 18px; border-bottom: 1px solid var(--line); min-width: 0; }
 .xh h3 { margin: 0; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.xpre { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.xpre { margin-left: auto; flex: none; display: flex; align-items: center; gap: 8px; }
 .xb { display: grid; grid-template-columns: 380px minmax(0, 1fr); min-height: 0; }
 .xopts { border-right: 1px solid var(--line); overflow-y: auto; padding: 4px 16px 20px; }
 .og { border-bottom: 1px solid var(--line); padding: 12px 0; }
@@ -911,7 +920,7 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .xb.narrow { grid-template-columns: minmax(0, 1fr); }
 .xb.narrow .xopts { border-right: 0; }
 .xb.narrow.opts .xpv, .xb.narrow.pv .xopts { display: none; }
-.xh .xclose { margin-left: auto; flex: none; }
+.xh .xclose { flex: none; }
 .xopts .numfield { max-width: 160px; }
 .xopts .quad .numfield { max-width: 140px; }
 /* 渐进展开（G2） */
@@ -1085,6 +1094,7 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .fbadge { --fk: var(--fg-3); display: inline-grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 8px;
   background: color-mix(in srgb, var(--fk) 9%, transparent); box-shadow: inset 0 0 0 .5px color-mix(in srgb, var(--fk) 35%, transparent); color: color-mix(in srgb, var(--fk) 82%, var(--fg)); font: 700 11px/1 var(--f-ui); letter-spacing: -.02em; }
 .fbadge.sm { width: 20px; height: 20px; border-radius: 6px; font-size: 9px; }
+.fbadge svg, .fb-btn svg, .ib svg, .rb svg, .mi svg, .slot svg, .em-ic svg, .nb-more svg, .hm-handle svg, .hm-lfold svg, .hm-sfold svg, .ofold svg, .hm-mt-sym svg, .hm-code-copy svg, .hm-igrip svg, .sl-ico svg { display: block; }
 .fbadge b { font-weight: 700; }
 .fbadge.k-pdf { --fk: #D23F4C; } .fbadge.k-word { --fk: #2F6FEB; } .fbadge.k-excel { --fk: #1B9A60; } .fbadge.k-ppt { --fk: #E8590C; }
 .fbadge.k-md { --fk: var(--accent); } .fbadge.k-image { --fk: #8653E6; } .fbadge.k-bib { --fk: #B7791F; }
@@ -1149,8 +1159,8 @@ button.sb:hover, button.sb.on { background: var(--hover); color: var(--fg-2); }
 .nb-h { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
 .nb-h b { font-size: 13px; font-weight: 600; color: var(--fg); }
 .nb-d { font-size: 12px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
-/* 内容：就是一段文字；自己的批注点一下就能改，只有聚焦时才出现细的聚焦框 */
-.nb-tx { display: block; width: 100%; margin: 0 -6px; padding: 2px 6px; box-sizing: content-box; border: 0; border-radius: 6px; background: transparent; font: 14px/1.6 var(--f-ui); color: var(--fg); resize: none; outline: none; white-space: pre-wrap; word-break: break-word; transition: box-shadow 120ms; }
+/* 内容：就是一段文字；自己的批注点一下就能改，只有聚焦时才出现细的聚焦框；border-box 保证 scrollHeight 赋给 height 时上下留白完全对称 */
+.nb-tx { display: block; width: calc(100% + 12px); margin: 0 -6px; padding: 4px 6px; box-sizing: border-box; border: 0; border-radius: 6px; background: transparent; font: 14px/22px var(--f-ui); color: var(--fg); resize: none; outline: none; white-space: pre-wrap; word-break: break-word; overflow-y: hidden; transition: box-shadow 120ms; }
 textarea.nb-tx:focus { box-shadow: 0 0 0 1px var(--accent-line); }
 textarea.nb-tx::placeholder { color: var(--fg-3); }
 .nb-f { display: flex; align-items: center; gap: 4px; margin-top: 6px; }

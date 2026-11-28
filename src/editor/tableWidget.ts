@@ -347,4 +347,4 @@ export class TableWidget extends WidgetType {
   }
 }
 
-const ICONS: Record<string, string> = Object.fromEntries(["alignLeft", "alignCenter", "alignRight", "rows", "source"].map((k) => [k, iconSvg(k, 15)]));
+const ICONS: Record<string, string> = Object.fromEntries(["alignLeft", "alignCenter", "alignRight", "rows", "source"].map((k) => [k, iconSvg(k, 14)]));

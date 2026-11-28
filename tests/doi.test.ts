@@ -9,6 +9,8 @@ describe("DOI", () => {
     expect(parseDoi("https://doi.org/10.1207/s15516709cog1202_4")).toBe("10.1207/s15516709cog1202_4");
     expect(parseDoi("http://dx.doi.org/10.1000/xyz123.")).toBe("10.1000/xyz123");
     expect(parseDoi("doi: 10.1000/ABC")).toBe("10.1000/ABC");
+    expect(parseDoi("`10.1038/nature12373`")).toBe("10.1038/nature12373");
+    expect(parseDoi("10.1038/nature12373。")).toBe("10.1038/nature12373");
     expect(parseDoi("zhang2021")).toBeNull();
     expect(parseDoi("10.12/x")).toBeNull();
   });

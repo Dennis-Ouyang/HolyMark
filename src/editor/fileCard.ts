@@ -6,11 +6,14 @@
  * 双击用默认程序打开（Markdown 在 HolyMark 里打开）。找不到文件时同样是一条，下面用红字写「找不到这个文件」。
  */
 import { EditorView, WidgetType } from "@codemirror/view";
+import { undo } from "@codemirror/commands";
 import { cachedPreview, FilePreview, pdfThumb } from "../lib/filePreview";
+import { nextBlockStart } from "../lib/blockMove";
 import { iconSvg } from "../lib/icons";
 import { isWindows } from "../lib/platform";
 import { fileBadgeHTML, midNameEl } from "../lib/fileKind";
 import { openDomMenu } from "./domMenu";
+import { notify } from "./notice";
 
 export interface FileHooks {
   /** 链接里的路径 → 绝对路径 */
@@ -119,7 +122,7 @@ export class FileCardWidget extends WidgetType {
     const btn = (icon: string, label: string, run: (b: HTMLButtonElement) => void) => {
       const b = el("button", "fb-btn") as HTMLButtonElement;
       b.type = "button"; b.title = label; b.setAttribute("aria-label", label);
-      b.innerHTML = iconSvg(icon, 15);
+      b.innerHTML = iconSvg(icon, 16);
       b.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); });
       b.addEventListener("click", (e) => { e.stopPropagation(); run(b); });
       return b;
@@ -128,6 +131,25 @@ export class FileCardWidget extends WidgetType {
       const pos = view.posAtDOM(bar);
       view.dispatch({ selection: { anchor: Math.min(pos + 1, view.state.doc.length) } });
       view.focus();
+    };
+    const removeLink = () => {
+      hidePeek();
+      const at = view.posAtDOM(bar);
+      const doc = view.state.doc;
+      const line = doc.lineAt(at);
+      let from = line.from, to = line.to;
+      if (this.inline) {
+        if (to < doc.length) to += 1;
+        else if (from > 0) from -= 1;
+      } else {
+        const text = doc.toString();
+        const nxt = nextBlockStart(text, line.to);
+        from = nxt >= text.length && line.from > 0 ? text.slice(0, line.from).replace(/\s+$/, "").length : line.from;
+        to = nxt >= text.length ? Math.max(line.to, text.replace(/\s+$/, "").length) : nxt;
+      }
+      view.dispatch({ changes: { from, to }, selection: { anchor: Math.min(from, doc.length - (to - from)) }, userEvent: "delete.file" });
+      view.focus();
+      notify("已删除文件链接", "success", { label: "撤销", run: () => { undo(view); view.focus(); } });
     };
     let preview: FilePreview | null = null;
     let thumb: { url: string; pages: number } | null = null;
@@ -143,6 +165,8 @@ export class FileCardWidget extends WidgetType {
       openDomMenu(b, [
         ...(!bar.classList.contains("missing") ? [{ label: "预览", icon: "eye", run: openFullPreview }] : []),
         { label: "显示源代码", icon: "source", run: toSource },
+        { sep: true },
+        { label: "删除", icon: "trash", danger: true, run: removeLink },
       ], { label: "文件", onClose: () => b.classList.remove("open") });
     });
     acts.append(btn("external", kind === "md" ? "在 HolyMark 里打开" : "用默认程序打开", () => this.hooks.open(abs)), reveal, more);
@@ -152,7 +176,11 @@ export class FileCardWidget extends WidgetType {
     let t = 0;
     badge.addEventListener("mouseenter", () => { if (preview) t = window.setTimeout(() => showPeek(badge, fillPeek, kind), 400); });
     badge.addEventListener("mouseleave", () => { clearTimeout(t); hidePeek(); });
-    bar.addEventListener("mousedown", (e) => { if (!(e.target as HTMLElement).closest(".fb-btn, .fb-txtbtn")) e.preventDefault(); });
+    bar.addEventListener("mousedown", (e) => {
+      if ((e.target as HTMLElement).closest(".fb-btn, .fb-txtbtn")) return;
+      e.preventDefault();
+      if (view.hasFocus) view.contentDOM.blur();
+    });
     bar.addEventListener("click", (e) => {
       if ((e.target as HTMLElement).closest(".fb-btn, .fb-txtbtn") || bar.classList.contains("missing")) return;
       openFullPreview();

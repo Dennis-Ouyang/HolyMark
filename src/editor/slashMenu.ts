@@ -153,7 +153,7 @@ function makeTooltip(pos: number): Tooltip {
             const ico = document.createElement("span");
             ico.className = "sl-ico";
             if (/^h\d$/.test(it.icon)) ico.textContent = it.icon.toUpperCase();
-            else ico.innerHTML = iconSvg(it.icon, 15);
+            else ico.innerHTML = iconSvg(it.icon, 14);
             const nm = document.createElement("span");
             nm.className = "nm";
             nm.textContent = it.title;

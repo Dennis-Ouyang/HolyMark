@@ -37,11 +37,13 @@ interface Props {
   onPick: (p: InsertPick) => void;
   onPickOther: () => void;
   onClose: () => void;
+  /** 正文里输入 @ 弹出的：输入框里没有查询文本时继续退格，把正文里的 @ 本身删掉并关闭浮层 */
+  onDeleteAt?: () => void;
   /** 用 DOI 生成文献条目：联网取 BibTeX、加进 .bib，返回引用键 */
   doi?: { targets: DoiTarget[]; add: (doi: string, target: DoiTarget) => Promise<string> };
 }
 
-export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPickOther, onClose, doi, initialQuery }: Props) {
+export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPickOther, onClose, onDeleteAt, doi, initialQuery }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [doiErr, setDoiErr] = useState("");
   const alive = useRef(true);
@@ -49,11 +51,28 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
   const [q, setQ] = useState(initialQuery ?? "");
   const [sel, setSel] = useState(0);
   const box = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [pos, setPos] = useState({ left: at.left - 12, top: at.bottom + 6, up: false });
   const others = useMemo(() => files.filter((f) => f.path !== docPath), [files, docPath]);
   const rel = (p: string) => { const d = dirOf(relative(root, p)); return d === "." ? "" : d; };
   const bibMode = q.startsWith("@");
   const qt = (bibMode ? q.slice(1) : q).trim().toLowerCase();
+
+  // 打开（或退场中被重新打开）时同步初始查询，并确保焦点在输入框里、光标停在 @ 后面（避免 macOS WebKit 光标落在 @ 前面导致粘贴变成「DOI@」）
+  useLayoutEffect(() => {
+    const init = initialQuery ?? "";
+    setQ(init);
+    const focusEnd = () => {
+      const inp = inputRef.current;
+      if (!inp || inp.closest(".leaving")) return;
+      inp.focus();
+      const len = inp.value.length;
+      inp.setSelectionRange(len, len);
+    };
+    focusEnd();
+    const raf = requestAnimationFrame(focusEnd);
+    return () => cancelAnimationFrame(raf);
+  }, [at, initialQuery]);
 
   // 粘贴或输入 DOI（@ 后面，或者直接粘一个 doi.org 链接）：先确认加到哪个 .bib，再联网
   const doiHit = parseDoi(bibMode ? q.slice(1) : q);
@@ -99,6 +118,44 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
     return () => removeEventListener("mousedown", down, true);
   }, [onClose]);
 
+  /** 把剪贴板纯文本写进输入框：整理换行与首尾空白，避免 @ 后面粘 @key 时叠出两个 @ */
+  const applyPasteText = (raw: string, inp: HTMLInputElement | null) => {
+    const clean = raw.replace(/\r?\n+/g, " ").trim();
+    if (!clean) return;
+    setQ((cur) => {
+      const start = inp && document.activeElement === inp ? (inp.selectionStart ?? cur.length) : cur.length;
+      const end = inp && document.activeElement === inp ? (inp.selectionEnd ?? cur.length) : cur.length;
+      const before = cur.slice(0, start);
+      const after = cur.slice(end);
+      const body = before.endsWith("@") && clean.startsWith("@") ? clean.slice(1) : clean;
+      const next = before + body + after;
+      const caret = before.length + body.length;
+      requestAnimationFrame(() => {
+        if (inputRef.current && !inputRef.current.closest(".leaving")) {
+          inputRef.current.focus();
+          inputRef.current.setSelectionRange(caret, caret);
+        }
+      });
+      return next;
+    });
+  };
+
+  // 浮层打开时，哪怕焦点一时不在输入框里（比如刚按完 @ 立刻 ⌘V，或点过列表），粘贴也直接进入输入框，不漏进正文
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (box.current?.closest(".leaving")) return;
+      const inp = inputRef.current;
+      if (!inp || e.target === inp) return;
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      if (!text) return;
+      e.preventDefault();
+      e.stopPropagation();
+      applyPasteText(text, inp);
+    };
+    window.addEventListener("paste", onPaste, true);
+    return () => window.removeEventListener("paste", onPaste, true);
+  }, []);
+
   const pick = (r?: Row) => {
     if (!r) return;
     if (r.kind === "doi") {
@@ -112,11 +169,22 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
     }
     onPick(r.kind === "file" ? { kind: "file", path: r.node.path } : { kind: "bib", key: r.b.key });
   };
-  const onKey = (e: React.KeyboardEvent) => {
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.nativeEvent.isComposing) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); if (rows.length) setSel((sel + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length); }
     else if (e.key === "Enter") { e.preventDefault(); pick(rows[sel]); }
     else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); }
+    else if (e.key === "Backspace" && onDeleteAt) {
+      const inp = e.currentTarget;
+      const s = inp.selectionStart ?? q.length;
+      const en = inp.selectionEnd ?? q.length;
+      // @ 输入框没有筛选文本（空，或者只剩 @ 且光标在末尾/全选了 @）时继续退格：把正文里的 @ 本身也删掉
+      if (q === "" || (q === "@" && ((s === 1 && en === 1) || (s === 0 && en === 1)))) {
+        e.preventDefault();
+        e.stopPropagation();
+        onDeleteAt();
+      }
+    }
   };
   const hl = (name: string) => {
     if (!qt || bibMode) return name;
@@ -127,11 +195,18 @@ export function InsertFile({ at, files, docPath, root, bib, recent, onPick, onPi
   let idx = -1;
   return (
     <div ref={box} className={"ins" + (pos.up ? " up" : "")} role="dialog" aria-label="插入文件链接"
+      onMouseDown={(e) => { if (e.target !== inputRef.current) e.preventDefault(); }}
       style={{ left: pos.left, top: pos.top, transformOrigin: `${Math.round(at.left - pos.left)}px ${pos.up ? "100%" : "0"}` }}>
       <div className="ins-q">
-        <Icon name={qt || bibMode ? "search" : "link"} size={15} />
-        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} aria-label="输入名字筛选文件"
-          placeholder="输入名字筛选；@ 搜文献或粘贴 DOI" />
+        <Icon name={qt || bibMode ? "search" : "link"} size={16} />
+        <input ref={inputRef} autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey}
+          onPaste={(e) => {
+            const text = e.clipboardData?.getData("text/plain") ?? "";
+            if (!text) return;
+            e.preventDefault();
+            applyPasteText(text, e.currentTarget);
+          }}
+          aria-label="输入名字筛选文件" placeholder="输入名字筛选；@ 搜文献或粘贴 DOI" />
         {(qt || bibMode) && <span className="ins-n">{bibMode ? `${view.total} 条` : `${view.total} 个`}</span>}
       </div>
       <div className="ins-list" role="listbox">

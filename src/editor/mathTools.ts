@@ -79,7 +79,7 @@ const mathTip = StateField.define<Tooltip | null>({
         sym.className = "hm-mt-sym";
         sym.title = "公式符号";
         sym.setAttribute("aria-label", "公式符号");
-        sym.innerHTML = iconSvg("symbols", 13);
+        sym.innerHTML = iconSvg("symbols", 14);
         sym.addEventListener("mousedown", (e) => {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("hm-symbols", { detail: sym.getBoundingClientRect() }));

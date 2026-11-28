@@ -69,6 +69,17 @@ export function useInsertAndDrop({ be, root, path, s, view, scroller, insertAtCu
     rememberInsert(p.path);
   }
 
+  function deleteAt() {
+    const at = insertAt?.atPos;
+    setInsertAt(null);
+    const v = view();
+    if (!v) return;
+    if (at !== undefined && v.state.sliceDoc(at, at + 1) === "@") {
+      v.dispatch({ changes: { from: at, to: at + 1 }, selection: { anchor: at }, userEvent: "delete.backward" });
+    }
+    v.focus();
+  }
+
   /** 引用文件夹以外的文件：用系统的文件选择窗口，插入相对路径链接 */
   async function citeOtherFile() {
     if (!be || !path) return;
@@ -148,5 +159,5 @@ export function useInsertAndDrop({ be, root, path, s, view, scroller, insertAtCu
     });
   }, [be]);
 
-  return { insertAt, setInsertAt, recentIns, openInsert, pickInsert, citeOtherFile, dropCaret };
+  return { insertAt, setInsertAt, recentIns, openInsert, pickInsert, deleteAt, citeOtherFile, dropCaret };
 }

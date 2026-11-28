@@ -116,9 +116,17 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
 
   const docDir = dirOf(path);
   const files = useMemo(() => flatten(tree), [tree]);
-  // N16 导出预设的导入和导出；最近套用的预设名当导出时的文件名
+  // N16 导出预设的导入和导出；最近套用的预设名当导出时的文件名，activePreset 驱动下拉按钮显示当前已选预设
   const [lastPreset, setLastPreset] = useState("");
-  const presetIO = usePresetIO({ be, root, docDir, o, setO, presets, setPresets, lastName: lastPreset, say });
+  const [activePreset, setActivePreset] = useState("");
+  const presetIO = usePresetIO({
+    be, root, docDir, o, setO, presets, setPresets, lastName: lastPreset, say,
+    onImported: (applied) => {
+      setFromRef(new Set());
+      setActivePreset(applied ? String(applied.index) : "");
+      if (applied) setLastPreset(applied.name);
+    },
+  });
   const bibMap = useMemo(() => new Map(bib.map((b) => [b.key, b])), [bib]);
   const prepared = useMemo(() => prepareForPandoc(text, o, docDir), [text, o, docDir]);
   const docTitle = prepared.title || baseName(path).replace(/\.(md|markdown)$/i, "");
@@ -156,10 +164,12 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
   const set = useCallback((patch: Partial<ExportOptions>) => {
     setO((x) => ({ ...x, ...patch }));
     setFromRef((s) => { const n = new Set(s); Object.keys(patch).forEach((k) => n.delete(k)); return n; });
+    setActivePreset("");
   }, []);
   const setH = (patch: Partial<ExportOptions["H"][Level]>) => {
     setO((x) => ({ ...x, H: { ...x.H, [lv]: { ...x.H[lv], ...patch } } }));
     setFromRef((s) => { const n = new Set(s); Object.keys(patch).forEach((k) => n.delete(`H.${lv}.${k}`)); return n; });
+    setActivePreset("");
   };
 
   /* ---------- 参考文档 ---------- */
@@ -187,6 +197,7 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
       });
       setO(next);
       setFromRef(filled);
+      setActivePreset("");
       setErr("");
     } catch (e) { setErr(String(e)); }
   }
@@ -433,7 +444,7 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
             {naming === null ? <>
               {/* 还没有预设时不显示下拉，只留「存为预设」 */}
               {/* 场景预设（学位论文、课程论文、投稿、打印稿）和自己存的预设放在一个下拉里 */}
-              <Select value="" placeholder="套用预设…" ariaLabel="预设" width={200}
+              <Select value={activePreset} placeholder="套用预设…" ariaLabel="预设" width={200}
                 options={[
                   ...SCENES.map((sc) => ({ value: "scene:" + sc.id, label: sc.name, hint: "", group: "常用场景", title: sc.hint })),
                   ...presets.map((p, i) => ({ value: String(i), label: p.name, group: "我的预设" })),
@@ -443,14 +454,42 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
                 onChange={(v) => {
                   if (v === "__export") { void presetIO.exportPreset(); return; }
                   if (v === "__import") { void presetIO.importPreset(); return; }
-                  const before = cloneOpts(o);
-                  if (v.startsWith("scene:")) { setO(applyScene(v.slice(6), o.fmt)); setFromRef(new Set()); setLastPreset(SCENES.find((x) => x.id === v.slice(6))?.name ?? ""); }
-                  else { const p = presets[+v]; if (!p) return; setO(normalizeOpts({ ...p.opts, fmt: o.fmt })); setFromRef(new Set()); setLastPreset(p.name); }
-                  say("已套用预设", "success", { label: "撤销", run: () => setO(before) });
+                  const before = cloneOpts(o), ref0 = fromRef, prevPreset = activePreset, prevLast = lastPreset;
+                  let appliedName = "";
+                  if (v.startsWith("scene:")) {
+                    const sc = SCENES.find((x) => x.id === v.slice(6));
+                    if (!sc) return;
+                    setO(applyScene(sc.id, o.fmt));
+                    setFromRef(new Set());
+                    setActivePreset(v);
+                    setLastPreset(sc.name);
+                    appliedName = sc.name;
+                  } else {
+                    const p = presets[+v];
+                    if (!p) return;
+                    setO(normalizeOpts({ ...p.opts, fmt: o.fmt }));
+                    setFromRef(new Set());
+                    setActivePreset(v);
+                    setLastPreset(p.name);
+                    appliedName = p.name;
+                  }
+                  say(`已套用「${appliedName}」预设`, "success", {
+                    label: "撤销",
+                    run: () => { setO(before); setFromRef(ref0); setActivePreset(prevPreset); setLastPreset(prevLast); },
+                  });
                 }} />
               <button type="button" className="btn" onClick={() => setNaming("")}>存为预设</button>
               {presetIO.node}
-            </> : <form className="pair" onSubmit={(e) => { e.preventDefault(); const nm = naming.trim(); if (!nm) return; setPresets([...presets.filter((p) => p.name !== nm), { name: nm, opts: cloneOpts(o) }]); setLastPreset(nm); setNaming(null); }}>
+            </> : <form className="pair" onSubmit={(e) => {
+              e.preventDefault();
+              const nm = naming.trim();
+              if (!nm) return;
+              const next = [...presets.filter((p) => p.name !== nm), { name: nm, opts: cloneOpts(o) }];
+              setPresets(next);
+              setActivePreset(String(next.length - 1));
+              setLastPreset(nm);
+              setNaming(null);
+            }}>
               <input className="tin" autoFocus placeholder="预设名称" aria-label="预设名称" value={naming} onChange={(e) => setNaming(e.target.value)} />
               <button type="submit" className="btn acc">保存</button><button type="button" className="btn" onClick={() => setNaming(null)}>取消</button>
             </form>}
@@ -484,9 +523,9 @@ export function ExportDialog({ be, path: path0, root, text: text0, tree, bib, fo
                   aria-label="导出工具的版本"><Icon name="info" size={15} /></span> : null}
           </span>
           <button type="button" className="btn" title="回到默认值（A4、黑色标题……），可以撤销" onClick={() => {
-            const before = cloneOpts(o), ref0 = fromRef;
-            setO(normalizeOpts({ ...cloneOpts(DEFAULT_OPTS), fmt: o.fmt })); setFromRef(new Set());
-            say("已恢复默认的导出设置", "success", { label: "撤销", run: () => { setO(before); setFromRef(ref0); } });
+            const before = cloneOpts(o), ref0 = fromRef, prevPreset = activePreset, prevLast = lastPreset;
+            setO(normalizeOpts({ ...cloneOpts(DEFAULT_OPTS), fmt: o.fmt })); setFromRef(new Set()); setActivePreset("");
+            say("已恢复默认的导出设置", "success", { label: "撤销", run: () => { setO(before); setFromRef(ref0); setActivePreset(prevPreset); setLastPreset(prevLast); } });
           }}>恢复默认</button>
           <button type="button" className="btn" onClick={onClose}>取消</button>
           {/* 导出中文字不换，只淡出、换成转圈：按钮宽度不变，旁边的按钮不会被挤动 */}

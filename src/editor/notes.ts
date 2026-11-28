@@ -9,8 +9,12 @@
  */
 import { EditorSelection, EditorState, Extension, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView, showTooltip, Tooltip, tooltips, ViewPlugin, ViewUpdate } from "@codemirror/view";
+import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
+import type { SyntaxNode } from "@lezer/common";
 import { undo } from "@codemirror/commands";
 import { iconSvg } from "../lib/icons";
+import { HEADING_ATTR } from "../lib/markdown";
+import { CARD_EXT } from "../lib/filePreview";
 import { openDomMenu } from "./domMenu";
 import { notify } from "./notice";
 
@@ -111,7 +115,12 @@ function bubble(n: NoteHit, focus: boolean): Bubble {
           ta.placeholder = "写下批注，回车完成";
           ta.value = n.text;
           ta.setAttribute("aria-label", "批注内容");
-          const fit = () => { ta.style.height = "auto"; ta.style.height = Math.min(200, ta.scrollHeight) + "px"; };
+          const fit = () => {
+            ta.style.height = "auto";
+            const sh = ta.scrollHeight;
+            ta.style.height = Math.min(200, sh) + "px";
+            ta.style.overflowY = sh > 200 ? "auto" : "hidden";
+          };
           ta.addEventListener("input", () => {
             fit();
             if (ta.value.trim()) saved = true;
@@ -260,6 +269,31 @@ const atoms = ViewPlugin.fromClass(class {
   }
 }, { provide: (p) => EditorView.atomicRanges.of((view) => view.plugin(p)?.ranges ?? Decoration.none) });
 
+/** 编辑时把批注原文删空、或者跨边界删掉了其中一侧符号时，自动清掉残缺的 CriticMarkup 源码，避免把 {====}{>>…<<} 泄漏到正文里 */
+const noteIntegrity = EditorState.transactionFilter.of((tr) => {
+  if (!tr.docChanged || tr.isUserEvent("delete.note") || tr.isUserEvent("input.note") || tr.isUserEvent("undo") || tr.isUserEvent("redo")) return tr;
+  let cFrom = Infinity, cTo = -1;
+  tr.changes.iterChangedRanges((fA, tA) => { if (fA < cFrom) cFrom = fA; if (tA > cTo) cTo = tA; });
+  if (cTo < 0) return tr;
+  const oldDoc = tr.startState.doc;
+  const winFrom = Math.max(0, cFrom - 4000), winTo = Math.min(oldDoc.length, cTo + 4000);
+  const oldSlice = oldDoc.sliceString(winFrom, winTo);
+  const cleanups: { from: number; to: number }[] = [];
+  for (const m of oldSlice.matchAll(NOTE_RE)) {
+    const nf = winFrom + m.index!, nt = nf + m[0].length, qEnd = nf + 3 + m[1].length;
+    if (nt < cFrom || nf > cTo) continue;
+    const o0 = tr.changes.mapPos(nf, 1), o1 = tr.changes.mapPos(nf + 3, -1);
+    const t0 = tr.changes.mapPos(qEnd, 1), t1 = tr.changes.mapPos(nt, -1);
+    const openOk = o1 - o0 === 3 && tr.state.sliceDoc(o0, o1) === "{==";
+    const tailOk = t1 - t0 >= 9 && tr.state.sliceDoc(t0, t0 + 6) === "==}{>>" && tr.state.sliceDoc(t1 - 3, t1) === "<<}";
+    if (openOk && tailOk && o1 === t0) cleanups.push({ from: o0, to: t1 });
+    else if (!openOk && tailOk) cleanups.push({ from: t0, to: t1 });
+    else if (openOk && !tailOk) cleanups.push({ from: o0, to: o1 });
+  }
+  if (!cleanups.length) return tr;
+  return [tr, { changes: cleanups, sequential: true }];
+});
+
 /** 正文失去焦点、而且焦点没进浮层时，收起浮层 */
 const blurClose = EditorView.updateListener.of((u) => {
   if (!u.focusChanged || u.view.hasFocus) return;
@@ -301,18 +335,276 @@ const tooltipSpace = tooltips({
 });
 
 export function notes(): Extension {
-  return [bubbleField, atoms, blurClose, marginDots, tooltipSpace];
+  return [bubbleField, atoms, noteIntegrity, blurClose, marginDots, tooltipSpace];
 }
 
-/** 给选中的文字加批注：插入 CriticMarkup，直接弹出卡片、光标在输入框里 */
+/* ---------------- 批注选区校验与规整 ---------------- */
+
+const LINE_PREFIX = /^(?:[ \t]*(?:>[ \t]?|#{1,6}[ \t]+|[-*+][ \t]+\[[ xX]\][ \t]+|[-*+][ \t]+|\d+[.)][ \t]+))*[ \t]*/;
+const BLOCK_START = /^[ \t]*(?:#{1,6}[ \t]|>[ \t]?|[-*+][ \t]|\d+[.)][ \t]|```|~~~|\$\$|\||(?:---|\*\*\*|___)[ \t]*$)/;
+const FORBIDDEN_BLOCKS: Record<string, string> = {
+  FencedCode: "不能在代码块里添加批注",
+  CodeBlock: "不能在代码块里添加批注",
+  Table: "暂不支持在表格源码里添加批注",
+  HorizontalRule: "不能给分隔线加批注",
+  HTMLBlock: "不能给 HTML 或注释块加批注",
+  CommentBlock: "不能给 HTML 或注释块加批注",
+};
+const PAIRED_INLINE: Record<string, string> = {
+  StrongEmphasis: "EmphasisMark",
+  Emphasis: "EmphasisMark",
+  Strikethrough: "StrikethroughMark",
+  Highlight: "HighlightMark",
+  Superscript: "SuperscriptMark",
+  Subscript: "SubscriptMark",
+};
+const SYNTAX_MARKS = new Set([
+  "EmphasisMark", "CodeMark", "StrikethroughMark", "SuperscriptMark", "SubscriptMark",
+  "HighlightMark", "HeaderMark", "QuoteMark", "ListMark", "TaskMarker", "LinkMark", "URL", "LinkTitle",
+]);
+const PROSE_BLOCK = new Set(["Paragraph", "ListItem", "ATXHeading1", "ATXHeading2", "ATXHeading3", "ATXHeading4", "ATXHeading5", "ATXHeading6", "SetextHeading1", "SetextHeading2"]);
+const CTRL_CHAR_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/;
+const CRITIC_DELIM_RE = /\{==|==\}|\{>>|<<\}/;
+
+/** 文档开头的 YAML 属性区结束位置（没有时返回 -1） */
+function frontmatterEnd(state: EditorState): number {
+  const doc = state.doc;
+  if (doc.lines < 2 || doc.line(1).text !== "---") return -1;
+  for (let i = 2; i <= doc.lines; i++) if (/^(---|\.\.\.)\s*$/.test(doc.line(i).text)) return doc.line(i).to;
+  return -1;
+}
+
+/** [from, to] 是否碰到 $$…$$ 公式块 */
+function touchesMathBlock(state: EditorState, from: number, to: number, tree: ReturnType<typeof syntaxTree>): boolean {
+  const doc = state.doc;
+  const fmEnd = frontmatterEnd(state);
+  const inCode = (p: number) => {
+    for (let n: SyntaxNode | null = tree.resolveInner(p, 1); n; n = n.parent) if (n.name === "FencedCode" || n.name === "CodeBlock") return true;
+    return false;
+  };
+  let open = -1;
+  for (let i = 1; i <= doc.lines; i++) {
+    const L = doc.line(i);
+    if (fmEnd >= 0 && L.to <= fmEnd) continue;
+    const t = L.text.trim();
+    if (open >= 0) {
+      if (t === "$$") {
+        if (from <= L.to && to >= open) return true;
+        open = -1;
+      }
+      continue;
+    }
+    if (!t.startsWith("$$") || inCode(L.from)) continue;
+    if (t.length > 4 && t.endsWith("$$")) { if (from <= L.to && to >= L.from) return true; }
+    else if (t === "$$") open = L.from;
+  }
+  return false;
+}
+
+function proseContainer(tree: ReturnType<typeof syntaxTree>, pos: number, side: 1 | -1): SyntaxNode | null {
+  for (let n: SyntaxNode | null = tree.resolveInner(pos, side); n; n = n.parent) if (PROSE_BLOCK.has(n.name)) return n;
+  return null;
+}
+
+/**
+ * 校验并规整要加批注的选区：
+ * - 拒绝已有批注/嵌套批注、批注源码符号、代码块/公式块/属性区/表格/分隔线/跨段落选区；
+ * - 自动裁掉行首的块级标记（# 、> 、- [ ] 等）和首尾空白，以及贴在选区边缘的单个格式符号；
+ * - 拒绝截断行内代码/公式/链接/引用/成对格式符号，或只选中控制字符与 Markdown 格式符号的情况。
+ */
+export function resolveNoteRange(state: EditorState, rawFrom: number, rawTo: number): { ok: true; from: number; to: number } | { ok: false; reason: string } {
+  let from = Math.min(rawFrom, rawTo), to = Math.max(rawFrom, rawTo);
+  if (from >= to) return { ok: false, reason: "先选中要批注的文字" };
+
+  // 1. 已有批注重叠或包含批注源码符号：禁止重复/嵌套批注或给批注源码加批注
+  const winFrom = Math.max(0, from - 8000), winTo = Math.min(state.doc.length, to + 8000);
+  const winText = state.sliceDoc(winFrom, winTo);
+  for (const m of winText.matchAll(NOTE_RE)) {
+    const nf = winFrom + m.index!, nt = nf + m[0].length;
+    if (from < nt && to > nf) return { ok: false, reason: "这段文字已有批注，不能重复或嵌套批注" };
+  }
+  if (CRITIC_DELIM_RE.test(state.sliceDoc(from, to))) return { ok: false, reason: "不能给批注符号加批注" };
+
+  // 2. 属性区、公式块、代码块、表格、分隔线、HTML 块
+  const fmEnd = frontmatterEnd(state);
+  if (fmEnd >= 0 && from <= fmEnd) return { ok: false, reason: "不能在属性区里添加批注" };
+  const tree = ensureSyntaxTree(state, Math.min(state.doc.length, to + 1), 200) ?? syntaxTree(state);
+  if (touchesMathBlock(state, from, to, tree)) return { ok: false, reason: "不能在公式块里添加批注" };
+  for (const [p, side] of [[from, 1], [Math.max(from, to - 1), -1]] as const) {
+    for (let n: SyntaxNode | null = tree.resolveInner(p, side); n; n = n.parent) {
+      if (FORBIDDEN_BLOCKS[n.name]) return { ok: false, reason: FORBIDDEN_BLOCKS[n.name] };
+    }
+  }
+  let badBetween = "";
+  tree.iterate({ from, to, enter: (n) => { if (FORBIDDEN_BLOCKS[n.name]) { badBetween = FORBIDDEN_BLOCKS[n.name]; return false; } } });
+  if (badBetween) return { ok: false, reason: "请在同一段文字内添加批注" };
+
+  // 3. 跨段落 / 跨块检查
+  if (/\n[ \t]*\n/.test(state.sliceDoc(from, to))) return { ok: false, reason: "请在同一段文字内添加批注" };
+  const startLine = state.doc.lineAt(from), endLine = state.doc.lineAt(to);
+  if (startLine.number !== endLine.number) {
+    const a = proseContainer(tree, from, 1), b = proseContainer(tree, Math.max(from, to - 1), -1);
+    if (a && b && (a.from !== b.from || a.to !== b.to)) return { ok: false, reason: "请在同一段文字内添加批注" };
+    if (a && /^ATXHeading|^SetextHeading/.test(a.name)) return { ok: false, reason: "请在同一段文字内添加批注" };
+    for (let ln = startLine.number + 1; ln <= endLine.number; ln++) {
+      if (BLOCK_START.test(state.doc.line(ln).text)) return { ok: false, reason: "请在同一段文字内添加批注" };
+    }
+  }
+
+  // 4. 整行图片 / 整行文件卡片
+  if (startLine.number === endLine.number) {
+    const lt = startLine.text.trim();
+    if (/^!\[[^\]]*\]\([^)]*\)(\{[^}]*\})?$/.test(lt)) return { ok: false, reason: "不能给图片加批注" };
+    const fm = lt.match(/^\[([^\]]*)\]\((<[^>]+>|[^)\s]+)\)$/);
+    if (fm && !/^\[@/.test(lt)) {
+      const href = fm[2].replace(/^<|>$/g, "");
+      let dec = href;
+      try { dec = decodeURI(href); } catch { /* 原样用 */ }
+      if (!/^[a-z][a-z0-9+.-]*:/i.test(href) && CARD_EXT.test(dec)) return { ok: false, reason: "不能给文件卡片加批注" };
+    }
+  }
+
+  // 5. 自动裁掉行首的块级控制前缀（# 、> 、- [ ] 、1. 、[^1]: ）、标题末尾 {#id} 与首尾空白
+  const preEnd = startLine.from + (startLine.text.match(LINE_PREFIX)?.[0].length ?? 0);
+  if (from < preEnd) from = Math.min(preEnd, to);
+  const fnDef = startLine.text.match(/^\[\^[^\]\s]+\]:[ \t]*/);
+  if (fnDef && from < startLine.from + fnDef[0].length) from = Math.min(startLine.from + fnDef[0].length, to);
+  if (/^#{1,6}[ \t]/.test(endLine.text)) {
+    const attr = endLine.text.match(HEADING_ATTR);
+    if (attr && to > endLine.from + attr.index!) to = Math.max(from, endLine.from + attr.index!);
+  }
+  const trimWs = () => {
+    while (from < to && /\s/.test(state.sliceDoc(from, from + 1))) from++;
+    while (to > from && /\s/.test(state.sliceDoc(to - 1, to))) to--;
+  };
+  trimWs();
+  if (from >= to) return { ok: false, reason: "不能只给格式符号或控制字符加批注" };
+
+  // 6. 禁止控制字符
+  if (CTRL_CHAR_RE.test(state.sliceDoc(from, to))) return { ok: false, reason: "不能给控制字符加批注" };
+
+  // 7. 不可拆分的行内元素（行内代码、行内公式、链接地址、图片、引用、脚注）
+  const lineFrom = startLine.from, lineTo = endLine.to;
+  const lineText = state.sliceDoc(lineFrom, lineTo);
+  const codeSpans: [number, number][] = [];
+  const atomsWholeOk: [number, number][] = []; // 完整包住整个元素时允许，但不能落入内部或截断边界
+  const atomsForbid: [number, number][] = []; // 即使完整选中也不允许批注（URL、图片、HTML 标签、脚注引用）
+  const paired: { from: number; to: number; openEnd: number; closeStart: number }[] = [];
+  const markSpans: [number, number][] = [];
+
+  tree.iterate({
+    from: lineFrom, to: lineTo,
+    enter: (n) => {
+      if (n.name === "InlineCode") { codeSpans.push([n.from, n.to]); atomsWholeOk.push([n.from, n.to]); return; }
+      if (n.name === "Image" || n.name === "URL" || n.name === "LinkTitle" || n.name === "Autolink" || n.name === "HTMLTag") {
+        atomsForbid.push([n.from, n.to]);
+      }
+      if (SYNTAX_MARKS.has(n.name)) markSpans.push([n.from, n.to]);
+      const mkName = PAIRED_INLINE[n.name];
+      if (mkName) {
+        const mks = n.node.getChildren(mkName);
+        if (mks.length >= 2 && mks[0].from === n.from && mks[mks.length - 1].to === n.to) {
+          paired.push({ from: n.from, to: n.to, openEnd: mks[0].to, closeStart: mks[mks.length - 1].from });
+        }
+      }
+    },
+  });
+  const inCode = (p: number) => codeSpans.some(([a, z]) => p >= a && p < z);
+  for (const m of lineText.matchAll(/(^|[^\\$])\$([^$\n]+?)\$(?!\$)/g)) {
+    const a = lineFrom + m.index! + m[1].length, z = a + m[2].length + 2;
+    if (!inCode(a)) atomsWholeOk.push([a, z]);
+  }
+  for (const m of lineText.matchAll(/\[@[\w:.-]+(?:\s*;\s*@[\w:.-]+)*\]/g)) {
+    const a = lineFrom + m.index!, z = a + m[0].length;
+    if (!inCode(a)) atomsWholeOk.push([a, z]);
+  }
+  for (const m of lineText.matchAll(/\[\^[^\]\s]+\]/g)) {
+    const a = lineFrom + m.index!, z = a + m[0].length;
+    if (!inCode(a)) atomsForbid.push([a, z]);
+  }
+
+  // 8. 裁掉刚好落在选区两端的半个成对格式符号（例如只多选了开头的 ** 或结尾的 **）
+  for (let pass = 0; pass < 4; pass++) {
+    const prevF = from, prevT = to;
+    for (const p of paired) {
+      if (from >= p.from && from < p.openEnd && to < p.to) from = Math.min(p.openEnd, to);
+      if (from >= p.closeStart && from < p.to && to > p.to) from = Math.min(p.to, to);
+      if (to > p.closeStart && to <= p.to && from > p.from) to = Math.max(from, p.closeStart);
+      if (to > p.from && to <= p.openEnd && from < p.from) to = Math.max(from, p.from);
+    }
+    trimWs();
+    if (from === prevF && to === prevT) break;
+  }
+  if (from >= to) return { ok: false, reason: "不能只给格式符号或控制字符加批注" };
+
+  // 检查禁止的原子元素与不可截断的行内元素
+  for (const [a, z] of atomsForbid) {
+    if (from < z && to > a) {
+      if (from >= a && to <= z) return { ok: false, reason: "不能给链接地址、图片或控制符号加批注" };
+      // 如果整个 [text](url) 链接都在选区里，允许批注整条链接；否则不能只截到 URL
+      let linkWraps = false;
+      tree.iterate({ from: lineFrom, to: lineTo, enter: (n) => { if (n.name === "Link" && n.from >= from && n.to <= to && a >= n.from && z <= n.to) linkWraps = true; } });
+      if (!linkWraps) return { ok: false, reason: "选区不能截断链接、图片或脚注语法" };
+    }
+  }
+  for (const [a, z] of atomsWholeOk) {
+    if (from < z && to > a && !(from <= a && to >= z)) {
+      if (from >= a && to <= z) return { ok: false, reason: "不能在行内代码、公式或引用内部加批注" };
+      return { ok: false, reason: "选区不能截断行内代码、公式或引用" };
+    }
+  }
+  // 检查链接边界（不能从 [文字] 内部跨过 ]( 拖到外部）
+  let splitLink = false;
+  tree.iterate({
+    from: lineFrom, to: lineTo,
+    enter: (n) => {
+      if (n.name !== "Link") return;
+      if (from < n.to && to > n.from) {
+        if (from <= n.from && to >= n.to) return; // 完整包住整条链接，允许
+        const marks = n.node.getChildren("LinkMark");
+        if (marks.length >= 2) {
+          const textFrom = marks[0].to, textTo = marks[1].from;
+          if (from >= textFrom && to <= textTo) return; // 纯粹在链接可见文字内部，允许
+        }
+        splitLink = true;
+      }
+    },
+  });
+  if (splitLink) return { ok: false, reason: "选区不能截断链接语法" };
+
+  // 检查是否仍然把某个成对格式（**…**、*…*、~~…~~ 等）从中间劈开
+  for (const p of paired) {
+    const insideStart = from > p.from && from < p.to;
+    const insideEnd = to > p.from && to < p.to;
+    if ((insideStart && to > p.to) || (insideEnd && from < p.from)) {
+      return { ok: false, reason: "选区不能截断加粗、斜体等格式符号" };
+    }
+  }
+
+  // 9. 去掉所有 Markdown 语法符号后，必须至少保留一个可见字符
+  let visible = "";
+  for (let pos = from; pos < to; pos++) {
+    if (markSpans.some(([a, z]) => pos >= a && pos < z)) continue;
+    visible += state.sliceDoc(pos, pos + 1);
+  }
+  if (!visible.trim()) return { ok: false, reason: "不能只给格式符号或控制字符加批注" };
+
+  return { ok: true, from, to };
+}
+
+/** 给选中的文字加批注：校验并规整选区后插入 CriticMarkup，直接弹出卡片、光标在输入框里 */
 export function insertNote(view: EditorView, who: string = noteAuthor()) {
   const r = view.state.selection.main;
-  if (r.empty) return false;
+  const res = resolveNoteRange(view.state, r.from, r.to);
+  if (!res.ok) {
+    notify(res.reason, "warn");
+    return false;
+  }
   const d = new Date();
   const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  const quote = view.state.sliceDoc(r.from, r.to);
+  const quote = view.state.sliceDoc(res.from, res.to);
   const insert = `{==${quote}==}{>>@${who} ${date}：<<}`;
-  view.dispatch({ changes: { from: r.from, to: r.to, insert }, selection: EditorSelection.cursor(r.from + 3 + quote.length) });
-  view.dispatch({ effects: openNote.of({ pos: r.from + 3, focus: true }) });
+  view.dispatch({ changes: { from: res.from, to: res.to, insert }, selection: EditorSelection.cursor(res.from + 3 + quote.length) });
+  view.dispatch({ effects: openNote.of({ pos: res.from + 3, focus: true }) });
   return true;
 }

@@ -113,7 +113,7 @@ export function useCommands(a: UseCommandsArgs) {
       case "search": setDlg((d) => (d === "palette" ? null : "palette")); break;
       case "link": if (v) insertLink(v); break;
       case "cite": openInsert(); break;
-      case "note": if (v && !insertNote(v)) say("先选中要批注的文字", "warn"); break;
+      case "note": if (v) insertNote(v); break;
       case "insert_table": if (v) insertBlock(v, tableMarkdown(2, 3), 2); break;
       case "insert_code": if (v) insertBlock(v, "```\n\n```", 4); break;
       case "insert_math": if (v) insertBlock(v, "$$\n\n$$", 3); break;

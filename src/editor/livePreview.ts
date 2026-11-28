@@ -3,7 +3,7 @@
  * 思路与 Obsidian 的 Live Preview 相同：文档始终是纯文本，渲染只是装饰（decoration），不会改写文件。
  */
 import { ChangeSet, EditorState, Extension, Range, StateEffect, StateField } from "@codemirror/state";
-import { Decoration, DecorationSet, EditorView, WidgetType } from "@codemirror/view";
+import { Decoration, DecorationSet, EditorView, keymap, ViewPlugin, WidgetType } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
 import katex from "katex";
@@ -142,7 +142,10 @@ class FrontMatterWidget extends WidgetType {
     sum.className = "sum";
     sum.textContent = rows.filter((x) => !x[2]).map(([k]) => PROP_NAMES[k] || k).join("　");
     head.append(tri, lab, sum);
-    head.addEventListener("mousedown", (e) => e.preventDefault());
+    head.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      if (view.hasFocus) view.contentDOM.blur();
+    });
     head.addEventListener("click", () => {
       const open = !el.classList.contains("open");
       el.classList.toggle("open", open);
@@ -279,6 +282,7 @@ class ImageWidget extends WidgetType {
     el.addEventListener("mousedown", (e) => {
       if ((e.target as HTMLElement).closest(".hm-itools, .hm-igrip")) return;
       e.preventDefault();
+      if (view.hasFocus) view.contentDOM.blur();
       if (el.classList.contains("editing")) return;
       open();
     });
@@ -960,6 +964,39 @@ export function flash(view: EditorView, lines: number[]) {
   window.setTimeout(() => view.dispatch({ effects: clearFlash.of(null) }), 1400);
 }
 
+/** macOS WebKit 里 body 设了 user-select:none，点编辑器外空白不会让 contentDOM 失焦，这里补上失焦，保证表格等源码块立即回到渲染态 */
+const sourceExitPlugin = ViewPlugin.fromClass(class {
+  onDown: (e: MouseEvent) => void;
+  constructor(readonly view: EditorView) {
+    this.onDown = (e: MouseEvent) => {
+      if (e.defaultPrevented || !this.view.hasFocus) return;
+      const t = e.target as HTMLElement | null;
+      if (!t || this.view.dom.contains(t)) return;
+      if (t.closest(".menu, .select-pop, .hm-handle, .hm-notepop, .at-pop, .slash-pop, .ribbon, .ftb, .math-pop")) return;
+      this.view.contentDOM.blur();
+    };
+    window.addEventListener("mousedown", this.onDown);
+  }
+  destroy() { window.removeEventListener("mousedown", this.onDown); }
+});
+
+/** 在表格、公式、属性区或列表源码里按 Esc 退出源码态、立即恢复渲染 */
+const exitSourceKey = keymap.of([{
+  key: "Escape",
+  run(view) {
+    if (!view.hasFocus || document.querySelector(".menu, .select-pop, .at-pop, .slash-pop, .cm-search")) return false;
+    const head = view.state.selection.main.head;
+    const b = topBlocks(view.state).find((x) => head >= x.from && head <= x.to);
+    if (!b) return false;
+    const isList = b.kind === "BulletList" || b.kind === "OrderedList";
+    const inSource = b.kind === "Table" || b.kind === "math" || b.kind === "frontmatter"
+      || (isList && !listRendered(view.state, view.state.doc.lineAt(b.from).from, false));
+    if (!inSource) return false;
+    view.contentDOM.blur();
+    return true;
+  },
+}]);
+
 export function livePreview(opts: PreviewOptions): Extension {
   const memo = newMemo();
   const field = StateField.define<DecorationSet>({
@@ -971,5 +1008,5 @@ export function livePreview(opts: PreviewOptions): Extension {
     provide: (f) => EditorView.decorations.from(f),
   });
   // lists() 里的状态（显示源代码、折叠）要排在装饰前面：装饰重算时会读它们
-  return [lists(() => opts.syntax() === "always"), focusField, field, flashField, glowField, EditorView.focusChangeEffect.of((_s, focusing) => setFocus.of(focusing)), opts.links ? links(opts.links) : [], opts.onAtCite ? atCite(opts.onAtCite) : []];
+  return [lists(() => opts.syntax() === "always"), focusField, field, flashField, glowField, sourceExitPlugin, exitSourceKey, EditorView.focusChangeEffect.of((_s, focusing) => setFocus.of(focusing)), opts.links ? links(opts.links) : [], opts.onAtCite ? atCite(opts.onAtCite) : []];
 }

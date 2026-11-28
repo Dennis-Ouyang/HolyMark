@@ -86,7 +86,7 @@ export function Select<T extends string>({ value, options, onChange, ariaLabel, 
           style={{ left: pos.left, [pos.up ? "bottom" : "top"]: pos.up ? innerHeight - pos.top : pos.top, minWidth: Math.max(pos.minW, width || 0) } as React.CSSProperties}
           onMouseDown={(e) => { if (keepFocus && (e.target as HTMLElement).tagName !== "INPUT") e.preventDefault(); }} onKeyDown={onKey}>
           {searchable && (
-            <div className="select-search"><Icon name="search" size={13} />
+            <div className="select-search"><Icon name="search" size={14} />
               <input autoFocus value={q} placeholder="搜索" aria-label="搜索" onChange={(e) => { setQ(e.target.value); setHi(0); }} onKeyDown={onKey} />
             </div>
           )}
@@ -98,7 +98,7 @@ export function Select<T extends string>({ value, options, onChange, ariaLabel, 
                   {head}
                   <div role="option" aria-selected={o.value === value} className={"opt" + (i === hi ? " hi" : "") + (o.value === value ? " cur" : "") + (o.title ? " tip" : "")}
                     title={o.title} onMouseMove={() => setHi(i)} onClick={() => choose(o)}>
-                    <span className="ck">{o.value === value && <Icon name="check" size={13} />}</span>
+                    <span className="ck">{o.value === value && <Icon name="check" size={14} />}</span>
                     <span className="olbl" style={o.style}>{o.label}</span>
                     {o.hint && <span className="oh">{o.hint}</span>}
                   </div>

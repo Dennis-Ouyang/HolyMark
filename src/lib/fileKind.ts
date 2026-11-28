@@ -29,7 +29,7 @@ export const KIND_LABEL: Record<FileKind, string> = { pdf: "PDF", word: "Word �
 /** 图标容器的 HTML（给不是 React 的地方用）；missing 时是中性灰和断开的文件图标 */
 export function fileBadgeHTML(name: string, size: "lg" | "sm" = "lg", missing = false) {
   const k = fileKind(name);
-  const inner = missing ? iconSvg("fileOff", size === "lg" ? 16 : 13) : GLYPH[k] ? `<b>${GLYPH[k]}</b>` : iconSvg(ICON[k], size === "lg" ? 16 : 13);
+  const inner = missing ? iconSvg("fileOff", size === "lg" ? 16 : 14) : GLYPH[k] ? `<b>${GLYPH[k]}</b>` : iconSvg(ICON[k], size === "lg" ? 16 : 14);
   return `<span class="fbadge ${size} k-${missing ? "missing" : k}" aria-hidden="true">${inner}</span>`;
 }
 

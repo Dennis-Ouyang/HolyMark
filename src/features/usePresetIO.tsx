@@ -25,6 +25,8 @@ interface Ctx {
   setPresets: (p: Preset[]) => void;
   /** 最近套用的预设名（导出时当文件名） */
   lastName: string;
+  /** 导入成功后通知外层同步当前预设选中态（索引、名称；撤销时传 null） */
+  onImported?: (applied: { index: number; name: string } | null) => void;
   say: Say;
 }
 
@@ -63,7 +65,7 @@ export function usePresetIO(c: Ctx) {
   }
 
   async function importText(text: string) {
-    const { be, root, o, presets, setO, setPresets, say } = ctx.current;
+    const { be, root, o, presets, setO, setPresets, onImported, say } = ctx.current;
     const pf = parsePreset(text);
     if (typeof pf === "string") { say(pf, "error"); return; }
     const dir = join(root, ".holymark/export");
@@ -94,9 +96,11 @@ export function usePresetIO(c: Ctx) {
     }
     const before = cloneOpts(o), beforeList = presets;
     const name = freePresetName(pf.name, presets.map((x) => x.name));
-    setPresets([...presets, { name, opts: cloneOpts(opts) }]);
+    const nextList = [...presets, { name, opts: cloneOpts(opts) }];
+    setPresets(nextList);
     setO(normalizeOpts({ ...opts, fmt: o.fmt }));
-    say(`已导入预设「${name}」`, "success", { label: "撤销", run: () => { setPresets(beforeList); setO(before); } });
+    onImported?.({ index: nextList.length - 1, name });
+    say(`已导入预设「${name}」`, "success", { label: "撤销", run: () => { setPresets(beforeList); setO(before); onImported?.(null); } });
   }
 
   const node = <>

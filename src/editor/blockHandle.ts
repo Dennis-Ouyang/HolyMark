@@ -20,11 +20,15 @@ export interface DropSlot {
   before: number;
   /** 这个插入点在屏幕上的纵坐标（视口坐标） */
   y: number;
+  /** 原地左右调整层级（不上下移动） */
+  inPlace?: boolean;
 }
 
 export interface HandleDrag {
   /** 能放下的位置 */
   slots(): DropSlot[];
+  /** 原地左右拖动改层级时的固定落点（列表项用：左右拖时不上下滑动） */
+  horizontal?: () => DropSlot | null;
   /** 拖到某个插入点、水平挪了 dx 像素时：指示线从哪里开始（视口横坐标），以及对应的层级 */
   place(slot: DropSlot, dx: number): { x: number; depth: number };
   drop(slot: DropSlot, depth: number): void;
@@ -43,6 +47,8 @@ export interface HandleTarget {
   gap?: number;
   /** 对齐到正文栏最左侧的统一列（顶层块用，避免和标题折叠号、引用左边框打架） */
   outer?: boolean;
+  /** 把手与整个块垂直居中（用于文件横条这类单行高度略高、顶对齐显得偏上的块） */
+  center?: boolean;
 }
 
 export interface HandleProvider {
@@ -107,31 +113,51 @@ class HandleView {
       const lh = c.bottom - c.top;
       const baseLeft = t.outer ? r.left : c.left;
       this.el.style.left = Math.round(baseLeft - HANDLE_W - (t.gap ?? 6)) + "px";
-      this.el.style.top = Math.round(lh > 48 ? c.top + 8 : c.top + (lh - 22) / 2) + "px";
+      this.el.style.top = Math.round(t.center || lh <= 48 ? c.top + (lh - 22) / 2 : c.top + 8) + "px";
       this.el.setAttribute("aria-label", t.label);
       this.el.classList.add("on");
     });
   };
 
-  /** 按下：没拖动就是点击（弹菜单），拖动超过 4px 进入拖放 */
+  /** 按下：没拖动就是点击（弹菜单），拖动超过 6px 进入拖放 */
   down = (e: MouseEvent) => {
     if (e.button !== 0 || !this.cur) return;
     e.preventDefault();
     const t = this.cur, x0 = e.clientX, y0 = e.clientY;
-    let slots: DropSlot[] | null = null, slot: DropSlot | null = null, depth = 0;
+    const top0 = parseFloat(this.el.style.top) || y0 - 11;
+    let slots: DropSlot[] | null = null, homeSlot: DropSlot | null = null, slot: DropSlot | null = null, depth = 0;
+    let axis: "x" | "y" | null = null;
     const mv = (ev: MouseEvent) => {
       if (!t.drag) return;
-      if (!this.dragging && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
-      if (!this.dragging) { this.dragging = true; slots = t.drag.slots(); document.body.classList.add("hm-dragging"); this.el.classList.add("drag"); }
-      slot = slots!.reduce((b, s) => (Math.abs(s.y - ev.clientY) < Math.abs(b.y - ev.clientY) ? s : b), slots![0]);
-      const p = t.drag.place(slot, ev.clientX - x0);
+      const dx = ev.clientX - x0, dy = ev.clientY - y0;
+      if (!this.dragging && Math.hypot(dx, dy) < 6) return;
+      if (!this.dragging) {
+        this.dragging = true;
+        slots = t.drag.slots();
+        homeSlot = t.drag.horizontal?.() ?? null;
+        axis = homeSlot && Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+        document.body.classList.add("hm-dragging");
+        this.el.classList.add("drag");
+      }
+      if (axis === "x" && homeSlot) {
+        slot = homeSlot;
+      } else {
+        slot = slots!.reduce((b, s) => (Math.abs(s.y - ev.clientY) < Math.abs(b.y - ev.clientY) ? s : b), slots![0]);
+      }
+      const p = t.drag.place(slot, dx);
       depth = p.depth;
       const r = this.view.contentDOM.getBoundingClientRect();
       this.line.style.left = Math.round(p.x) + "px";
       this.line.style.width = Math.max(40, Math.round(r.right - p.x)) + "px";
       this.line.style.top = Math.round(slot.y - 1) + "px";
       this.line.classList.add("on");
-      this.el.style.top = Math.round(ev.clientY - 11) + "px";
+      if (axis === "x") {
+        // 左右拖改层级时垂直固定在当前行，不上下滑动
+        this.el.style.top = Math.round(top0) + "px";
+        this.el.style.left = Math.round(p.x - HANDLE_W - (t.gap ?? 6)) + "px";
+      } else {
+        this.el.style.top = Math.round(ev.clientY - 11) + "px";
+      }
     };
     const up = () => {
       removeEventListener("mousemove", mv);

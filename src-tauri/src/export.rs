@@ -873,13 +873,22 @@ pub fn run(job: ExportJob, progress: &dyn Fn(&str)) -> Result<ExportResult, Stri
             }
         }
         progress("write");
-        std::fs::copy(&staged, &job.output).map_err(|e| format!("无法写入 {}：{e}", job.output))?;
+        write_output(&staged, Path::new(&job.output))?;
         Ok(ExportResult { output: job.output.clone(), warnings })
     })();
     if std::env::var_os("HM_KEEP_EXPORT_TMP").is_none() {
         let _ = std::fs::remove_dir_all(&tmp);
     }
     result
+}
+
+/// 把临时目录里生成的导出文件写到目标路径；目标所在文件夹（比如批量导出的「导出/」）还不存在时先建好
+fn write_output(staged: &Path, output: &Path) -> Result<(), String> {
+    if let Some(parent) = output.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent).map_err(|e| format!("无法创建文件夹 {}：{e}", parent.display()))?;
+    }
+    std::fs::copy(staged, output).map_err(|e| format!("无法写入 {}：{e}", output.display()))?;
+    Ok(())
 }
 
 /// 交给 Pandoc 的 Markdown 里，本地图片写成 `<hm-file:绝对路径>`：复制进临时目录，引用换成相对文件名。
@@ -1041,6 +1050,17 @@ mod tests {
         let out = localize_images(&md, &tmp);
         assert_eq!(out, "![a](<hm-image-1.png>)\n\n![b](<hm-image-1.png>)\n\n![c](</没有/这张.png>)\n\n![m](mermaid-1.png)");
         assert_eq!(std::fs::read(tmp.join("hm-image-1.png")).unwrap(), b"png");
+    }
+
+    #[test]
+    fn write_output_creates_missing_parent_dir() {
+        let d = tempfile::tempdir().unwrap();
+        let staged = d.path().join("staged.pdf");
+        std::fs::write(&staged, b"%PDF-1.7").unwrap();
+        let target = d.path().join("docs").join("导出").join("info.pdf");
+        assert!(!target.parent().unwrap().exists());
+        write_output(&staged, &target).unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"%PDF-1.7");
     }
 
     /// 端到端：HM_EXPORT_JOB 指向一个导出任务的 JSON，用真的 Pandoc / Typst 跑一遍

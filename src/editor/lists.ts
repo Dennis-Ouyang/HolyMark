@@ -336,17 +336,36 @@ function listProvider(always: () => boolean): HandleProvider {
             if (last) out.push({ before: c.lines.length, y: last.bottom });
             return out;
           },
+          horizontal() {
+            const r = view.coordsAtPos(view.state.doc.line(c.a + c.it.line).from, 1);
+            return r ? { before: c.it.line, y: r.bottom, inPlace: true } : null;
+          },
           place(slot, dx) {
             const step = parseFloat(getComputedStyle(view.contentDOM).fontSize) * STEP_EM;
+            const left = view.contentDOM.getBoundingClientRect().left;
+            if (slot.inPlace) {
+              // 左右拖只原地改缩进，每次拖动最多变一级
+              const canIndent = !!indentItem(c.lines, c.i, 1);
+              const canOutdent = c.it.depth > 0;
+              const threshold = step * 0.45;
+              const delta = dx >= threshold && canIndent ? 1 : dx <= -threshold && canOutdent ? -1 : 0;
+              const depth = c.it.depth + delta;
+              return { x: left + depth * step, depth };
+            }
             const prev = [...c.m.items].reverse().find((x) => x.line < slot.before && !(x.line >= c.it.line && x.line <= c.it.end));
             const max = prev ? prev.depth + 1 : 0;
-            const depth = Math.max(0, Math.min(max, c.it.depth + Math.round(dx / step)));
-            const left = view.contentDOM.getBoundingClientRect().left;
+            const delta = Math.max(-1, Math.min(1, Math.round(dx / step)));
+            const depth = Math.max(0, Math.min(max, c.it.depth + delta));
             return { x: left + depth * step, depth };
           },
           drop(slot, depth) {
             const cur = ctxAt(view.state, lineFrom);
             if (!cur) return;
+            if (slot.inPlace) {
+              const delta = depth - cur.it.depth;
+              if (delta === 1 || delta === -1) run(indentItem(cur.lines, cur.i, delta));
+              return;
+            }
             run(moveItemTo(cur.lines, cur.i, slot.before, depth));
           },
         },

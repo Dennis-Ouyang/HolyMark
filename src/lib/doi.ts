@@ -5,7 +5,7 @@ export function parseDoi(input: string): string | null {
   let s = input.trim().replace(/^[`"'<(\[【「]+/, "").replace(/[`"'>)\]】」]+$/, "").trim();
   try { s = decodeURIComponent(s); } catch { /* 原样用 */ }
   const m = s.match(/^(?:doi:\s*|https?:\/\/(?:dx\.)?doi\.org\/)?(10\.\d{4,9}\/\S+)$/i);
-  return m ? m[1].replace(/[.,;]+$/, "") : null;
+  return m ? m[1].replace(/[.,;。，；]+$/, "") : null;
 }
 
 /** BibTeX 里某个字段的值（去掉外层括号） */

@@ -175,6 +175,7 @@ const provider: HandleProvider = {
       anchor: b.from,
       gap: 22,
       outer: true,
+      center: b.type === "file",
       label: TYPE_NAME[b.type],
       menu: () => { const k = blockIndexAt(view.state, b.from, true); return k >= 0 ? menuFor(view, k) : []; },
       drag: {
